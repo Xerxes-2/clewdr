@@ -70,7 +70,11 @@ async fn main() -> Result<(), ClewdrError> {
     // create a TCP listener
     let addr = state.config.address().to_string();
     let listener = tokio::net::TcpListener::bind(addr).await?;
+    let config_clone = state.config.clone();
     let router = clewdr::router::RouterBuilder::new(state).build();
+    if let Err(e) = clewdr::update::check_for_updates(&config_clone).await {
+        eprintln!("Update check failed: {}", e);
+    }
     // serve the application
     spawn(cm.run());
     axum::serve(listener, router).await?;

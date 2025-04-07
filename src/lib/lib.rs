@@ -15,6 +15,7 @@ pub mod submit;
 pub mod text;
 pub mod types;
 pub mod utils;
+pub mod update;
 
 /// Header for the application
 pub static BANNER: LazyLock<String> = LazyLock::new(|| {

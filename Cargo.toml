@@ -46,4 +46,4 @@ eventsource-stream = "0.2"
 url = "2"
 enable-ansi-support = "0.2.1"
 tracing-appender = "0.2.3"
-self_update = "0.42.0"
+self_update = { version = "0.42.0", features = ["archive-zip", "compression-flate2", "compression-zip-deflate", "compression-zip-bzip2"] }

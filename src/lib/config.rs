@@ -21,6 +21,12 @@ const fn default_max_connections() -> usize {
 /// A struct representing the configuration of the application
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
+    // App settings
+    #[serde(default)]
+    pub check_update: bool,
+    #[serde(default)]
+    pub auto_update: bool,
+
     // Cookie configurations
     #[serde(default)]
     pub cookie_array: Vec<CookieStatus>,
@@ -300,6 +306,8 @@ fn generate_password(length: usize) -> String {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            check_update: true,
+            auto_update: false,
             cookie_array: vec![
                 CookieStatus::new(PLACEHOLDER_COOKIE, None, None, None),
                 CookieStatus::new(
