@@ -1,7 +1,6 @@
 use clap::Parser;
 use clewdr::{
-    self, BANNER, config::Config, cookie::CookieManager, error::ClewdrError, state::AppState,
-    utils::config_dir,
+    self, config::Config, cookie::CookieManager, error::ClewdrError, state::AppState, utils::config_dir, BANNER
 };
 use colored::Colorize;
 use const_format::formatc;
@@ -72,7 +71,8 @@ async fn main() -> Result<(), ClewdrError> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let config_clone = state.config.clone();
     let router = clewdr::router::RouterBuilder::new(state).build();
-    if let Err(e) = clewdr::update::check_for_updates(&config_clone).await {
+    let updater  = clewdr::update::Updater::new(config_clone);
+    if let Err(e) = updater .check_for_updates().await {
         eprintln!("Update check failed: {}", e);
     }
     // serve the application
