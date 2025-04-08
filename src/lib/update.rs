@@ -39,6 +39,8 @@ impl Updater {
         let authors = option_env!("CARGO_PKG_AUTHORS").unwrap_or("");
         let repo_owner = authors.split(':').next().unwrap_or("Xerxes-2").to_string();
         let repo_name = env!("CARGO_PKG_NAME").to_string();
+        let policy = rquest::redirect::Policy::default();
+        let client = rquest::Client::builder().redirect(policy).build().unwrap();
 
         let user_agent = format!(
             "clewdr/{} (+https://github.com/{}/{})",
@@ -49,7 +51,7 @@ impl Updater {
 
         Self {
             config,
-            client: Client::new(),
+            client: client,
             user_agent,
             repo_owner,
             repo_name,
@@ -112,7 +114,7 @@ impl Updater {
         // Find appropriate asset for this platform
         let asset = self.find_appropriate_asset(release)?;
 
-        println!("Downloading update from {}", asset.browser_download_url);
+        info!("Downloading update from {}", asset.browser_download_url);
 
         // Create a temporary directory
         let temp_dir = tempfile::tempdir()?;
