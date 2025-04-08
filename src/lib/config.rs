@@ -88,8 +88,18 @@ impl Display for Reason {
             Reason::Banned => write!(f, "Banned"),
             Reason::Null => write!(f, "Null"),
             Reason::Unverified => write!(f, "Unverified"),
-            Reason::Restricted(i) => write!(f, "Restricted: {}", i),
-            Reason::TooManyRequest(i) => write!(f, "Too many request: {}", i),
+            Reason::Restricted(i) => {
+                let time = chrono::DateTime::from_timestamp(*i, 0)
+                    .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
+                    .unwrap_or("Invalid date".to_string());
+                write!(f, "Restricted: until {}", time)
+            }
+            Reason::TooManyRequest(i) => {
+                let time = chrono::DateTime::from_timestamp(*i, 0)
+                    .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
+                    .unwrap_or("Invalid date".to_string());
+                write!(f, "429 Too many request: until {}", time)
+            }
         }
     }
 }
@@ -187,7 +197,10 @@ where
     let now = chrono::Utc::now();
     if time < now {
         // cookie have reset
-        info!("Cookie reset time is in the past: {}", time);
+        info!(
+            "Cookie reset time is in the past: {}",
+            time.to_string().green()
+        );
         return Ok(None);
     }
     let remaining_time = time - now;

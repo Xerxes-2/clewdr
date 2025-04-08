@@ -1,3 +1,4 @@
+use colored::Colorize;
 use std::collections::{HashMap, HashSet, VecDeque};
 use tokio::{
     select,
@@ -82,10 +83,10 @@ impl CookieManager {
     fn log(&self) {
         info!(
             "Valid: {}, Dispatched: {}, Exhausted: {}, Invalid: {}",
-            self.valid.len(),
-            self.dispatched.len(),
-            self.exhausted.len(),
-            self.invalid.len()
+            self.valid.len().to_string().green(),
+            self.dispatched.len().to_string().blue(),
+            self.exhausted.len().to_string().yellow(),
+            self.invalid.len().to_string().red(),
         );
     }
 
@@ -148,8 +149,8 @@ impl CookieManager {
             Reason::NonPro => {
                 warn!(
                     "疑似爆米了, id: {}, cookie: {}",
-                    cookie.discord.unwrap_or_default(),
-                    cookie.cookie
+                    cookie.discord.unwrap_or_default().to_string().yellow(),
+                    cookie.cookie.to_string().red()
                 );
                 self.invalid
                     .insert(UselessCookie::new(cookie.cookie, reason));

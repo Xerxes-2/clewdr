@@ -16,7 +16,7 @@ pub fn config_dir() -> Result<PathBuf, ClewdrError> {
         .parent()
         .ok_or_else(|| ClewdrError::PathNotFound("exec dir".to_string()))?
         .to_path_buf();
-    return Ok(exec_dir);
+    Ok(exec_dir)
 }
 
 /// Helper function to print out json

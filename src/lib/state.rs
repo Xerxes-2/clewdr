@@ -56,7 +56,7 @@ impl AppState {
 
     /// request a new cookie from cookie manager
     pub async fn request_cookie(&mut self) -> Result<(), ClewdrError> {
-        // real client
+        // real client to avoid mixed use of cookies
         self.client = ClientBuilder::new()
             .cookie_store(true)
             .emulation(Emulation::Chrome134)
