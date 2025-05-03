@@ -4,6 +4,8 @@ use tracing::error;
 
 use crate::{IS_DEV, config::LOG_DIR, error::ClewdrError};
 
+pub mod stop_sequence;
+
 /// Helper function to format a boolean value as "Enabled" or "Disabled"
 pub fn enabled(flag: bool) -> ColoredString {
     if flag {
