@@ -30,6 +30,7 @@ pub async fn api_messages(
     print_out_json(&p, "client_req.json");
     state.api_format = f.api_format;
     state.stream = stream;
+    state.current_request = Some(p.clone());
     let format_display = match f.api_format {
         ApiFormat::Claude => f.api_format.to_string().green(),
         ApiFormat::OpenAI => f.api_format.to_string().yellow(),

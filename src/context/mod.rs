@@ -14,6 +14,7 @@ use crate::{
     config::{CLEWDR_CONFIG, CookieStatus, ENDPOINT, Reason},
     error::ClewdrError,
     services::cookie_manager::CookieEventSender,
+    types::message::CreateMessageParams,
 };
 
 pub mod bootstrap;
@@ -35,6 +36,7 @@ pub struct RequestContext {
     pub stream: bool,
     pub client: Client,
     pub key: Option<(u64, usize)>,
+    pub current_request: Option<CreateMessageParams>,
 }
 
 impl RequestContext {
@@ -53,6 +55,7 @@ impl RequestContext {
             stream: false,
             client: SUPER_CLIENT.to_owned(),
             key: None,
+            current_request: None,
         }
     }
 

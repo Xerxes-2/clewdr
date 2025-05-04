@@ -88,10 +88,17 @@ impl RequestContext {
             let stream = input.eventsource();
             let text = merge_sse(stream).await;
             print_out_text(&text, "non_stream.txt");
-            return Json(Message::from(text)).into_response();
+            let mut resp = Json(Message::from(text)).into_response();
+            // Add RequestContext to response extensions
+            resp.extensions_mut().insert(self.clone());
+            return resp;
         }
 
         // stream the response
-        Body::from_stream(input).into_response()
+        let mut resp = Body::from_stream(input).into_response();
+        // Add RequestContext to response 
+        
+        resp.extensions_mut().insert(self.clone());
+        resp
     }
 }
