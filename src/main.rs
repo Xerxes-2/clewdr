@@ -103,6 +103,11 @@ async fn main() -> Result<(), ClewdrError> {
         }
     }
 
+    if let Err(e) = clewdr::persistence::storage().spawn_bootstrap().await {
+        use tracing::warn;
+        warn!("DB bootstrap skipped or failed: {}", e);
+    }
+
     // print info
     println!("Config dir: {}", CONFIG_PATH.display().to_string().blue());
     println!("{}", *CLEWDR_CONFIG);

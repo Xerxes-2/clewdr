@@ -84,6 +84,11 @@ ractor = "0.15"
 mimalloc = { version = "0.1", optional = true }
 dhat = { version = "0", optional = true }
 etcetera = { version = "0", optional = true }
+sqlx = { version = "0.8", optional = true, default-features = false, features = [
+    "runtime-tokio-rustls",
+    "macros"
+] }
+libsqlite3-sys = { version = "0.30", optional = true, features = ["bundled"] }
 
 [target.'cfg(windows)'.dependencies]
 enable-ansi-support = "0.2"
@@ -98,3 +103,7 @@ embed-resource = ["dep:tower-serve-static", "dep:include_dir"]
 external-resource = ["tower-http/fs"]
 mimalloc = ["dep:mimalloc"]
 dhat-heap = ["dep:dhat"]
+db = []
+db-sqlite = ["db", "dep:sqlx", "sqlx/sqlite", "sqlx/any", "dep:libsqlite3-sys"]
+db-postgres = ["db", "dep:sqlx", "sqlx/postgres", "sqlx/any"]
+db-mysql = ["db", "dep:sqlx", "sqlx/mysql", "sqlx/any"]

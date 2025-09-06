@@ -128,7 +128,16 @@ impl Actor for KeyActor {
                 Self::collect(state, key);
             }
             KeyActorMessage::Submit(key) => {
+                let k = key.clone();
                 Self::accept(state, key);
+                #[cfg(feature = "db")]
+                if CLEWDR_CONFIG.load().is_db_mode() {
+                    tokio::spawn(async move {
+                        if let Err(e) = crate::persistence::persist_key_upsert(&k).await {
+                            error!("Failed to upsert key: {}", e);
+                        }
+                    });
+                }
             }
             KeyActorMessage::Request(reply_port) => {
                 let result = Self::dispatch(state);
@@ -139,8 +148,18 @@ impl Actor for KeyActor {
                 reply_port.send(status_info)?;
             }
             KeyActorMessage::Delete(key, reply_port) => {
-                let result = Self::delete(state, key);
+                let result = Self::delete(state, key.clone());
+                let ok = result.is_ok();
                 reply_port.send(result)?;
+                if ok {
+                    if crate::persistence::storage().is_enabled() {
+                        tokio::spawn(async move {
+                            if let Err(e) = crate::persistence::storage().delete_key_row(&key).await {
+                                error!("Failed to delete key row: {}", e);
+                            }
+                        });
+                    }
+                }
             }
         }
         Ok(())

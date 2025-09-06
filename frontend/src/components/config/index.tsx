@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { getConfig, saveConfig } from "../../api";
+import { getConfig, saveConfig, storageImport, storageExport, storageStatus } from "../../api";
 import { toast } from "react-hot-toast";
 import { ConfigData } from "../../types/config.types";
 import Button from "../common/Button";
@@ -16,10 +16,13 @@ const ConfigTab: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [status, setStatus] = useState<any>(null);
 
   // Fetch config on component mount
   useEffect(() => {
     fetchConfig();
+    // fetch storage status once
+    storageStatus().then(setStatus).catch(() => setStatus(null));
   }, []);
 
   const fetchConfig = async () => {
@@ -193,6 +196,68 @@ const ConfigTab: React.FC = () => {
         >
           {saving ? t("config.saving") : t("config.saveButton")}
         </Button>
+      </div>
+
+      <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm text-gray-300">Persistence Mode</div>
+            <div className="text-white font-medium">
+              {config?.persistence?.mode ?? "file"}
+            </div>
+            {status && (
+              <div className="text-xs text-gray-400 mt-1">
+                Health: {status.healthy ? "OK" : "DOWN"}
+                {status.details?.sqlite_path && (
+                  <div>sqlite_path: {status.details.sqlite_path}</div>
+                )}
+                {status.details?.database_url && (
+                  <div>database_url: {status.details.database_url}</div>
+                )}
+                {typeof status.last_write_ts === "number" && status.last_write_ts > 0 && (
+                  <div>
+                    last_write: {new Date(status.last_write_ts * 1000).toLocaleString()}
+                  </div>
+                )}
+                {typeof status.write_error_count === "number" && (
+                  <div>write_errors: {status.write_error_count}</div>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              onClick={async () => {
+                try {
+                  await storageImport();
+                  toast.success("Imported to DB");
+                } catch (e) {
+                  toast.error((e as Error).message);
+                }
+              }}
+              variant="secondary"
+              className="py-1 px-3"
+              disabled={(config?.persistence?.mode ?? "file") === "file"}
+            >
+              Import from file
+            </Button>
+            <Button
+              onClick={async () => {
+                try {
+                  await storageExport();
+                  toast.success("Exported to file");
+                } catch (e) {
+                  toast.error((e as Error).message);
+                }
+              }}
+              variant="secondary"
+              className="py-1 px-3"
+              disabled={(config?.persistence?.mode ?? "file") === "file"}
+            >
+              Export to file
+            </Button>
+          </div>
+        </div>
       </div>
 
       <ConfigForm config={config} onChange={handleChange} />

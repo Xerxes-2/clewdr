@@ -227,3 +227,40 @@ export async function postMultipleCookies(cookies: string[]) {
 
   return results;
 }
+
+// Storage: import/export between file and DB
+export async function storageImport() {
+  const token = localStorage.getItem("authToken") || "";
+  const response = await fetch("/api/storage/import", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Import failed: ${response.status}`);
+  }
+  return await response.json();
+}
+
+export async function storageExport() {
+  const token = localStorage.getItem("authToken") || "";
+  const response = await fetch("/api/storage/export", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Export failed: ${response.status}`);
+  }
+  return await response.json();
+}
+
+export async function storageStatus() {
+  const response = await fetch("/api/storage/status");
+  if (!response.ok) {
+    throw new Error(`Status failed: ${response.status}`);
+  }
+  return await response.json();
+}

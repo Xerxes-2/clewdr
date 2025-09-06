@@ -34,11 +34,22 @@ export interface ConfigData {
   custom_h: string | null;
   custom_a: string | null;
   custom_prompt: string;
+
+  // Persistence
+  persistence?: PersistenceConfig;
 }
 
 interface VertexConfig {
   credential: string | null;
   model_id: string | null;
+}
+
+export type PersistenceMode = "file" | "sqlite" | "postgres";
+
+export interface PersistenceConfig {
+  mode: PersistenceMode;
+  database_url?: string | null;
+  sqlite_path?: string | null;
 }
 
 export interface ConfigState {

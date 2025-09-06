@@ -64,6 +64,7 @@ impl CookieActor {
             config
         });
 
+        // Persist config file/DB config row only（不再全量重写 cookies）
         tokio::spawn(async move {
             let result = CLEWDR_CONFIG.load().save().await;
             match result {
@@ -98,9 +99,16 @@ impl CookieActor {
         if reset_cookies.is_empty() {
             return;
         }
-        state.valid.extend(reset_cookies);
+        // 将重置的 cookies 放回 valid，并进行增量 upsert
+        for c in reset_cookies.into_iter() {
+            state.valid.push_back(c.clone());
+            if crate::persistence::storage().is_enabled() {
+                tokio::spawn(async move {
+                    let _ = crate::persistence::storage().persist_cookie_upsert(&c).await;
+                });
+            }
+        }
         Self::log(state);
-        Self::save(state);
     }
 
     /// Dispatches a cookie for use
@@ -284,10 +292,38 @@ impl Actor for CookieActor {
     ) -> Result<(), ActorProcessingErr> {
         match message {
             CookieActorMessage::Return(cookie, reason) => {
+                let orig = cookie.clone();
+                let r = reason.clone();
                 Self::collect(state, cookie, reason);
+                if crate::persistence::storage().is_enabled() {
+                    tokio::spawn(async move {
+                        match r {
+                            None => {
+                                let _ = crate::persistence::storage().persist_cookie_upsert(&orig).await;
+                            }
+                            Some(Reason::TooManyRequest(ts)) | Some(Reason::Restricted(ts)) => {
+                                let mut c = orig.clone();
+                                c.reset_time = Some(ts);
+                                let _ = crate::persistence::storage().persist_cookie_upsert(&c).await;
+                            }
+                            Some(reason) => {
+                                let u = UselessCookie::new(orig.cookie.clone(), reason);
+                                let _ = crate::persistence::storage().persist_wasted_upsert(&u).await;
+                            }
+                        }
+                    });
+                }
             }
             CookieActorMessage::Submit(cookie) => {
+                let c = cookie.clone();
                 Self::accept(state, cookie);
+                if crate::persistence::storage().is_enabled() {
+                    tokio::spawn(async move {
+                        if let Err(e) = crate::persistence::storage().persist_cookie_upsert(&c).await {
+                            error!("Failed to upsert cookie: {}", e);
+                        }
+                    });
+                }
             }
             CookieActorMessage::CheckReset => {
                 Self::reset(state);
@@ -301,8 +337,18 @@ impl Actor for CookieActor {
                 reply_port.send(status_info)?;
             }
             CookieActorMessage::Delete(cookie, reply_port) => {
-                let result = Self::delete(state, cookie);
+                let result = Self::delete(state, cookie.clone());
+                let ok = result.is_ok();
                 reply_port.send(result)?;
+                if ok {
+                    if crate::persistence::storage().is_enabled() {
+                        tokio::spawn(async move {
+                            if let Err(e) = crate::persistence::storage().delete_cookie_row(&cookie).await {
+                                error!("Failed to delete cookie row: {}", e);
+                            }
+                        });
+                    }
+                }
             }
         }
         Ok(())

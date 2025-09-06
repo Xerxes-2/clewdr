@@ -13,6 +13,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS backend-builder
 ARG TARGETPLATFORM
+ARG DB_FEATURES=""
 # Install musl target and required dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
@@ -49,7 +50,11 @@ cat > ~/.cargo/config.toml <<EOM
 [target.${RUST_TARGET}]
 rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 EOM
-cargo chef cook --release --target ${RUST_TARGET} --no-default-features --features embed-resource,xdg --recipe-path recipe.json
+FEATURES="embed-resource,xdg"
+if [ -n "${DB_FEATURES}" ]; then
+  FEATURES="$FEATURES,${DB_FEATURES}"
+fi
+cargo chef cook --release --target ${RUST_TARGET} --no-default-features --features ${FEATURES} --recipe-path recipe.json
 EOF
 
 # Build application
@@ -69,7 +74,11 @@ case ${TARGETPLATFORM} in \
         ;; \
     *) echo "Unsupported architecture: ${TARGETPLATFORM}" >&2; exit 1 ;; \
 esac
-cargo build --release --target ${RUST_TARGET}  --no-default-features --features embed-resource,xdg --bin clewdr
+FEATURES="embed-resource,xdg"
+if [ -n "${DB_FEATURES}" ]; then
+  FEATURES="$FEATURES,${DB_FEATURES}"
+fi
+cargo build --release --target ${RUST_TARGET}  --no-default-features --features ${FEATURES} --bin clewdr
 upx --best --lzma ./target/${RUST_TARGET}/release/clewdr
 cp ./target/${RUST_TARGET}/release/clewdr /build/clewdr
 mkdir -p /etc/clewdr && cd /etc/clewdr
