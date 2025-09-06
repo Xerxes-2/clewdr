@@ -10,3 +10,4 @@ static/
 /clewdr*.toml
 /cline_docs
 .idea
+.codex

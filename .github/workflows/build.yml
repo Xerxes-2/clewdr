@@ -124,6 +124,8 @@ jobs:
           brew install ${{ env.HOMEBREW_PACKAGES }}
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ steps.target.outputs.triple }}
 
       - name: Download static files
         uses: actions/download-artifact@v4

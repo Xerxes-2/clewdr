@@ -406,6 +406,25 @@ impl CheckClaudeErr for Response {
         if status == 401 {
             return Err(Reason::Null.into());
         }
+        if status == 403 {
+            // Only invalidate cookie when message contains the specific phrase (case-insensitive)
+            let msg = match &err.error.message {
+                serde_json::Value::String(s) => s.clone(),
+                v => v.to_string(),
+            };
+            let msg_lower = msg.to_ascii_lowercase();
+            let phrase = "oauth authentication is currently not allowed for this organization";
+            if msg_lower.contains(phrase) {
+                return Err(ClewdrError::InvalidCookie {
+                    reason: Reason::Forbidden(msg),
+                });
+            } else {
+                return Err(ClewdrError::ClaudeHttpError {
+                    code: status,
+                    inner: err.error,
+                });
+            }
+        }
         let inner_error = err.error;
         // check if the error is a rate limit error
         if status == 429 {
