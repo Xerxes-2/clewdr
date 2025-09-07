@@ -72,7 +72,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push by digest
+      - name: Build and push by digest (slim)
         id: build
         uses: docker/build-push-action@v6
         with:
@@ -92,13 +92,72 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ matrix.arch }}
+          name: digests-slim-${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
           retention-days: 1
 
+  build-db:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest (db)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ needs.prepare.outputs.labels }}
+          build-args: |
+            DB_FEATURES=db-sqlite,db-postgres,db-mysql
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+          cache-from: type=gha,scope=${{ matrix.platform }}-db
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}-db
+
+      - name: Export digest
+        run: |
+          mkdir -p ${{ runner.temp }}/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-db-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+
   merge:
-    needs: [prepare, build]
+    needs: [prepare, build, build-db]
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request'
     permissions:
@@ -112,18 +171,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download digests
+      - name: Download digests (slim)
         uses: actions/download-artifact@v4
         with:
           path: ${{ runner.temp }}/digests
-          pattern: digests-*
+          pattern: digests-slim-*
           merge-multiple: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Docker meta
-        id: meta
+      - name: Docker meta (slim)
+        id: meta_slim
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}
@@ -134,12 +193,49 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},event=tag
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
-      - name: Create manifest list and push
+      - name: Create manifest list and push (slim)
         working-directory: ${{ runner.temp }}/digests
         run: |
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}@sha256:%s ' *)
 
-      - name: Inspect image
+      - name: Inspect image (slim)
         run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:${{ steps.meta.outputs.version }}
+          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:${{ steps.meta_slim.outputs.version }}
+
+      - name: Cleanup slim digests
+        run: rm -rf ${{ runner.temp }}/digests/*
+
+      - name: Download digests (db)
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-db-*
+          merge-multiple: true
+
+      - name: Docker meta (db)
+        id: meta_db
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}},event=tag
+            type=semver,pattern={{major}}.{{minor}},event=tag
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+          flavor: |
+            suffix=-db
+
+      - name: Create manifest list and push (db)
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}@sha256:%s ' *)
+
+      - name: Inspect image (db)
+        run: |
+          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:${{ steps.meta_db.outputs.version }}-db
+
+      - name: Cleanup db digests
+        run: rm -rf ${{ runner.temp }}/digests/*

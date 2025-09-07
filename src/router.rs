@@ -45,6 +45,77 @@ impl RouterBuilder {
             .await
             .expect("Failed to start KeyActorHandle");
         let gemini_state = GeminiState::new(key_tx.to_owned());
+        // Background DB sync (keys/cookies) for multi-instance eventual consistency
+        if crate::persistence::storage().is_enabled() {
+            let k = key_tx.clone();
+            tokio::spawn(async move {
+                use std::collections::HashSet;
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+                loop {
+                    interval.tick().await;
+                    // Sync keys (add missing, remove extra)
+                    if let Ok(db_keys) = crate::persistence::load_all_keys().await {
+                        if let Ok(cur) = k.get_status().await {
+                            let db_set: HashSet<_> = db_keys.iter().cloned().collect();
+                            let cur_set: HashSet<_> = cur.valid.iter().cloned().collect();
+                            // Add missing
+                            for x in db_set.difference(&cur_set) {
+                                let _ = k.submit(x.clone()).await;
+                            }
+                            // Remove extras
+                            for x in cur_set.difference(&db_set) {
+                                let _ = k.delete_key(x.clone()).await;
+                            }
+                        }
+                    }
+                }
+            });
+            // Cookie conservative sync: only add missing or reclassify to exhausted/invalid; never hard-delete
+            let c_handle = cookie_handle.clone();
+            tokio::spawn(async move {
+                use std::collections::HashSet;
+                use crate::config::{CookieStatus, Reason};
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(45));
+                loop {
+                    interval.tick().await;
+                    let Ok((db_valid, db_exhausted, db_invalid)) = crate::persistence::load_all_cookies().await else { continue };
+                    // Snapshot current actor state
+                    let Ok(cur) = c_handle.get_status().await else { continue };
+                    let cur_valid: HashSet<_> = cur.valid.iter().map(|x| x.cookie.to_string()).collect();
+                    let cur_exh: HashSet<_> = cur.exhausted.iter().map(|x| x.cookie.to_string()).collect();
+                    let cur_inv: HashSet<_> = cur.invalid.iter().map(|x| x.cookie.to_string()).collect();
+
+                    // Add missing valid cookies
+                    for v in db_valid.iter() {
+                        let key = v.cookie.to_string();
+                        if !(cur_valid.contains(&key) || cur_exh.contains(&key) || cur_inv.contains(&key)) {
+                            let _ = c_handle.submit(v.clone()).await;
+                        }
+                    }
+
+                    // Reclassify exhausted not present as exhausted in actor
+                    for e in db_exhausted.iter() {
+                        let key = e.cookie.to_string();
+                        if !cur_exh.contains(&key) {
+                            // Move to exhausted with reset time if any
+                            let ts = e.reset_time.unwrap_or(chrono::Utc::now().timestamp() + 3600);
+                            let mut tmp: CookieStatus = e.clone();
+                            tmp.reset_time = Some(ts);
+                            let _ = c_handle.return_cookie(tmp, Some(Reason::TooManyRequest(ts))).await;
+                        }
+                    }
+
+                    // Reclassify invalid not present as invalid in actor
+                    for u in db_invalid.iter() {
+                        let key = u.cookie.to_string();
+                        if !cur_inv.contains(&key) {
+                            let tmp = CookieStatus { cookie: u.cookie.clone(), token: None, reset_time: None };
+                            let _ = c_handle.return_cookie(tmp, Some(u.reason.clone())).await;
+                        }
+                    }
+                }
+            });
+        }
         RouterBuilder {
             claude_web_state,
             claude_code_state,
