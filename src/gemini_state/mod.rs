@@ -73,13 +73,16 @@ pub struct GeminiState {
     pub stream: bool,
     pub query: GeminiArgs,
     pub key_handle: KeyActorHandle,
+    pub cli_handle: crate::services::cli_token_actor::CliTokenActorHandle,
     pub api_format: GeminiApiFormat,
     pub client: Client,
+    pub cli_mode: bool,
+    pub auth_bearer: Option<String>,
 }
 
 impl GeminiState {
     /// Create a new AppState instance
-    pub fn new(tx: KeyActorHandle) -> Self {
+    pub fn new(tx: KeyActorHandle, cli: crate::services::cli_token_actor::CliTokenActorHandle) -> Self {
         GeminiState {
             model: String::new(),
             vertex: false,
@@ -88,8 +91,11 @@ impl GeminiState {
             stream: false,
             key: None,
             key_handle: tx,
+            cli_handle: cli,
             api_format: GeminiApiFormat::Gemini,
             client: DUMMY_CLIENT.to_owned(),
+            cli_mode: false,
+            auth_bearer: None,
         }
     }
 
@@ -123,6 +129,8 @@ impl GeminiState {
         self.model = ctx.model.to_owned();
         self.vertex = ctx.vertex.to_owned();
         self.api_format = ctx.api_format.to_owned();
+        self.cli_mode = ctx.cli_mode;
+        self.auth_bearer = ctx.auth_bearer.to_owned();
     }
 
     async fn vertex_response(
@@ -200,38 +208,115 @@ impl GeminiState {
             let res = self.vertex_response(p).await?;
             return Ok(res);
         }
-        self.request_key().await?;
-        let Some(key) = self.key.to_owned() else {
-            return Err(ClewdrError::UnexpectedNone {
-                msg: "Key is None, did you request a key?",
-            });
-        };
-        info!("[KEY] {}", key.key.ellipse().green());
-        let key = key.key.to_string();
-        let res = match self.api_format {
-            GeminiApiFormat::Gemini => {
-                let mut query_vec = self.query.to_vec();
-                query_vec.push(("key", key.as_str()));
-                self.client
-                    .post(format!("{}/v1beta/{}", GEMINI_ENDPOINT, self.path))
-                    .query(&query_vec)
+        // If CLI mode and a user bearer exists, or saved CLI tokens exist, prefer OAuth bearer
+        let res = if self.cli_mode {
+            if !(self.auth_bearer.is_some() || !CLEWDR_CONFIG.load().cli_tokens.is_empty()) {
+                return Err(ClewdrError::BadRequest { msg: "CLI requires OAuth credentials (Bearer or saved CLI token)" });
+            }
+            // Use user OAuth (ya29...) to call Code Assist endpoint like gcli2api
+            // 1) obtain token (with optional refresh)
+            let (token, project_id) = {
+                if let Some(b) = self.auth_bearer.to_owned() {
+                    (b, CLEWDR_CONFIG.load().vertex.model_id.to_owned()) // project_id may be missing when bearer is provided directly
+                } else {
+                    let mut t = self.cli_handle.request().await?;
+                    let mut result_token = t.token.to_string();
+                    if let Some(exp) = t.expiry {
+                        let now = chrono::Utc::now();
+                        let near = exp - chrono::Duration::seconds(300);
+                        if now >= near {
+                            if let Some(meta) = t.meta.clone() {
+                                if let (Some(client_id), Some(client_secret), Some(refresh_token), Some(token_uri)) = (meta.client_id, meta.client_secret, meta.refresh_token, meta.token_uri) {
+                                    let form = [
+                                        ("grant_type", "refresh_token"),
+                                        ("client_id", client_id.as_str()),
+                                        ("client_secret", client_secret.as_str()),
+                                        ("refresh_token", refresh_token.as_str()),
+                                    ];
+                                    let resp = self.client
+                                        .post(token_uri)
+                                        .form(&form)
+                                        .send()
+                                        .await
+                                        .context(WreqSnafu { msg: "Failed to refresh CLI OAuth token" })?;
+                                    let v: serde_json::Value = resp.json().await.context(WreqSnafu { msg: "Failed to parse refreshed token" })?;
+                                    if let Some(acc) = v.get("access_token").and_then(|x| x.as_str()) {
+                                        result_token = acc.to_string();
+                                        t.token = result_token.clone().into();
+                                        if let Some(ei) = v.get("expires_in").and_then(|x| x.as_i64()) {
+                                            t.expiry = Some(chrono::Utc::now() + chrono::Duration::seconds(ei));
+                                        }
+                                        let _ = self.cli_handle.return_token(t.clone()).await;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    let project = t.meta.as_ref().and_then(|m| m.project_id.clone());
+                    info!("[CLI TOKEN] {}", result_token.chars().take(10).collect::<String>());
+                    (result_token, project)
+                }
+            };
+            let bearer = format!("Bearer {}", token);
+            match self.api_format {
+                GeminiApiFormat::Gemini => {
+                    // Build Code Assist payload: { model, project, request }
+                    let method = if self.stream { "v1internal:streamGenerateContent" } else { "v1internal:generateContent" };
+                    let mut endpoint = format!("https://cloudcode-pa.googleapis.com/{method}");
+                    if self.stream { endpoint.push_str("?alt=sse"); }
+                    let payload = serde_json::json!({
+                        "model": self.model,
+                        "project": project_id.unwrap_or_default(),
+                        "request": p,
+                    });
+                    self.client
+                        .post(endpoint)
+                        .header(AUTHORIZATION, bearer)
+                        .json(&payload)
+                        .send()
+                        .await
+                        .context(WreqSnafu { msg: "Failed to send request to Code Assist API (CLI bearer)" })?
+                }
+                GeminiApiFormat::OpenAI => {
+                    // Keep OAI path to generativelanguage OpenAI endpoint with bearer
+                    self.client
+                        .post(format!("{GEMINI_ENDPOINT}/v1beta/openai/chat/completions"))
+                        .header(AUTHORIZATION, bearer)
+                        .json(&p)
+                        .send()
+                        .await
+                        .context(WreqSnafu { msg: "Failed to send request to Gemini OpenAI API (CLI bearer)" })?
+                }
+            }
+        } else {
+            // Default: use API key pool
+            self.request_key().await?;
+            let Some(key) = self.key.to_owned() else {
+                return Err(ClewdrError::UnexpectedNone { msg: "Key is None, did you request a key?" });
+            };
+            info!("[KEY] {}", key.key.ellipse().green());
+            let key = key.key.to_string();
+            match self.api_format {
+                GeminiApiFormat::Gemini => {
+                    let mut query_vec = self.query.to_vec();
+                    query_vec.push(("key", key.as_str()));
+                    self.client
+                        .post(format!("{}/v1beta/{}", GEMINI_ENDPOINT, self.path))
+                        .query(&query_vec)
+                        .json(&p)
+                        .send()
+                        .await
+                        .context(WreqSnafu { msg: "Failed to send request to Gemini API" })?
+                }
+                GeminiApiFormat::OpenAI => self
+                    .client
+                    .post(format!("{GEMINI_ENDPOINT}/v1beta/openai/chat/completions",))
+                    .header(AUTHORIZATION, format!("Bearer {key}"))
                     .json(&p)
                     .send()
                     .await
-                    .context(WreqSnafu {
-                        msg: "Failed to send request to Gemini API",
-                    })?
+                    .context(WreqSnafu { msg: "Failed to send request to Gemini OpenAI API" })?,
             }
-            GeminiApiFormat::OpenAI => self
-                .client
-                .post(format!("{GEMINI_ENDPOINT}/v1beta/openai/chat/completions",))
-                .header(AUTHORIZATION, format!("Bearer {key}"))
-                .json(&p)
-                .send()
-                .await
-                .context(WreqSnafu {
-                    msg: "Failed to send request to Gemini OpenAI API",
-                })?,
         };
         let res = res.check_gemini().await?;
         Ok(res)
@@ -286,7 +371,7 @@ impl GeminiState {
     }
 
     async fn check_empty_choices(&self, resp: wreq::Response) -> Result<Response, ClewdrError> {
-        if self.stream {
+        if self.stream || self.cli_mode {
             return forward_response(resp);
         }
         let bytes = resp.bytes().await.context(WreqSnafu {

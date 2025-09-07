@@ -86,6 +86,60 @@ export async function getCookieStatus() {
   return await response.json();
 }
 
+// --- CLI Tokens management (admin) ---
+export async function postCliToken(token: string) {
+  const admin = localStorage.getItem("authToken") || "";
+  const body = { token };
+  const response = await fetch("/api/cli_token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${admin}`,
+    },
+    body: JSON.stringify(body),
+  });
+  return response;
+}
+
+export async function postCliTokenJson(rawJson: string) {
+  const admin = localStorage.getItem("authToken") || "";
+  const response = await fetch("/api/cli_token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${admin}`,
+    },
+    body: rawJson,
+  });
+  return response;
+}
+
+export async function getCliTokens() {
+  const admin = localStorage.getItem("authToken") || "";
+  const response = await fetch("/api/cli_tokens", {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${admin}`,
+    },
+  });
+  if (!response.ok) throw new Error("Failed to fetch CLI tokens");
+  return await response.json();
+}
+
+export async function deleteCliToken(token: string) {
+  const admin = localStorage.getItem("authToken") || "";
+  const response = await fetch("/api/cli_token", {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${admin}`,
+    },
+    body: JSON.stringify({ token }),
+  });
+  return response;
+}
+
 /**
  * Deletes a cookie from the server.
  * @param cookie The cookie string to delete

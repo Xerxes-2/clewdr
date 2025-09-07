@@ -3,10 +3,10 @@ use axum::{Router, routing::{get, post, delete}, middleware::from_extractor};
 use crate::{
     api::*,
     middleware::RequireAdminAuth,
-    services::{cookie_actor::CookieActorHandle, key_actor::KeyActorHandle},
+    services::{cookie_actor::CookieActorHandle, key_actor::KeyActorHandle, cli_token_actor::CliTokenActorHandle},
 };
 
-pub fn build_admin_router(cookie_handle: CookieActorHandle, key_handle: KeyActorHandle) -> Router {
+pub fn build_admin_router(cookie_handle: CookieActorHandle, key_handle: KeyActorHandle, cli_handle: CliTokenActorHandle) -> Router {
     let cookie_router = Router::new()
         .route("/cookies", get(api_get_cookies))
         .route("/cookie", delete(api_delete_cookie).post(api_post_cookie))
@@ -15,6 +15,10 @@ pub fn build_admin_router(cookie_handle: CookieActorHandle, key_handle: KeyActor
         .route("/key", post(api_post_key).delete(api_delete_key))
         .route("/keys", get(api_get_keys))
         .with_state(key_handle);
+    let cli_router = Router::new()
+        .route("/cli_token", post(api_post_cli_token).delete(api_delete_cli_token))
+        .route("/cli_tokens", get(api_get_cli_tokens))
+        .with_state(cli_handle);
     let admin_router = Router::new()
         .route("/auth", get(api_auth))
         .route("/config", get(api_get_config).put(api_post_config))
@@ -26,9 +30,9 @@ pub fn build_admin_router(cookie_handle: CookieActorHandle, key_handle: KeyActor
             "/api",
             cookie_router
                 .merge(key_router)
+                .merge(cli_router)
                 .merge(admin_router)
                 .layer(from_extractor::<RequireAdminAuth>()),
         )
         .route("/api/version", get(api_version))
 }
-

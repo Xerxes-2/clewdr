@@ -48,6 +48,103 @@ where
     }
 }
 
+/// Middleware guard supporting flexible auth for Gemini native endpoints
+///
+/// Accepts any of the following as a valid user credential:
+/// - Query parameter `key`
+/// - Header `x-goog-api-key`
+/// - Header `Authorization: Bearer <token>`
+///
+/// The extracted value is validated via `CLEWDR_CONFIG.user_auth`.
+pub struct RequireGeminiFlexibleAuth;
+impl<S> FromRequestParts<S> for RequireGeminiFlexibleAuth
+where
+    S: Sync,
+{
+    type Rejection = ClewdrError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _: &S,
+    ) -> Result<Self, Self::Rejection> {
+        // 1) Try query param `key` via GeminiArgs extractor
+        if let Ok(args) = GeminiArgs::from_request_parts(parts, &()).await {
+            if !args.key.is_empty() && CLEWDR_CONFIG.load().user_auth(&args.key) {
+                return Ok(Self);
+            }
+        }
+
+        // 2) Try header `x-goog-api-key`
+        if let Some(v) = parts
+            .headers
+            .get("x-goog-api-key")
+            .and_then(|v| v.to_str().ok())
+        {
+            if CLEWDR_CONFIG.load().user_auth(v) {
+                return Ok(Self);
+            }
+        }
+
+        // 3) Try Bearer token
+        if let Ok(AuthBearer(token)) = AuthBearer::from_request_parts(parts, &()).await {
+            if CLEWDR_CONFIG.load().user_auth(&token) {
+                return Ok(Self);
+            }
+        }
+
+        warn!("Invalid Gemini flexible auth");
+        Err(ClewdrError::InvalidAuth)
+    }
+}
+
+/// Middleware for Gemini CLI routes: accept either app password (via `key` or `x-goog-api-key`)
+/// or an OAuth `Authorization: Bearer <ya29...>` token used by the official CLI.
+pub struct RequireGeminiCliAuth;
+impl<S> FromRequestParts<S> for RequireGeminiCliAuth
+where
+    S: Sync,
+{
+    type Rejection = ClewdrError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _: &S,
+    ) -> Result<Self, Self::Rejection> {
+        // Require app password (like other endpoints). OAuth bearer alone is not sufficient.
+        // 1) Query param `key`
+        if let Ok(args) = GeminiArgs::from_request_parts(parts, &()).await {
+            if !args.key.is_empty() && CLEWDR_CONFIG.load().user_auth(&args.key) {
+                return Ok(Self);
+            }
+        }
+
+        // 2) Header `x-goog-api-key`
+        if let Some(v) = parts
+            .headers
+            .get("x-goog-api-key")
+            .and_then(|v| v.to_str().ok())
+        {
+            if CLEWDR_CONFIG.load().user_auth(v) {
+                return Ok(Self);
+            }
+        }
+
+        // 3) Authorization: Bearer <api_password>
+        if let Some(v) = parts.headers.get(axum::http::header::AUTHORIZATION) {
+            if let Ok(vs) = v.to_str() {
+                if let Some(token) = vs.strip_prefix("Bearer ") {
+                    if CLEWDR_CONFIG.load().user_auth(token) {
+                        return Ok(Self);
+                    }
+                }
+            }
+        }
+
+        warn!("Invalid CLI auth: API password required");
+        Err(ClewdrError::InvalidAuth)
+    }
+}
+
 /// Middleware guard that ensures requests have valid admin authentication
 ///
 /// This extractor checks for a valid admin authorization token in the Bearer Auth header.
