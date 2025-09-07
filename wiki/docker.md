@@ -65,4 +65,3 @@ docker run -p 8484:8484 \
 - Nested env keys use double underscores (e.g. `CLEWDR_PERSISTENCE__MODE`).
 - On first start, the DB user must have DDL permission to create tables and indexes.
 - For SQLite, mount a volume on `/etc/clewdr`.
-

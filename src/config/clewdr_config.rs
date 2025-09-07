@@ -66,6 +66,7 @@ pub enum PersistenceMode {
     File,
     Sqlite,
     Postgres,
+    Mysql,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -76,6 +77,7 @@ pub struct PersistenceConfig {
     /// Preferred database URL. Examples:
     /// - sqlite:///etc/clewdr/clewdr.db
     /// - postgres://user:pass@host:5432/db
+    /// - mysql://user:pass@host:3306/db
     #[serde(default)]
     pub database_url: Option<String>,
     /// Shortcut for sqlite path when database_url is not provided
@@ -292,6 +294,15 @@ impl Display for ClewdrConfig {
                     .unwrap_or("env: CLEWDR_DATABASE_URL")
                     .blue()
             )?,
+            PersistenceMode::Mysql => writeln!(
+                f,
+                "Persistence: mysql ({})",
+                self.persistence
+                    .database_url
+                    .as_deref()
+                    .unwrap_or("env: CLEWDR_DATABASE_URL")
+                    .blue()
+            )?,
         }
         Ok(())
     }
@@ -301,7 +312,7 @@ impl ClewdrConfig {
     pub fn is_db_mode(&self) -> bool {
         matches!(
             self.persistence.mode,
-            PersistenceMode::Sqlite | PersistenceMode::Postgres
+            PersistenceMode::Sqlite | PersistenceMode::Postgres | PersistenceMode::Mysql
         )
     }
 
@@ -319,6 +330,7 @@ impl ClewdrConfig {
                 Some("sqlite:///etc/clewdr/clewdr.db?mode=rwc".to_string())
             }
             PersistenceMode::Postgres => None,
+            PersistenceMode::Mysql => None,
             PersistenceMode::File => None,
         }
     }

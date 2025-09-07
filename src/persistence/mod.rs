@@ -84,6 +84,7 @@ pub use internal::persist_key_upsert;
 #[cfg(not(feature = "db"))]
 mod internal {
     use super::*;
+    #[allow(dead_code)]
     pub async fn bootstrap_from_db_if_enabled() -> Result<(), ClewdrError> { Ok(()) }
 
     // Stubs for read helpers when DB disabled

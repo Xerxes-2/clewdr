@@ -31,7 +31,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ steps.downcase.outputs.image_name }}
+          images: ${{ env.REGISTRY }}/${{ steps.downcase.outputs.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -201,7 +201,10 @@ jobs:
 
       - name: Inspect image (slim)
         run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:${{ steps.meta_slim.outputs.version }}
+          # Inspect one of the published tags from metadata JSON (fully-qualified)
+          TAG=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          echo "Inspecting slim image: $TAG"
+          docker buildx imagetools inspect "$TAG"
 
       - name: Cleanup slim digests
         run: rm -rf ${{ runner.temp }}/digests/*
@@ -235,7 +238,11 @@ jobs:
 
       - name: Inspect image (db)
         run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}:${{ steps.meta_db.outputs.version }}-db
+          # Inspect one of the published DB tags from metadata JSON (fully-qualified)
+          # All tags in this metadata set include the -db suffix via flavor
+          TAG=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          echo "Inspecting db image: $TAG"
+          docker buildx imagetools inspect "$TAG"
 
       - name: Cleanup db digests
         run: rm -rf ${{ runner.temp }}/digests/*
