@@ -126,7 +126,7 @@ mod internal {
         #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
         #[sea_orm(table_name = "clewdr_config")]
         pub struct Model {
-            #[sea_orm(primary_key)]
+            #[sea_orm(primary_key, auto_increment = false)]
             pub k: String,
             pub data: String,
             #[sea_orm(column_type = "BigInteger", nullable)]
@@ -142,7 +142,7 @@ mod internal {
         #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
         #[sea_orm(table_name = "cookies")]
         pub struct Model {
-            #[sea_orm(primary_key)]
+            #[sea_orm(primary_key, auto_increment = false)]
             pub cookie: String,
             #[sea_orm(column_type = "BigInteger", nullable)]
             pub reset_time: Option<i64>,
@@ -167,7 +167,7 @@ mod internal {
         #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
         #[sea_orm(table_name = "wasted_cookies")]
         pub struct Model {
-            #[sea_orm(primary_key)]
+            #[sea_orm(primary_key, auto_increment = false)]
             pub cookie: String,
             pub reason: String,
         }
@@ -181,7 +181,7 @@ mod internal {
         #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
         #[sea_orm(table_name = "keys")]
         pub struct Model {
-            #[sea_orm(primary_key)]
+            #[sea_orm(primary_key, auto_increment = false)]
             pub key: String,
             pub count_403: i64,
         }
