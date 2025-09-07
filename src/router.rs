@@ -1,22 +1,19 @@
-use axum::{
-    Router,
-    http::Method,
-    middleware::{from_extractor, map_response},
-    routing::{delete, get, post},
-};
-use tower::ServiceBuilder;
-use tower_http::{compression::CompressionLayer, cors::CorsLayer};
+use axum::{Router, http::Method};
+use tower_http::cors::CorsLayer;
 
 use crate::{
-    api::*,
     claude_code_state::ClaudeCodeState,
     claude_web_state::ClaudeWebState,
     gemini_state::GeminiState,
-    middleware::{
-        RequireAdminAuth, RequireBearerAuth, RequireQueryKeyAuth, RequireXApiKeyAuth,
-        claude::{add_usage_info, apply_stop_sequences, check_overloaded, to_oai},
-    },
     services::{cookie_actor::CookieActorHandle, key_actor::KeyActorHandle},
+};
+use crate::routes::{
+    build_admin_router,
+    build_claude_code_oai_router,
+    build_claude_code_router,
+    build_claude_web_oai_router,
+    build_claude_web_router,
+    build_gemini_router,
 };
 
 /// RouterBuilder for the application
@@ -144,99 +141,4 @@ impl RouterBuilder {
     }
 }
 
-// =========== Helper builders (domain routers) ===========
-
-fn build_gemini_router(state: GeminiState) -> Router {
-    let router_gemini = Router::new()
-        .route("/v1/v1beta/{*path}", post(api_post_gemini))
-        .route("/v1/vertex/v1beta/{*path}", post(api_post_gemini))
-        .layer(from_extractor::<RequireQueryKeyAuth>())
-        .layer(CompressionLayer::new())
-        .with_state(state.to_owned());
-    let router_oai = Router::new()
-        .route("/gemini/chat/completions", post(api_post_gemini_oai))
-        .route("/gemini/vertex/chat/completions", post(api_post_gemini_oai))
-        .layer(from_extractor::<RequireBearerAuth>())
-        .layer(CompressionLayer::new())
-        .with_state(state);
-    router_gemini.merge(router_oai)
-}
-
-fn build_claude_web_router(state: ClaudeWebState) -> Router {
-    Router::new()
-        .route("/v1/messages", post(api_claude_web))
-        .layer(
-            ServiceBuilder::new()
-                .layer(from_extractor::<RequireXApiKeyAuth>())
-                .layer(CompressionLayer::new())
-                .layer(map_response(add_usage_info))
-                .layer(map_response(apply_stop_sequences))
-                .layer(map_response(check_overloaded)),
-        )
-        .with_state(state)
-}
-
-fn build_claude_code_router(state: ClaudeCodeState) -> Router {
-    Router::new()
-        .route("/code/v1/messages", post(api_claude_code))
-        .layer(
-            ServiceBuilder::new()
-                .layer(from_extractor::<RequireXApiKeyAuth>())
-                .layer(CompressionLayer::new()),
-        )
-        .with_state(state)
-}
-
-fn build_claude_web_oai_router(state: ClaudeWebState) -> Router {
-    Router::new()
-        .route("/v1/chat/completions", post(api_claude_web))
-        .route("/v1/models", get(api_get_models))
-        .layer(
-            ServiceBuilder::new()
-                .layer(from_extractor::<RequireBearerAuth>())
-                .layer(CompressionLayer::new())
-                .layer(map_response(to_oai))
-                .layer(map_response(apply_stop_sequences))
-                .layer(map_response(check_overloaded)),
-        )
-        .with_state(state)
-}
-
-fn build_claude_code_oai_router(state: ClaudeCodeState) -> Router {
-    Router::new()
-        .route("/code/v1/chat/completions", post(api_claude_code))
-        .route("/code/v1/models", get(api_get_models))
-        .layer(
-            ServiceBuilder::new()
-                .layer(from_extractor::<RequireBearerAuth>())
-                .layer(CompressionLayer::new())
-                .layer(map_response(to_oai)),
-        )
-        .with_state(state)
-}
-
-fn build_admin_router(cookie_handle: CookieActorHandle, key_handle: KeyActorHandle) -> Router {
-    let cookie_router = Router::new()
-        .route("/cookies", get(api_get_cookies))
-        .route("/cookie", delete(api_delete_cookie).post(api_post_cookie))
-        .with_state(cookie_handle);
-    let key_router = Router::new()
-        .route("/key", post(api_post_key).delete(api_delete_key))
-        .route("/keys", get(api_get_keys))
-        .with_state(key_handle);
-    let admin_router = Router::new()
-        .route("/auth", get(api_auth))
-        .route("/config", get(api_get_config).put(api_post_config))
-        .route("/storage/import", post(api_storage_import))
-        .route("/storage/export", post(api_storage_export))
-        .route("/storage/status", get(api_storage_status));
-    Router::new()
-        .nest(
-            "/api",
-            cookie_router
-                .merge(key_router)
-                .merge(admin_router)
-                .layer(from_extractor::<RequireAdminAuth>()),
-        )
-        .route("/api/version", get(api_version))
-}
+// helper builders moved to crate::routes

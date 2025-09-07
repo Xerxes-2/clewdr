@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 
-use tracing::warn;
 
 use crate::{
     config::{CookieStatus, Reason},
@@ -81,4 +80,3 @@ pub fn spawn(cookie_handle: CookieActorHandle, key_handle: KeyActorHandle) -> Op
 
     Some(handles)
 }
-
