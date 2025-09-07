@@ -258,7 +258,12 @@ export async function storageExport() {
 }
 
 export async function storageStatus() {
-  const response = await fetch("/api/storage/status");
+  const token = localStorage.getItem("authToken") || "";
+  const response = await fetch("/api/storage/status", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
   if (!response.ok) {
     throw new Error(`Status failed: ${response.status}`);
   }

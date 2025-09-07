@@ -208,6 +208,12 @@ const ConfigTab: React.FC = () => {
             {status && (
               <div className="text-xs text-gray-400 mt-1">
                 Health: {status.healthy ? "OK" : "DOWN"}
+                {status.details?.driver && (
+                  <div>driver: {status.details.driver}</div>
+                )}
+                {typeof status.details?.latency_ms === "number" && (
+                  <div>latency_ms: {status.details.latency_ms}</div>
+                )}
                 {status.details?.sqlite_path && (
                   <div>sqlite_path: {status.details.sqlite_path}</div>
                 )}
@@ -219,9 +225,23 @@ const ConfigTab: React.FC = () => {
                     last_write: {new Date(status.last_write_ts * 1000).toLocaleString()}
                   </div>
                 )}
+                {typeof status.total_writes === "number" && (
+                  <div>total_writes: {status.total_writes}</div>
+                )}
+                {typeof status.avg_write_ms === "number" && (
+                  <div>avg_write_ms: {status.avg_write_ms.toFixed(2)}</div>
+                )}
+                {typeof status.failure_ratio === "number" && (
+                  <div>failure_ratio: {(status.failure_ratio * 100).toFixed(2)}%</div>
+                )}
+                {typeof status.retry_count === "number" && (
+                  <div>retry_count: {status.retry_count}</div>
+                )}
                 {typeof status.write_error_count === "number" && (
                   <div>write_errors: {status.write_error_count}</div>
                 )}
+                {status.error && <div>error: {status.error}</div>}
+                {status.last_error && <div>last_error: {status.last_error}</div>}
               </div>
             )}
           </div>

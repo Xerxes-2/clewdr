@@ -343,8 +343,10 @@ impl ClewdrConfig {
     /// # Returns
     /// * Config instance
     pub fn new() -> Self {
+        // Load config from TOML then override with environment variables.
+        // Use double underscore "__" to map nested keys, e.g. CLEWDR_PERSISTENCE__MODE=postgres
         let mut config: ClewdrConfig = Figment::from(Toml::file(CONFIG_PATH.as_path()))
-            .admerge(Env::prefixed("CLEWDR_"))
+            .admerge(Env::prefixed("CLEWDR_").split("__"))
             .extract_lossy()
             .inspect_err(|e| {
                 error!("Failed to load config: {}", e);

@@ -55,13 +55,13 @@ where
 ///
 /// # Example
 ///
-/// ```
-/// async fn admin_only_handler(
-///     _: RequireAdminAuth,
-///     // other extractors...
-/// ) -> impl IntoResponse {
+/// ```no_run
+/// use axum::response::IntoResponse;
+/// use clewdr::middleware::RequireAdminAuth;
+///
+/// async fn admin_only_handler(_: RequireAdminAuth) -> impl IntoResponse {
 ///     // This handler only executes if admin authentication succeeds
-///     // ...
+///     axum::http::StatusCode::OK
 /// }
 /// ```
 pub struct RequireAdminAuth;
@@ -92,13 +92,13 @@ where
 ///
 /// # Example
 ///
-/// ```
-/// async fn openai_handler(
-///     _: RequireOaiAuth,
-///     // other extractors...
-/// ) -> impl IntoResponse {
+/// ```no_run
+/// use axum::response::IntoResponse;
+/// use clewdr::middleware::RequireBearerAuth;
+///
+/// async fn openai_handler(_: RequireBearerAuth) -> impl IntoResponse {
 ///     // This handler only executes if OpenAI authentication succeeds
-///     // ...
+///     axum::http::StatusCode::OK
 /// }
 /// ```
 pub struct RequireBearerAuth;

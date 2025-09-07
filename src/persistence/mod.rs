@@ -171,7 +171,8 @@ mod internal {
     use super::*;
     use crate::config::{CLEWDR_CONFIG};
     use sqlx::{AnyPool};
-    use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+    use std::sync::{atomic::{AtomicI64, AtomicU64, Ordering}, Mutex};
+    use std::time::Instant;
 
     static POOL: LazyLock<std::sync::Mutex<Option<AnyPool>>> = LazyLock::new(|| std::sync::Mutex::new(None));
 
@@ -462,6 +463,16 @@ mod internal {
                    token_expires_at=VALUES(token_expires_at),
                    token_expires_in=VALUES(token_expires_in),
                    token_org_uuid=VALUES(token_org_uuid)",
+            DbKind::Postgres =>
+                "INSERT INTO cookies(cookie, reset_time, token_access, token_refresh, token_expires_at, token_expires_in, token_org_uuid)
+                 VALUES($1, $2, $3, $4, $5, $6, $7)
+                 ON CONFLICT(cookie) DO UPDATE SET
+                   reset_time=excluded.reset_time,
+                   token_access=excluded.token_access,
+                   token_refresh=excluded.token_refresh,
+                   token_expires_at=excluded.token_expires_at,
+                   token_expires_in=excluded.token_expires_in,
+                   token_org_uuid=excluded.token_org_uuid",
             _ =>
                 "INSERT INTO cookies(cookie, reset_time, token_access, token_refresh, token_expires_at, token_expires_in, token_org_uuid)
                  VALUES(?, ?, ?, ?, ?, ?, ?)
@@ -473,21 +484,43 @@ mod internal {
                    token_expires_in=excluded.token_expires_in,
                    token_org_uuid=excluded.token_org_uuid",
         };
-        sqlx::query(sql)
-        .bind(c.cookie.to_string())
-        .bind(c.reset_time)
-        .bind(acc)
-        .bind(rtk)
-        .bind(exp_at)
-        .bind(exp_in)
-        .bind(org)
-        .execute(&pool)
-        .await
-        .map_err(|e| { mark_write_err(); ClewdrError::Whatever { message: "upsert_cookie".into(), source: Some(Box::new(e)) } })?;
+        // build and execute with retry below
+        let start = Instant::now();
+        let mut res = sqlx::query::<sqlx::Any>(sql)
+            .bind(c.cookie.to_string())
+            .bind(c.reset_time)
+            .bind(acc.clone())
+            .bind(rtk.clone())
+            .bind(exp_at.clone())
+            .bind(exp_in.clone())
+            .bind(org.clone())
+            .execute(&pool)
+            .await;
+        if res.is_err() {
+            RETRY_COUNT.fetch_add(1, Ordering::Relaxed);
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            res = sqlx::query::<sqlx::Any>(sql)
+                .bind(c.cookie.to_string())
+                .bind(c.reset_time)
+                .bind(acc)
+                .bind(rtk)
+                .bind(exp_at)
+                .bind(exp_in)
+                .bind(org)
+                .execute(&pool)
+                .await;
+        }
+        if let Err(e) = res {
+            record_error_msg(&e);
+            mark_write_err();
+            return Err(ClewdrError::Whatever { message: "upsert_cookie".into(), source: Some(Box::new(e)) });
+        }
+        record_duration(start);
         mark_write_ok();
 
         // Remove from wasted if present
-        let _ = sqlx::query("DELETE FROM wasted_cookies WHERE cookie = ?")
+        let del_wasted = match *DB_KIND { DbKind::Postgres => "DELETE FROM wasted_cookies WHERE cookie = $1", _ => "DELETE FROM wasted_cookies WHERE cookie = ?" };
+        let _ = sqlx::query(del_wasted)
             .bind(c.cookie.to_string())
             .execute(&pool)
             .await;
@@ -499,13 +532,29 @@ mod internal {
             return Ok(());
         }
         let pool = ensure_pool().await?;
-        sqlx::query("DELETE FROM cookies WHERE cookie = ?")
+        let start = Instant::now();
+        let del_cookie = match *DB_KIND { DbKind::Postgres => "DELETE FROM cookies WHERE cookie = $1", _ => "DELETE FROM cookies WHERE cookie = ?" };
+        let mut res = sqlx::query(del_cookie)
             .bind(c.cookie.to_string())
             .execute(&pool)
-            .await
-            .map_err(|e| { mark_write_err(); ClewdrError::Whatever { message: "delete_cookie".into(), source: Some(Box::new(e)) } })?;
+            .await;
+        if res.is_err() {
+            RETRY_COUNT.fetch_add(1, Ordering::Relaxed);
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            res = sqlx::query(del_cookie)
+                .bind(c.cookie.to_string())
+                .execute(&pool)
+                .await;
+        }
+        if let Err(e) = res {
+            record_error_msg(&e);
+            mark_write_err();
+            return Err(ClewdrError::Whatever { message: "delete_cookie".into(), source: Some(Box::new(e)) });
+        }
+        record_duration(start);
         mark_write_ok();
-        let _ = sqlx::query("DELETE FROM wasted_cookies WHERE cookie = ?")
+        let del_wasted = match *DB_KIND { DbKind::Postgres => "DELETE FROM wasted_cookies WHERE cookie = $1", _ => "DELETE FROM wasted_cookies WHERE cookie = ?" };
+        let _ = sqlx::query(del_wasted)
             .bind(c.cookie.to_string())
             .execute(&pool)
             .await;
@@ -522,19 +571,38 @@ mod internal {
             DbKind::Mysql =>
                 "INSERT INTO wasted_cookies(cookie, reason) VALUES(?, ?)
                  ON DUPLICATE KEY UPDATE reason=VALUES(reason)",
+            DbKind::Postgres =>
+                "INSERT INTO wasted_cookies(cookie, reason) VALUES($1, $2)
+                 ON CONFLICT(cookie) DO UPDATE SET reason=excluded.reason",
             _ =>
                 "INSERT INTO wasted_cookies(cookie, reason) VALUES(?, ?)
                  ON CONFLICT(cookie) DO UPDATE SET reason=excluded.reason",
         };
-        sqlx::query(sql)
-        .bind(u.cookie.to_string())
-        .bind(reason)
-        .execute(&pool)
-        .await
-        .map_err(|e| { mark_write_err(); ClewdrError::Whatever { message: "upsert_wasted".into(), source: Some(Box::new(e)) } })?;
+        let start = Instant::now();
+        let mut res = sqlx::query::<sqlx::Any>(sql)
+            .bind(u.cookie.to_string())
+            .bind(reason.clone())
+            .execute(&pool)
+            .await;
+        if res.is_err() {
+            RETRY_COUNT.fetch_add(1, Ordering::Relaxed);
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            res = sqlx::query::<sqlx::Any>(sql)
+                .bind(u.cookie.to_string())
+                .bind(reason)
+                .execute(&pool)
+                .await;
+        }
+        if let Err(e) = res {
+            record_error_msg(&e);
+            mark_write_err();
+            return Err(ClewdrError::Whatever { message: "upsert_wasted".into(), source: Some(Box::new(e)) });
+        }
+        record_duration(start);
         mark_write_ok();
         // ensure removed from active cookies
-        let _ = sqlx::query("DELETE FROM cookies WHERE cookie = ?")
+        let del_cookie = match *DB_KIND { DbKind::Postgres => "DELETE FROM cookies WHERE cookie = $1", _ => "DELETE FROM cookies WHERE cookie = ?" };
+        let _ = sqlx::query(del_cookie)
             .bind(u.cookie.to_string())
             .execute(&pool)
             .await;
@@ -550,16 +618,34 @@ mod internal {
             DbKind::Mysql =>
                 "INSERT INTO keys(`key`, count_403) VALUES(?, ?)
                  ON DUPLICATE KEY UPDATE count_403=VALUES(count_403)",
+            DbKind::Postgres =>
+                "INSERT INTO keys(key, count_403) VALUES($1, $2)
+                 ON CONFLICT(key) DO UPDATE SET count_403=excluded.count_403",
             _ =>
                 "INSERT INTO keys(key, count_403) VALUES(?, ?)
                  ON CONFLICT(key) DO UPDATE SET count_403=excluded.count_403",
         };
-        sqlx::query(sql)
-        .bind(k.key.to_string())
-        .bind(k.count_403 as i64)
-        .execute(&pool)
-        .await
-        .map_err(|e| { mark_write_err(); ClewdrError::Whatever { message: "upsert_key".into(), source: Some(Box::new(e)) } })?;
+        let start = Instant::now();
+        let mut res = sqlx::query::<sqlx::Any>(sql)
+            .bind(k.key.to_string())
+            .bind(k.count_403 as i64)
+            .execute(&pool)
+            .await;
+        if res.is_err() {
+            RETRY_COUNT.fetch_add(1, Ordering::Relaxed);
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            res = sqlx::query::<sqlx::Any>(sql)
+                .bind(k.key.to_string())
+                .bind(k.count_403 as i64)
+                .execute(&pool)
+                .await;
+        }
+        if let Err(e) = res {
+            record_error_msg(&e);
+            mark_write_err();
+            return Err(ClewdrError::Whatever { message: "upsert_key".into(), source: Some(Box::new(e)) });
+        }
+        record_duration(start);
         mark_write_ok();
         Ok(())
     }
@@ -569,11 +655,26 @@ mod internal {
             return Ok(());
         }
         let pool = ensure_pool().await?;
-        sqlx::query("DELETE FROM keys WHERE key = ?")
+        let start = Instant::now();
+        let del_key = match *DB_KIND { DbKind::Postgres => "DELETE FROM keys WHERE key = $1", _ => "DELETE FROM keys WHERE key = ?" };
+        let mut res = sqlx::query(del_key)
             .bind(k.key.to_string())
             .execute(&pool)
-            .await
-            .map_err(|e| { mark_write_err(); ClewdrError::Whatever { message: "delete_key".into(), source: Some(Box::new(e)) } })?;
+            .await;
+        if res.is_err() {
+            RETRY_COUNT.fetch_add(1, Ordering::Relaxed);
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            res = sqlx::query(del_key)
+                .bind(k.key.to_string())
+                .execute(&pool)
+                .await;
+        }
+        if let Err(e) = res {
+            record_error_msg(&e);
+            mark_write_err();
+            return Err(ClewdrError::Whatever { message: "delete_key".into(), source: Some(Box::new(e)) });
+        }
+        record_duration(start);
         mark_write_ok();
         Ok(())
     }
@@ -765,36 +866,73 @@ mod internal {
         fn status(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, ClewdrError>> + Send>> {
             Box::pin(async move {
                 let mut healthy = false;
-                let mut err = None;
+                let mut err_str: Option<String> = None;
+                let mut latency_ms: Option<u128> = None;
                 if let Ok(pool) = ensure_pool().await {
-                    if sqlx::query("SELECT 1").execute(&pool).await.is_ok() {
-                        healthy = true;
+                    let start = Instant::now();
+                    match sqlx::query("SELECT 1").execute(&pool).await {
+                        Ok(_) => { healthy = true; latency_ms = Some(start.elapsed().as_millis()); },
+                        Err(e) => { err_str = Some(e.to_string()); }
                     }
                 } else {
-                    err = Some("connect_failed".to_string());
+                    err_str = Some("connect_failed".to_string());
                 }
                 let mode = if CLEWDR_CONFIG.load().is_db_mode() { format!("{}", match *DB_KIND { DbKind::Sqlite=>"sqlite", DbKind::Postgres=>"postgres", DbKind::Mysql=>"mysql", DbKind::Unknown=>"unknown" }) } else { "file".into() };
                 let cfg = CLEWDR_CONFIG.load();
+                // redact database_url
+                let mut redacted_url: Option<String> = None;
+                if let Some(url) = &cfg.persistence.database_url {
+                    redacted_url = Some(mask_url(url));
+                }
                 let details = json!({
                     "sqlite_path": cfg.persistence.sqlite_path,
-                    "database_url": cfg.persistence.database_url,
+                    "database_url": redacted_url,
+                    "driver": mode,
+                    "latency_ms": latency_ms,
                 });
+                let total = TOTAL_WRITES.load(Ordering::Relaxed);
+                let errors = WRITE_ERROR_COUNT.load(Ordering::Relaxed);
+                let nanos = TOTAL_WRITE_NANOS.load(Ordering::Relaxed);
+                let avg_ms = if total > 0 { (nanos as f64 / total as f64) / 1_000_000.0 } else { 0.0 };
+                let ratio = if total > 0 { errors as f64 / total as f64 } else { 0.0 };
+                let last_error = LAST_ERROR.lock().ok().and_then(|g| g.clone());
                 Ok(json!({
                     "enabled": true,
                     "mode": mode,
                     "healthy": healthy,
                     "details": details,
                     "last_write_ts": LAST_WRITE_TS.load(Ordering::Relaxed),
-                    "write_error_count": WRITE_ERROR_COUNT.load(Ordering::Relaxed),
-                    "error": err,
+                    "write_error_count": errors,
+                    "total_writes": total,
+                    "avg_write_ms": avg_ms,
+                    "failure_ratio": ratio,
+                    "retry_count": RETRY_COUNT.load(Ordering::Relaxed),
+                    "error": err_str,
+                    "last_error": last_error,
                 }))
             })
         }
     }
 
+    fn mask_url(url: &str) -> String {
+        // very basic redaction: replace password in postgres://user:pass@host/db
+        if let Ok(u) = url::Url::parse(url) {
+            let mut u2 = u.clone();
+            if u.password().is_some() {
+                let _ = u2.set_password(Some("***"));
+            }
+            return u2.to_string();
+        }
+        "***".into()
+    }
+
     // metrics
     static LAST_WRITE_TS: LazyLock<AtomicI64> = LazyLock::new(|| AtomicI64::new(0));
     static WRITE_ERROR_COUNT: LazyLock<AtomicU64> = LazyLock::new(|| AtomicU64::new(0));
+    static TOTAL_WRITES: LazyLock<AtomicU64> = LazyLock::new(|| AtomicU64::new(0));
+    static TOTAL_WRITE_NANOS: LazyLock<AtomicU64> = LazyLock::new(|| AtomicU64::new(0));
+    static RETRY_COUNT: LazyLock<AtomicU64> = LazyLock::new(|| AtomicU64::new(0));
+    static LAST_ERROR: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
 
     fn mark_write_ok() {
         let now = chrono::Utc::now().timestamp();
@@ -802,6 +940,33 @@ mod internal {
     }
     fn mark_write_err() {
         WRITE_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_duration(start: Instant) {
+        let dur = start.elapsed();
+        TOTAL_WRITES.fetch_add(1, Ordering::Relaxed);
+        TOTAL_WRITE_NANOS.fetch_add(dur.as_nanos() as u64, Ordering::Relaxed);
+    }
+
+    fn record_error_msg(e: &dyn std::error::Error) {
+        if let Ok(mut g) = LAST_ERROR.lock() {
+            *g = Some(e.to_string());
+        }
+    }
+
+    async fn exec_with_retry<F, T>(mut f: F) -> Result<T, sqlx::Error>
+    where
+        F: FnMut() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, sqlx::Error>> + Send>>,
+    {
+        match f().await {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                RETRY_COUNT.fetch_add(1, Ordering::Relaxed);
+                // small backoff
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                f().await.map_err(|e2| e2)
+            }
+        }
     }
 }
 

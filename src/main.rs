@@ -49,6 +49,11 @@ where
 /// Result indicating success or failure of the application execution
 #[tokio::main]
 async fn main() -> Result<(), ClewdrError> {
+    #[cfg(feature = "db")]
+    {
+        // Ensure sqlx any drivers are registered when using Any-based pooling
+        sqlx::any::install_default_drivers();
+    }
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
     #[cfg(windows)]
