@@ -60,7 +60,17 @@ impl StorageLayer for FileLayer {
     fn delete_key_row(&self, _k: &KeyStatus) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ClewdrError>> + Send>> { Box::pin(async { Ok(()) }) }
     fn import_from_file(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, ClewdrError>> + Send>> { Box::pin(async { Err(ClewdrError::PathNotFound { msg: "DB feature not enabled".into() }) }) }
     fn export_to_file(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, ClewdrError>> + Send>> { Box::pin(async { Err(ClewdrError::PathNotFound { msg: "DB feature not enabled".into() }) }) }
-    fn status(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, ClewdrError>> + Send>> { Box::pin(async { Ok(json!({ "enabled": false, "mode": "file", "healthy": false })) }) }
+    fn status(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, ClewdrError>> + Send>> {
+        Box::pin(async {
+            // In file mode, there is no external DB to check. Treat as healthy.
+            Ok(json!({
+                "enabled": false,
+                "mode": "file",
+                "healthy": true,
+                "details": { "driver": "file" }
+            }))
+        })
+    }
 }
 
 // Feature-gated DB module providing actual implementation

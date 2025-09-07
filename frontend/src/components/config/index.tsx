@@ -207,10 +207,20 @@ const ConfigTab: React.FC = () => {
             </div>
             {status && (
               <div className="text-xs text-gray-400 mt-1">
-                {t("configExtra.storage.health")}: {status.healthy ? t("configExtra.storage.ok") : t("configExtra.storage.down")}
-                {status.details?.driver && (
-                  <div>{t("configExtra.storage.driver")}: {status.details.driver}</div>
-                )}
+                {(() => {
+                  const isNA = !status.enabled || status.mode === "file";
+                  const healthLabel = isNA
+                    ? t("configExtra.storage.na")
+                    : status.healthy
+                      ? t("configExtra.storage.ok")
+                      : t("configExtra.storage.down");
+                  return (
+                    <span>
+                      {t("configExtra.storage.health")}: {healthLabel}
+                    </span>
+                  );
+                })()}
+                {/* driver equals mode; omit to avoid redundancy */}
                 {typeof status.details?.latency_ms === "number" && (
                   <div>{t("configExtra.storage.latencyMs")}: {status.details.latency_ms}</div>
                 )}

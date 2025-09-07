@@ -232,6 +232,7 @@
       "health": "Health",
       "ok": "OK",
       "down": "DOWN",
+      "na": "N/A",
       "driver": "driver",
       "latencyMs": "latency_ms",
       "sqlitePath": "sqlite_path",

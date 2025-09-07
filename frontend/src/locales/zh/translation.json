@@ -232,6 +232,7 @@
       "health": "健康",
       "ok": "正常",
       "down": "异常",
+      "na": "不适用",
       "driver": "驱动",
       "latencyMs": "延迟(ms)",
       "sqlitePath": "sqlite 路径",
