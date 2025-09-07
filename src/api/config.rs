@@ -1,9 +1,10 @@
 use axum::Json;
 use axum_auth::AuthBearer;
 use serde_json::json;
-use wreq::StatusCode;
+// no direct StatusCode usage here; ApiError handles responses
 
 use crate::config::{CLEWDR_CONFIG, ClewdrConfig};
+use super::error::ApiError;
 
 /// API endpoint to retrieve the application configuration
 /// Returns the config as JSON with sensitive fields removed
@@ -15,14 +16,9 @@ use crate::config::{CLEWDR_CONFIG, ClewdrConfig};
 /// * `Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)>` - Config on success, error response on failure
 pub async fn api_get_config(
     AuthBearer(t): AuthBearer,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     if !CLEWDR_CONFIG.load().admin_auth(&t) {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({
-                "error": "Unauthorized"
-            })),
-        ));
+        return Err(ApiError::unauthorized());
     }
 
     let mut config_json = json!(CLEWDR_CONFIG.load().as_ref());
@@ -49,14 +45,9 @@ pub async fn api_get_config(
 pub async fn api_post_config(
     AuthBearer(t): AuthBearer,
     Json(c): Json<ClewdrConfig>,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     if !CLEWDR_CONFIG.load().admin_auth(&t) {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({
-                "error": "Unauthorized"
-            })),
-        ));
+        return Err(ApiError::unauthorized());
     }
     let c = c.validate();
     // update config
@@ -72,12 +63,7 @@ pub async fn api_post_config(
         new_c
     });
     if let Err(e) = CLEWDR_CONFIG.load().save().await {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "error": format!("Failed to save config: {}", e)
-            })),
-        ));
+        return Err(ApiError::internal(format!("Failed to save config: {}", e)));
     }
 
     Ok(Json(serde_json::json!({

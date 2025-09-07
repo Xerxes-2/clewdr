@@ -1,34 +1,26 @@
 use axum::Json;
 use axum_auth::AuthBearer;
 use serde_json::json;
-use wreq::StatusCode;
+// StatusCode not needed; using ApiError for responses
 
 use crate::{config::CLEWDR_CONFIG, persistence};
+use super::error::ApiError;
 
 /// Import configuration and runtime state from file into the database
 /// Only available when compiled with `db` feature and DB mode enabled.
 pub async fn api_storage_import(
     AuthBearer(t): AuthBearer,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     if !CLEWDR_CONFIG.load().admin_auth(&t) {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"error": "Unauthorized"})),
-        ));
+        return Err(ApiError::unauthorized());
     }
     if persistence::storage().is_enabled() {
         match persistence::storage().import_from_file().await {
             Ok(v) => Ok(Json(v)),
-            Err(e) => Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": e.to_string()})),
-            )),
+            Err(e) => Err(ApiError::internal(e.to_string())),
         }
     } else {
-        Err((
-            StatusCode::NOT_IMPLEMENTED,
-            Json(json!({"error": "DB feature not enabled"})),
-        ))
+        Err(ApiError::not_implemented("DB feature not enabled"))
     }
 }
 
@@ -36,26 +28,17 @@ pub async fn api_storage_import(
 /// Only available when compiled with `db` feature and DB mode enabled.
 pub async fn api_storage_export(
     AuthBearer(t): AuthBearer,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     if !CLEWDR_CONFIG.load().admin_auth(&t) {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"error": "Unauthorized"})),
-        ));
+        return Err(ApiError::unauthorized());
     }
     if persistence::storage().is_enabled() {
         match persistence::storage().export_to_file().await {
             Ok(v) => Ok(Json(v)),
-            Err(e) => Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": e.to_string()})),
-            )),
+            Err(e) => Err(ApiError::internal(e.to_string())),
         }
     } else {
-        Err((
-            StatusCode::NOT_IMPLEMENTED,
-            Json(json!({"error": "DB feature not enabled"})),
-        ))
+        Err(ApiError::not_implemented("DB feature not enabled"))
     }
 }
 

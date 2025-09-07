@@ -9,6 +9,7 @@ mod config;
 mod gemini;
 mod misc;
 mod storage;
+mod error;
 pub use claude_code::api_claude_code;
 /// Message handling endpoints for creating and managing chat conversations
 pub use claude_web::api_claude_web;
@@ -21,4 +22,5 @@ pub use misc::{
     api_post_cookie, api_post_key, api_version,
 };
 pub use storage::{api_storage_export, api_storage_import, api_storage_status};
+pub use error::ApiError;
 // merged above

@@ -3,6 +3,7 @@ use axum_auth::AuthBearer;
 use serde_json::{Value, json};
 use tracing::{error, info, warn};
 use wreq::StatusCode;
+use super::error::ApiError;
 
 use crate::{
     VERSION_INFO,
@@ -82,48 +83,28 @@ pub async fn api_post_key(
 pub async fn api_get_cookies(
     State(s): State<CookieActorHandle>,
     AuthBearer(t): AuthBearer,
-) -> Result<Json<CookieStatusInfo>, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<Json<CookieStatusInfo>, ApiError> {
     if !CLEWDR_CONFIG.load().admin_auth(&t) {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({
-                "error": "Unauthorized"
-            })),
-        ));
+        return Err(ApiError::unauthorized());
     }
 
     match s.get_status().await {
         Ok(status) => Ok(Json(status)),
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "error": format!("Failed to get cookie status: {}", e)
-            })),
-        )),
+        Err(e) => Err(ApiError::internal(format!("Failed to get cookie status: {}", e))),
     }
 }
 
 pub async fn api_get_keys(
     State(s): State<KeyActorHandle>,
     AuthBearer(t): AuthBearer,
-) -> Result<Json<KeyStatusInfo>, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<Json<KeyStatusInfo>, ApiError> {
     if !CLEWDR_CONFIG.load().admin_auth(&t) {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({
-                "error": "Unauthorized"
-            })),
-        ));
+        return Err(ApiError::unauthorized());
     }
 
     match s.get_status().await {
         Ok(status) => Ok(Json(status)),
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "error": format!("Failed to get keys status: {}", e)
-            })),
-        )),
+        Err(e) => Err(ApiError::internal(format!("Failed to get keys status: {}", e))),
     }
 }
 
@@ -141,14 +122,9 @@ pub async fn api_delete_cookie(
     State(s): State<CookieActorHandle>,
     AuthBearer(t): AuthBearer,
     Json(c): Json<CookieStatus>,
-) -> Result<StatusCode, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<StatusCode, ApiError> {
     if !CLEWDR_CONFIG.load().admin_auth(&t) {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({
-                "error": "Unauthorized"
-            })),
-        ));
+        return Err(ApiError::unauthorized());
     }
 
     match s.delete_cookie(c.to_owned()).await {
@@ -158,12 +134,7 @@ pub async fn api_delete_cookie(
         }
         Err(e) => {
             error!("Failed to delete cookie: {}", e);
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": format!("Failed to delete cookie: {}", e)
-                })),
-            ))
+            Err(ApiError::internal(format!("Failed to delete cookie: {}", e)))
         }
     }
 }
@@ -172,23 +143,13 @@ pub async fn api_delete_key(
     State(s): State<KeyActorHandle>,
     AuthBearer(t): AuthBearer,
     Json(c): Json<KeyStatus>,
-) -> Result<StatusCode, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<StatusCode, ApiError> {
     if !CLEWDR_CONFIG.load().admin_auth(&t) {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({
-                "error": "Unauthorized"
-            })),
-        ));
+        return Err(ApiError::unauthorized());
     }
     if !c.key.validate() {
         warn!("Invalid key: {}", c.key);
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "error": "Invalid key"
-            })),
-        ));
+        return Err(ApiError::bad_request("Invalid key"));
     }
 
     match s.delete_key(c.to_owned()).await {
@@ -198,12 +159,7 @@ pub async fn api_delete_key(
         }
         Err(e) => {
             error!("Failed to delete key: {}", e);
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": format!("Failed to delete key: {}", e)
-                })),
-            ))
+            Err(ApiError::internal(format!("Failed to delete key: {}", e)))
         }
     }
 }

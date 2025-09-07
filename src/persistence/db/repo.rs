@@ -273,7 +273,7 @@ pub async fn status_json() -> Result<serde_json::Value, ClewdrError> {
     }
     let total = TOTAL_WRITES.load(Ordering::Relaxed);
     let errors = WRITE_ERROR_COUNT.load(Ordering::Relaxed);
-    let nanos = TOTAL_WRITES.load(Ordering::Relaxed);
+    let nanos = TOTAL_WRITE_NANOS.load(Ordering::Relaxed);
     let avg_ms = if total > 0 { (nanos as f64 / total as f64) / 1_000_000.0 } else { 0.0 };
     let ratio = if total > 0 { errors as f64 / total as f64 } else { 0.0 };
     let last_error = LAST_ERROR.lock().ok().and_then(|g| g.clone());
@@ -291,4 +291,3 @@ pub async fn status_json() -> Result<serde_json::Value, ClewdrError> {
         "last_error": last_error,
     }))
 }
-
