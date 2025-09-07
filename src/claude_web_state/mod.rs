@@ -104,6 +104,9 @@ impl ClaudeWebState {
     pub async fn request_cookie(&mut self) -> Result<CookieStatus, ClewdrError> {
         let res = self.cookie_actor_handle.request(None).await?;
         self.cookie = Some(res.to_owned());
+        // Always pull latest proxy/endpoint before building the client
+        self.proxy = CLEWDR_CONFIG.load().wreq_proxy.to_owned();
+        self.endpoint = CLEWDR_CONFIG.load().endpoint();
         let mut client = ClientBuilder::new()
             .cookie_store(true)
             .emulation(Emulation::Chrome136);
@@ -114,9 +117,6 @@ impl ClaudeWebState {
             msg: "Failed to build client with new cookie",
         })?;
         self.cookie_header_value = HeaderValue::from_str(res.cookie.to_string().as_str())?;
-        // load newest config
-        self.proxy = CLEWDR_CONFIG.load().wreq_proxy.to_owned();
-        self.endpoint = CLEWDR_CONFIG.load().endpoint();
         Ok(res)
     }
 
