@@ -89,6 +89,9 @@ impl ClaudeCodeState {
             .await?;
         self.cookie = Some(res.to_owned());
         self.cookie_header_value = HeaderValue::from_str(res.cookie.to_string().as_str())?;
+        // Always pull latest proxy/endpoint before building the client
+        self.proxy = CLEWDR_CONFIG.load().wreq_proxy.to_owned();
+        self.endpoint = CLEWDR_CONFIG.load().endpoint();
         let mut client = ClientBuilder::new()
             .cookie_store(true)
             .emulation(Emulation::Chrome136);
@@ -98,8 +101,6 @@ impl ClaudeCodeState {
         self.client = client.build().context(WreqSnafu {
             msg: "Failed to build client with new cookie",
         })?;
-        // load newest config
-        self.proxy = CLEWDR_CONFIG.load().wreq_proxy.to_owned();
         Ok(res)
     }
 
