@@ -23,7 +23,7 @@ pub static ENDPOINT_URL: LazyLock<Url> = LazyLock::new(|| {
     })
 });
 pub static LOG_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
-    if let Some(path) = Args::parse().log_dir {
+    if let Some(path) = Args::try_parse().ok().and_then(|a| a.log_dir) {
         path
     } else {
         #[cfg(feature = "portable")]
@@ -49,7 +49,7 @@ pub static CLEWDR_CONFIG: LazyLock<ArcSwap<ClewdrConfig>> = LazyLock::new(|| {
 });
 
 pub static CONFIG_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
-    if let Some(path) = Args::parse().config {
+    if let Some(path) = Args::try_parse().ok().and_then(|a| a.config) {
         path
     } else {
         #[cfg(feature = "portable")]

@@ -1,7 +1,8 @@
 use std::sync::LazyLock;
 
 use serde_json::json;
-use tracing::{error, info};
+#[cfg(feature = "db")]
+use tracing::error;
 
 use crate::config::{ClewdrConfig, CookieStatus, KeyStatus, UselessCookie};
 use crate::error::ClewdrError;
@@ -128,7 +129,6 @@ pub fn storage() -> &'static dyn StorageLayer {
 #[cfg(not(feature = "db"))]
 mod internal {
     use super::*;
-    use std::str::FromStr;
 
     pub async fn bootstrap_from_db_if_enabled() -> Result<(), ClewdrError> {
         // DB feature not compiled; nothing to do
@@ -184,6 +184,8 @@ mod internal {
         if let Some(p) = pool() {
             return Ok(p);
         }
+        // Ensure Any drivers are registered for non-binary contexts (tests, libs)
+        sqlx::any::install_default_drivers();
         let cfg = CLEWDR_CONFIG.load();
         if !cfg.is_db_mode() {
             return Err(ClewdrError::Whatever {
@@ -198,6 +200,16 @@ mod internal {
             .ok_or(ClewdrError::UnexpectedNone {
                 msg: "Database URL not provided",
             })?;
+        // Best-effort create parent dir for sqlite file URLs
+        if url.starts_with("sqlite://") {
+            let path = &url["sqlite://".len()..];
+            // handle absolute and relative paths
+            let path = std::path::Path::new(path);
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+        }
+
         let pool = sqlx::any::AnyPoolOptions::new()
             .max_connections(8)
             .idle_timeout(Duration::from_secs(300))
@@ -251,7 +263,11 @@ mod internal {
         ]);
 
         for Mig(ver, ddls) in [m1, m2, m3] {
-            let applied = sqlx::query_scalar::<_, Option<String>>("SELECT version FROM schema_migrations WHERE version = ?")
+            let sel = match *DB_KIND {
+                DbKind::Postgres => "SELECT version FROM schema_migrations WHERE version = $1",
+                _ => "SELECT version FROM schema_migrations WHERE version = ?",
+            };
+            let applied = sqlx::query_scalar::<_, Option<String>>(sel)
                 .bind(ver)
                 .fetch_optional(pool)
                 .await
@@ -260,7 +276,11 @@ mod internal {
                 for ddl in ddls {
                     let _ = sqlx::query(ddl).execute(pool).await;
                 }
-                let _ = sqlx::query("INSERT INTO schema_migrations(version) VALUES(?)").bind(ver).execute(pool).await;
+                let ins = match *DB_KIND {
+                    DbKind::Postgres => "INSERT INTO schema_migrations(version) VALUES($1)",
+                    _ => "INSERT INTO schema_migrations(version) VALUES(?)",
+                };
+                let _ = sqlx::query(ins).bind(ver).execute(pool).await;
             }
         }
         Ok(())
@@ -271,11 +291,11 @@ mod internal {
         if !CLEWDR_CONFIG.load().is_db_mode() {
             return Ok(());
         }
-        let pool = ensure_pool().await?;
+        let apool = ensure_pool().await?;
 
         // Try load config from DB; if absent, seed with current config
         let row: Option<(String,)> = sqlx::query_as("SELECT data FROM clewdr_config WHERE k='main'")
-            .fetch_optional(&pool)
+            .fetch_optional(&apool)
             .await
             .map_err(|e| ClewdrError::Whatever { message: "load_config".into(), source: Some(Box::new(e)) })?;
         let mut cfg = if let Some((data,)) = row {
@@ -293,7 +313,7 @@ mod internal {
                 .map_err(|e| ClewdrError::Whatever { message: "toml_serialize".into(), source: Some(Box::new(e)) })?;
             sqlx::query("INSERT OR REPLACE INTO clewdr_config (k, data) VALUES ('main', ?)")
                 .bind(data)
-                .execute(&pool)
+                .execute(&apool)
                 .await
                 .map_err(|e| ClewdrError::Whatever { message: "seed_config".into(), source: Some(Box::new(e)) })?;
             current
@@ -303,7 +323,7 @@ mod internal {
         let cookie_rows = sqlx::query_as::<_, (String, Option<i64>, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<String>)>(
             "SELECT cookie, reset_time, token_access, token_refresh, token_expires_at, token_expires_in, token_org_uuid FROM cookies",
         )
-        .fetch_all(&pool)
+        .fetch_all(&apool)
         .await
         .map_err(|e| ClewdrError::Whatever { message: "load_cookies".into(), source: Some(Box::new(e)) })?;
         let mut cookie_array = std::collections::HashSet::new();
@@ -330,7 +350,7 @@ mod internal {
         let wasted_rows = sqlx::query_as::<_, (String, String)>(
             "SELECT cookie, reason FROM wasted_cookies",
         )
-        .fetch_all(&pool)
+        .fetch_all(&apool)
         .await
         .map_err(|e| ClewdrError::Whatever { message: "load_wasted".into(), source: Some(Box::new(e)) })?;
         let mut wasted = std::collections::HashSet::new();
@@ -345,7 +365,7 @@ mod internal {
 
         // Load keys
         let key_rows = sqlx::query_as::<_, (String, i64)>("SELECT key, count_403 FROM keys")
-            .fetch_all(&pool)
+            .fetch_all(&apool)
             .await
             .map_err(|e| ClewdrError::Whatever { message: "load_keys".into(), source: Some(Box::new(e)) })?;
         let mut keys = std::collections::HashSet::new();
@@ -868,14 +888,17 @@ mod internal {
                 let mut healthy = false;
                 let mut err_str: Option<String> = None;
                 let mut latency_ms: Option<u128> = None;
-                if let Ok(pool) = ensure_pool().await {
-                    let start = Instant::now();
-                    match sqlx::query("SELECT 1").execute(&pool).await {
-                        Ok(_) => { healthy = true; latency_ms = Some(start.elapsed().as_millis()); },
-                        Err(e) => { err_str = Some(e.to_string()); }
+                match ensure_pool().await {
+                    Ok(pool) => {
+                        let start = Instant::now();
+                        match sqlx::query("SELECT 1").execute(&pool).await {
+                            Ok(_) => { healthy = true; latency_ms = Some(start.elapsed().as_millis()); },
+                            Err(e) => { err_str = Some(e.to_string()); }
+                        }
                     }
-                } else {
-                    err_str = Some("connect_failed".to_string());
+                    Err(e) => {
+                        err_str = Some(e.to_string());
+                    }
                 }
                 let mode = if CLEWDR_CONFIG.load().is_db_mode() { format!("{}", match *DB_KIND { DbKind::Sqlite=>"sqlite", DbKind::Postgres=>"postgres", DbKind::Mysql=>"mysql", DbKind::Unknown=>"unknown" }) } else { "file".into() };
                 let cfg = CLEWDR_CONFIG.load();
@@ -960,7 +983,7 @@ mod internal {
     {
         match f().await {
             Ok(v) => Ok(v),
-            Err(e) => {
+            Err(_e) => {
                 RETRY_COUNT.fetch_add(1, Ordering::Relaxed);
                 // small backoff
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;

@@ -312,10 +312,11 @@ impl ClewdrConfig {
         match self.persistence.mode {
             PersistenceMode::Sqlite => {
                 if let Some(path) = &self.persistence.sqlite_path {
-                    return Some(format!("sqlite://{}", path));
+                    // Ensure read-write-create mode for sqlite files
+                    return Some(format!("sqlite://{}?mode=rwc", path));
                 }
                 // default sqlite path oriented for container persistence
-                Some("sqlite:///etc/clewdr/clewdr.db".to_string())
+                Some("sqlite:///etc/clewdr/clewdr.db?mode=rwc".to_string())
             }
             PersistenceMode::Postgres => None,
             PersistenceMode::File => None,
@@ -359,7 +360,7 @@ impl ClewdrConfig {
         }) {
             config.vertex.credential = Some(credential);
         }
-        if let Some(ref f) = Args::parse().file {
+        if let Some(ref f) = Args::try_parse().ok().and_then(|a| a.file) {
             // load cookies from file
             if f.exists() {
                 if let Ok(cookies) = std::fs::read_to_string(f) {

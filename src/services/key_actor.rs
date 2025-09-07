@@ -128,6 +128,7 @@ impl Actor for KeyActor {
                 Self::collect(state, key);
             }
             KeyActorMessage::Submit(key) => {
+                #[cfg(feature = "db")]
                 let k = key.clone();
                 Self::accept(state, key);
                 #[cfg(feature = "db")]
