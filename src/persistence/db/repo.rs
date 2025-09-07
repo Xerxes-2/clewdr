@@ -1,7 +1,7 @@
 use serde_json::json;
 use tracing::error;
 
-use sea_orm::{entity::prelude::*, ActiveValue::Set, sea_query};
+use sea_orm::{entity::prelude::*, ActiveValue::Set};
 
 use crate::config::{ClewdrConfig, CookieStatus, KeyStatus, UselessCookie};
 use crate::error::ClewdrError;

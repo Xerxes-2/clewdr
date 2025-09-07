@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use sea_orm::{Database, DatabaseConnection, Schema, DatabaseBackend};
+use sea_orm::{ConnectionTrait, Database, DatabaseConnection, Schema};
 
 use crate::error::ClewdrError;
 
@@ -33,7 +33,7 @@ pub async fn ensure_conn() -> Result<DatabaseConnection, ClewdrError> {
 async fn migrate(db: &DatabaseConnection) -> Result<(), ClewdrError> {
     let backend = db.get_database_backend();
     let schema = Schema::new(backend);
-    let stmt: sea_query::TableCreateStatement = schema.create_table_from_entity(EntityConfig);
+    let stmt: sea_orm::sea_query::TableCreateStatement = schema.create_table_from_entity(EntityConfig);
     db.execute(backend.build(&stmt)).await.ok();
     let stmt = schema.create_table_from_entity(EntityCookie);
     db.execute(backend.build(&stmt)).await.ok();
@@ -42,7 +42,7 @@ async fn migrate(db: &DatabaseConnection) -> Result<(), ClewdrError> {
     let stmt = schema.create_table_from_entity(EntityKeyRow);
     db.execute(backend.build(&stmt)).await.ok();
     // indexes
-    use sea_query::Index;
+    use sea_orm::sea_query::Index;
     // cookies(token_org_uuid)
     let idx = Index::create()
         .name("idx_cookies_org_uuid")
@@ -66,4 +66,3 @@ async fn migrate(db: &DatabaseConnection) -> Result<(), ClewdrError> {
     db.execute(backend.build(&idx)).await.ok();
     Ok(())
 }
-
