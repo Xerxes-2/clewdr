@@ -258,36 +258,22 @@ impl GeminiState {
                 }
             };
             let bearer = format!("Bearer {}", token);
-            match self.api_format {
-                GeminiApiFormat::Gemini => {
-                    // Build Code Assist payload: { model, project, request }
-                    let method = if self.stream { "v1internal:streamGenerateContent" } else { "v1internal:generateContent" };
-                    let mut endpoint = format!("https://cloudcode-pa.googleapis.com/{method}");
-                    if self.stream { endpoint.push_str("?alt=sse"); }
-                    let payload = serde_json::json!({
-                        "model": self.model,
-                        "project": project_id.unwrap_or_default(),
-                        "request": p,
-                    });
-                    self.client
-                        .post(endpoint)
-                        .header(AUTHORIZATION, bearer)
-                        .json(&payload)
-                        .send()
-                        .await
-                        .context(WreqSnafu { msg: "Failed to send request to Code Assist API (CLI bearer)" })?
-                }
-                GeminiApiFormat::OpenAI => {
-                    // Keep OAI path to generativelanguage OpenAI endpoint with bearer
-                    self.client
-                        .post(format!("{GEMINI_ENDPOINT}/v1beta/openai/chat/completions"))
-                        .header(AUTHORIZATION, bearer)
-                        .json(&p)
-                        .send()
-                        .await
-                        .context(WreqSnafu { msg: "Failed to send request to Gemini OpenAI API (CLI bearer)" })?
-                }
-            }
+            // CLI endpoints must always call Code Assist, regardless of request format
+            let method = if self.stream { "v1internal:streamGenerateContent" } else { "v1internal:generateContent" };
+            let mut endpoint = format!("https://cloudcode-pa.googleapis.com/{method}");
+            if self.stream { endpoint.push_str("?alt=sse"); }
+            let payload = serde_json::json!({
+                "model": self.model,
+                "project": project_id.unwrap_or_default(),
+                "request": p,
+            });
+            self.client
+                .post(endpoint)
+                .header(AUTHORIZATION, bearer)
+                .json(&payload)
+                .send()
+                .await
+                .context(WreqSnafu { msg: "Failed to send request to Code Assist API (CLI bearer)" })?
         } else {
             // Default: use API key pool
             self.request_key().await?;

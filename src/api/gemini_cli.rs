@@ -248,9 +248,8 @@ fn gemini_cli_model_info(name: &str) -> serde_json::Value {
 pub async fn api_gemini_cli_models() -> Result<Json<serde_json::Value>, ClewdrError> {
     // Provide a reasonable default list
     let models = [
-        "gemini-1.5-flash",
-        "gemini-1.5-pro",
-        "gemini-1.0-pro",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
     ];
     let items: Vec<_> = models.iter().map(|m| gemini_cli_model_info(m)).collect();
     Ok(Json(json!({ "models": items })))
