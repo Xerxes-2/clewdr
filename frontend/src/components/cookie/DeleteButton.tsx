@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 
 interface DeleteButtonProps {
   cookie: string;
@@ -11,6 +12,7 @@ const DeleteButton: React.FC<DeleteButtonProps> = ({
   onDelete,
   isDeleting,
 }) => {
+  const { t } = useTranslation();
   return (
     <button
       onClick={() => onDelete(cookie)}
@@ -20,7 +22,7 @@ const DeleteButton: React.FC<DeleteButtonProps> = ({
           ? "bg-gray-700 text-gray-400 cursor-not-allowed"
           : "text-red-400 hover:text-red-300 hover:bg-red-900/30"
       }`}
-      title="Delete cookie"
+      title={t("cookieStatus.delete")}
     >
       {isDeleting ? (
         <svg

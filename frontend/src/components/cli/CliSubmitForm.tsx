@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import Button from "../common/Button";
 import FormInput from "../common/FormInput";
 import StatusMessage from "../common/StatusMessage";
@@ -11,6 +12,7 @@ interface CliResult {
 }
 
 const CliSubmitForm: React.FC = () => {
+  const { t } = useTranslation();
   const [input, setInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [results, setResults] = useState<CliResult[]>([]);
@@ -25,7 +27,7 @@ const CliSubmitForm: React.FC = () => {
     const trimmedAll = input.trim();
 
     if (trimmedAll.length === 0) {
-      setOverallStatus({ type: "error", message: "Please enter at least one item" });
+      setOverallStatus({ type: "error", message: t("cli.messages.empty") });
       return;
     }
 
@@ -43,14 +45,20 @@ const CliSubmitForm: React.FC = () => {
         JSON.parse(trimmedAll);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        setResults([{ item: trimmedAll, status: "error", message: `Invalid JSON: ${msg}` }]);
-        setOverallStatus({ type: "error", message: "Invalid JSON" });
+        setResults([
+          {
+            item: trimmedAll,
+            status: "error",
+            message: t("cli.messages.invalidJsonWithMsg", { message: msg }),
+          },
+        ]);
+        setOverallStatus({ type: "error", message: t("cli.messages.invalidJson") });
         setIsSubmitting(false);
         return;
       }
       try {
         await postCliTokenJson(trimmedAll);
-        newResults.push({ item: "<JSON>", status: "success", message: "Submitted" });
+        newResults.push({ item: "<JSON>", status: "success", message: t("cli.messages.submitted") });
         successCount = 1;
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -73,11 +81,14 @@ const CliSubmitForm: React.FC = () => {
             const tokenOnly = raw.startsWith("Bearer ") ? raw.slice(7) : raw;
             await postCliToken(tokenOnly);
           }
-          newResults.push({ item: raw, status: "success", message: "Submitted" });
+          newResults.push({ item: raw, status: "success", message: t("cli.messages.submitted") });
           successCount++;
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
-          newResults.push({ item: raw, status: "error", message: msg });
+          const translated = msg.includes("Invalid JSON")
+            ? t("cli.messages.invalidJson")
+            : msg;
+          newResults.push({ item: raw, status: "error", message: translated });
           errorCount++;
         }
       }
@@ -86,14 +97,14 @@ const CliSubmitForm: React.FC = () => {
     setResults(newResults);
 
     if (errorCount === 0) {
-      setOverallStatus({ type: "success", message: `All ${successCount} submitted successfully` });
+      setOverallStatus({ type: "success", message: t("cli.messages.allSuccess", { count: successCount }) });
       setInput("");
     } else if (successCount === 0) {
-      setOverallStatus({ type: "error", message: `All ${errorCount} failed to submit` });
+      setOverallStatus({ type: "error", message: t("cli.messages.allFailed", { count: errorCount }) });
     } else {
       setOverallStatus({
         type: "warning",
-        message: `${successCount} of ${successCount + errorCount} submitted successfully (${errorCount} failed)`,
+        message: t("cli.messages.partial", { success: successCount, total: successCount + errorCount, failed: errorCount }),
       });
     }
 
@@ -108,17 +119,15 @@ const CliSubmitForm: React.FC = () => {
           name="cli"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={"Paste tokens or JSON (one per line)"}
-          label={"CLI Credentials"}
+          placeholder={t("cli.form.placeholder")}
+          label={t("cli.form.label")}
           isTextarea={true}
           rows={5}
           onClear={() => setInput("")}
           disabled={isSubmitting}
         />
 
-        <p className="text-xs text-gray-400 mt-1">
-          {"Accepts raw access tokens (ya29...) or full OAuth JSON (token/access_token present)."}
-        </p>
+        <p className="text-xs text-gray-400 mt-1">{t("cli.form.help")}</p>
 
         {overallStatus.message && (
           <StatusMessage type={overallStatus.type} message={overallStatus.message} />
@@ -126,7 +135,7 @@ const CliSubmitForm: React.FC = () => {
 
         {results.length > 0 && (
           <div className="mt-4 bg-gray-800 rounded-md p-3 max-h-60 overflow-y-auto">
-            <h4 className="text-sm font-medium text-gray-300 mb-2">Submission details:</h4>
+            <h4 className="text-sm font-medium text-gray-300 mb-2">{t("cli.form.resultDetails")}</h4>
             <div className="space-y-2">
               {results.map((r, i) => (
                 <div
@@ -166,7 +175,7 @@ const CliSubmitForm: React.FC = () => {
         )}
 
         <Button type="submit" disabled={isSubmitting} isLoading={isSubmitting} className="w-full">
-          {isSubmitting ? "Submitting..." : "Submit"}
+          {isSubmitting ? t("cli.form.submitting") : t("cli.form.submit")}
         </Button>
       </form>
     </div>

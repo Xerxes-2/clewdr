@@ -52,9 +52,9 @@ function App() {
   const tabs = [
     { id: "cookie", label: t("tabs.cookie"), color: "cyan" },
     { id: "keys", label: t("tabs.keys"), color: "purple" },
+    { id: "cli", label: t("tabs.cli"), color: "blue" },
     { id: "config", label: t("tabs.config"), color: "green" },
-    { id: "cli", label: "CLI", color: "indigo" },
-    { id: "token", label: t("tabs.auth"), color: "violet" },
+    { id: "token", label: t("tabs.auth"), color: "amber" },
   ];
 
   return (
