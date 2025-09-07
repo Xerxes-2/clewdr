@@ -59,129 +59,34 @@ impl RouterBuilder {
 
     /// Creates a new RouterBuilder instance
     /// Sets up routes for API endpoints and static file serving
-    pub fn with_default_setup(self) -> Self {
-        self.route_claude_code_endpoints()
-            .route_claude_web_endpoints()
-            .route_admin_endpoints()
-            .route_claude_web_oai_endpoints()
-            .route_claude_code_oai_endpoints()
-            .route_gemini_endpoints()
-            .setup_static_serving()
-            .with_tower_trace()
-            .with_cors()
+    pub fn with_default_setup(mut self) -> Self {
+        // compose domain routers then apply common layers
+        let composed = Router::new()
+            .merge(build_gemini_router(self.gemini_state.to_owned()))
+            .merge(build_claude_web_router(self.claude_web_state.to_owned().with_claude_format()))
+            .merge(build_claude_code_router(self.claude_code_state.to_owned()))
+            .merge(build_claude_web_oai_router(self.claude_web_state.to_owned().with_openai_format()))
+            .merge(build_claude_code_oai_router(self.claude_code_state.to_owned()))
+            .merge(build_admin_router(
+                self.cookie_actor_handle.to_owned(),
+                self.key_actor_handle.to_owned(),
+            ));
+        self.inner = self.inner.merge(composed);
+        self.setup_static_serving().with_tower_trace().with_cors()
     }
 
-    fn route_gemini_endpoints(mut self) -> Self {
-        let router_gemini = Router::new()
-            .route("/v1/v1beta/{*path}", post(api_post_gemini))
-            .route("/v1/vertex/v1beta/{*path}", post(api_post_gemini))
-            .layer(from_extractor::<RequireQueryKeyAuth>())
-            .layer(CompressionLayer::new())
-            .with_state(self.gemini_state.to_owned());
-        let router_oai = Router::new()
-            .route("/gemini/chat/completions", post(api_post_gemini_oai))
-            .route("/gemini/vertex/chat/completions", post(api_post_gemini_oai))
-            .layer(from_extractor::<RequireBearerAuth>())
-            .layer(CompressionLayer::new())
-            .with_state(self.gemini_state.to_owned());
-        let router = router_gemini.merge(router_oai);
-        self.inner = self.inner.merge(router);
-        self
-    }
+    // legacy builder methods replaced by helpers; kept for clarity
 
     /// Sets up routes for v1 endpoints
-    fn route_claude_web_endpoints(mut self) -> Self {
-        let router = Router::new()
-            .route("/v1/messages", post(api_claude_web))
-            .layer(
-                ServiceBuilder::new()
-                    .layer(from_extractor::<RequireXApiKeyAuth>())
-                    .layer(CompressionLayer::new())
-                    .layer(map_response(add_usage_info))
-                    .layer(map_response(apply_stop_sequences))
-                    .layer(map_response(check_overloaded)),
-            )
-            .with_state(self.claude_web_state.to_owned().with_claude_format());
-        self.inner = self.inner.merge(router);
-        self
-    }
 
     /// Sets up routes for v1 endpoints
-    fn route_claude_code_endpoints(mut self) -> Self {
-        let router = Router::new()
-            .route("/code/v1/messages", post(api_claude_code))
-            .layer(
-                ServiceBuilder::new()
-                    .layer(from_extractor::<RequireXApiKeyAuth>())
-                    .layer(CompressionLayer::new()),
-            )
-            .with_state(self.claude_code_state.to_owned());
-        self.inner = self.inner.merge(router);
-        self
-    }
 
     /// Sets up routes for API endpoints
-    fn route_admin_endpoints(mut self) -> Self {
-        let cookie_router = Router::new()
-            .route("/cookies", get(api_get_cookies))
-            .route("/cookie", delete(api_delete_cookie).post(api_post_cookie))
-            .with_state(self.cookie_actor_handle.to_owned());
-        let key_router = Router::new()
-            .route("/key", post(api_post_key).delete(api_delete_key))
-            .route("/keys", get(api_get_keys))
-            .with_state(self.key_actor_handle.to_owned());
-        let admin_router = Router::new()
-            .route("/auth", get(api_auth))
-            .route("/config", get(api_get_config).put(api_post_config))
-            .route("/storage/import", post(api_storage_import))
-            .route("/storage/export", post(api_storage_export))
-            .route("/storage/status", get(api_storage_status));
-        let router = Router::new()
-            .nest(
-                "/api",
-                cookie_router
-                    .merge(key_router)
-                    .merge(admin_router)
-                    .layer(from_extractor::<RequireAdminAuth>()),
-            )
-            .route("/api/version", get(api_version));
-        self.inner = self.inner.merge(router);
-        self
-    }
 
     /// Sets up routes for OpenAI compatible endpoints
-    fn route_claude_web_oai_endpoints(mut self) -> Self {
-        let router = Router::new()
-            .route("/v1/chat/completions", post(api_claude_web))
-            .route("/v1/models", get(api_get_models))
-            .layer(
-                ServiceBuilder::new()
-                    .layer(from_extractor::<RequireBearerAuth>())
-                    .layer(CompressionLayer::new())
-                    .layer(map_response(to_oai))
-                    .layer(map_response(apply_stop_sequences))
-                    .layer(map_response(check_overloaded)),
-            )
-            .with_state(self.claude_web_state.to_owned().with_openai_format());
-        self.inner = self.inner.merge(router);
-        self
-    }
 
     /// Sets up routes for OpenAI compatible endpoints
-    fn route_claude_code_oai_endpoints(mut self) -> Self {
-        let router = Router::new()
-            .route("/code/v1/chat/completions", post(api_claude_code))
-            .route("/code/v1/models", get(api_get_models))
-            .layer(
-                ServiceBuilder::new()
-                    .layer(from_extractor::<RequireBearerAuth>())
-                    .layer(CompressionLayer::new())
-                    .layer(map_response(to_oai)),
-            )
-            .with_state(self.claude_code_state.to_owned());
-        self.inner = self.inner.merge(router);
-        self
-    }
+    // builder methods removed in favor of helper composition
 
     /// Sets up static file serving
     fn setup_static_serving(mut self) -> Self {
@@ -237,4 +142,101 @@ impl RouterBuilder {
     pub fn build(self) -> Router {
         self.inner
     }
+}
+
+// =========== Helper builders (domain routers) ===========
+
+fn build_gemini_router(state: GeminiState) -> Router {
+    let router_gemini = Router::new()
+        .route("/v1/v1beta/{*path}", post(api_post_gemini))
+        .route("/v1/vertex/v1beta/{*path}", post(api_post_gemini))
+        .layer(from_extractor::<RequireQueryKeyAuth>())
+        .layer(CompressionLayer::new())
+        .with_state(state.to_owned());
+    let router_oai = Router::new()
+        .route("/gemini/chat/completions", post(api_post_gemini_oai))
+        .route("/gemini/vertex/chat/completions", post(api_post_gemini_oai))
+        .layer(from_extractor::<RequireBearerAuth>())
+        .layer(CompressionLayer::new())
+        .with_state(state);
+    router_gemini.merge(router_oai)
+}
+
+fn build_claude_web_router(state: ClaudeWebState) -> Router {
+    Router::new()
+        .route("/v1/messages", post(api_claude_web))
+        .layer(
+            ServiceBuilder::new()
+                .layer(from_extractor::<RequireXApiKeyAuth>())
+                .layer(CompressionLayer::new())
+                .layer(map_response(add_usage_info))
+                .layer(map_response(apply_stop_sequences))
+                .layer(map_response(check_overloaded)),
+        )
+        .with_state(state)
+}
+
+fn build_claude_code_router(state: ClaudeCodeState) -> Router {
+    Router::new()
+        .route("/code/v1/messages", post(api_claude_code))
+        .layer(
+            ServiceBuilder::new()
+                .layer(from_extractor::<RequireXApiKeyAuth>())
+                .layer(CompressionLayer::new()),
+        )
+        .with_state(state)
+}
+
+fn build_claude_web_oai_router(state: ClaudeWebState) -> Router {
+    Router::new()
+        .route("/v1/chat/completions", post(api_claude_web))
+        .route("/v1/models", get(api_get_models))
+        .layer(
+            ServiceBuilder::new()
+                .layer(from_extractor::<RequireBearerAuth>())
+                .layer(CompressionLayer::new())
+                .layer(map_response(to_oai))
+                .layer(map_response(apply_stop_sequences))
+                .layer(map_response(check_overloaded)),
+        )
+        .with_state(state)
+}
+
+fn build_claude_code_oai_router(state: ClaudeCodeState) -> Router {
+    Router::new()
+        .route("/code/v1/chat/completions", post(api_claude_code))
+        .route("/code/v1/models", get(api_get_models))
+        .layer(
+            ServiceBuilder::new()
+                .layer(from_extractor::<RequireBearerAuth>())
+                .layer(CompressionLayer::new())
+                .layer(map_response(to_oai)),
+        )
+        .with_state(state)
+}
+
+fn build_admin_router(cookie_handle: CookieActorHandle, key_handle: KeyActorHandle) -> Router {
+    let cookie_router = Router::new()
+        .route("/cookies", get(api_get_cookies))
+        .route("/cookie", delete(api_delete_cookie).post(api_post_cookie))
+        .with_state(cookie_handle);
+    let key_router = Router::new()
+        .route("/key", post(api_post_key).delete(api_delete_key))
+        .route("/keys", get(api_get_keys))
+        .with_state(key_handle);
+    let admin_router = Router::new()
+        .route("/auth", get(api_auth))
+        .route("/config", get(api_get_config).put(api_post_config))
+        .route("/storage/import", post(api_storage_import))
+        .route("/storage/export", post(api_storage_export))
+        .route("/storage/status", get(api_storage_status));
+    Router::new()
+        .nest(
+            "/api",
+            cookie_router
+                .merge(key_router)
+                .merge(admin_router)
+                .layer(from_extractor::<RequireAdminAuth>()),
+        )
+        .route("/api/version", get(api_version))
 }
