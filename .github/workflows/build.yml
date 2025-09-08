@@ -14,6 +14,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
   APT_PACKAGES: "build-essential cmake perl pkg-config libclang-dev"
+  CHOCOLATEY_PACKAGES: "cmake strawberryperl pkgconfiglite llvm nasm"
+  HOMEBREW_PACKAGES: "llvm"
   BIN_NAME: "clewdr"
 permissions:
   contents: write
@@ -107,76 +109,22 @@ jobs:
           ndk-version: r27c
           add-to-path: true
 
-
-      # macOS: use toolcache action for LLVM
-      - name: Setup LLVM (macOS)
-        if: matrix.os == 'macos'
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: 17
-          directory: ${{ runner.temp }}/llvm
-      - name: Export LIBCLANG_PATH (macOS)
-        if: matrix.os == 'macos'
-        run: echo "LIBCLANG_PATH=${{ runner.temp }}/llvm/lib" >> $GITHUB_ENV
-
-      # Linux: use toolcache action for LLVM
-      - name: Setup LLVM (Linux)
+      - name: Install APT packages
         if: contains(matrix.runner, 'ubuntu')
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: 17
-          directory: ${{ runner.temp }}/llvm
-      - name: Export LIBCLANG_PATH (Linux)
-        if: contains(matrix.runner, 'ubuntu')
-        run: echo "LIBCLANG_PATH=${{ runner.temp }}/llvm/lib" >> $GITHUB_ENV
-
-      # musllinux still requires musl toolchain via apt
-      - name: Install musl APT packages (musllinux only)
-        if: contains(matrix.runner, 'ubuntu') && matrix.os == 'musllinux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ${{ matrix.musl_packages }}
+          sudo apt-get install -y ${{ matrix.musl_packages }} ${{ env.APT_PACKAGES }}
 
-      # Windows: use toolcache actions and keep choco only for zip
-      - name: Setup LLVM (Windows)
+      - name: Install Chocolatey Packages
         if: matrix.os == 'windows'
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: 17
-          directory: ${{ runner.temp }}/llvm
-      - name: Export LIBCLANG_PATH (Windows)
-        if: matrix.os == 'windows'
-        shell: pwsh
-        run: echo "LIBCLANG_PATH=${{ runner.temp }}\llvm\bin" >> $env:GITHUB_ENV
-
-      - name: Setup NASM (Windows)
-        if: matrix.os == 'windows'
-        uses: ilammy/setup-nasm@v1
-
-      - name: Export NASM for CMake (Windows)
-        if: matrix.os == 'windows'
-        shell: bash
         run: |
-          NASM_PATH=$(command -v nasm || which nasm)
-          echo "CMAKE_ASM_NASM_COMPILER=$NASM_PATH" >> $GITHUB_ENV
-          echo "ASM_NASM=$NASM_PATH" >> $GITHUB_ENV
+          choco install -y ${{ env.CHOCOLATEY_PACKAGES }}
 
-      - name: Setup CMake (Windows)
-        if: matrix.os == 'windows'
-        uses: jwlawson/actions-setup-cmake@v1
-        with:
-          cmake-version: '3.29.x'
-
-      - name: Setup Perl (Windows)
-        if: matrix.os == 'windows'
-        uses: shogo82148/actions-setup-perl@v1
-        with:
-          perl-version: '5'
-          distribution: 'strawberry'
-          enable-modules-cache: false
-
-      # No need to install zip on Windows; use 7-Zip built-in
-
+      - name: Install Homebrew Packages
+        if: matrix.os == 'macos'
+        run: |
+          brew update
+          brew install ${{ env.HOMEBREW_PACKAGES }}
 
       - uses: Swatinem/rust-cache@v2
         with:

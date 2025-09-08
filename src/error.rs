@@ -406,21 +406,17 @@ impl CheckClaudeErr for Response {
         if status == 401 {
             return Err(Reason::Null.into());
         }
-        if status == 403 {
-            let msg = match &err.error.message {
-                serde_json::Value::String(s) => s.clone(),
-                v => v.to_string(),
-            };
-            let msg_lower = msg.to_ascii_lowercase();
-            let phrase = "oauth authentication is currently not allowed for this organization";
-            if msg_lower.contains(phrase) {
-                return Err(Reason::Null.into());
-            } else {
-                return Err(ClewdrError::ClaudeHttpError {
-                    code: status,
-                    inner: err.error,
-                });
-            }
+        const OAUTH_403_PHRASE: &str =
+            "oauth authentication is currently not allowed for this organization";
+        if status == 403
+            && err
+                .error
+                .message
+                .to_string()
+                .to_ascii_lowercase()
+                .contains(OAUTH_403_PHRASE)
+        {
+            return Err(Reason::Null.into());
         }
         let inner_error = err.error;
         // check if the error is a rate limit error
