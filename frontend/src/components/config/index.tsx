@@ -201,47 +201,57 @@ const ConfigTab: React.FC = () => {
       <div className="rounded-lg border border-white/10 bg-white/5 p-4">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm text-gray-300">Persistence Mode</div>
+            <div className="text-sm text-gray-300">{t("configExtra.storage.mode")}</div>
             <div className="text-white font-medium">
               {config?.persistence?.mode ?? "file"}
             </div>
             {status && (
               <div className="text-xs text-gray-400 mt-1">
-                Health: {status.healthy ? "OK" : "DOWN"}
-                {status.details?.driver && (
-                  <div>driver: {status.details.driver}</div>
-                )}
+                {(() => {
+                  const isNA = !status.enabled || status.mode === "file";
+                  const healthLabel = isNA
+                    ? t("configExtra.storage.na")
+                    : status.healthy
+                      ? t("configExtra.storage.ok")
+                      : t("configExtra.storage.down");
+                  return (
+                    <span>
+                      {t("configExtra.storage.health")}: {healthLabel}
+                    </span>
+                  );
+                })()}
+                {/* driver equals mode; omit to avoid redundancy */}
                 {typeof status.details?.latency_ms === "number" && (
-                  <div>latency_ms: {status.details.latency_ms}</div>
+                  <div>{t("configExtra.storage.latencyMs")}: {status.details.latency_ms}</div>
                 )}
                 {status.details?.sqlite_path && (
-                  <div>sqlite_path: {status.details.sqlite_path}</div>
+                  <div>{t("configExtra.storage.sqlitePath")}: {status.details.sqlite_path}</div>
                 )}
                 {status.details?.database_url && (
-                  <div>database_url: {status.details.database_url}</div>
+                  <div>{t("configExtra.storage.databaseUrl")}: {status.details.database_url}</div>
                 )}
                 {typeof status.last_write_ts === "number" && status.last_write_ts > 0 && (
                   <div>
-                    last_write: {new Date(status.last_write_ts * 1000).toLocaleString()}
+                    {t("configExtra.storage.lastWrite")}: {new Date(status.last_write_ts * 1000).toLocaleString()}
                   </div>
                 )}
                 {typeof status.total_writes === "number" && (
-                  <div>total_writes: {status.total_writes}</div>
+                  <div>{t("configExtra.storage.totalWrites")}: {status.total_writes}</div>
                 )}
                 {typeof status.avg_write_ms === "number" && (
-                  <div>avg_write_ms: {status.avg_write_ms.toFixed(2)}</div>
+                  <div>{t("configExtra.storage.avgWriteMs")}: {status.avg_write_ms.toFixed(2)}</div>
                 )}
                 {typeof status.failure_ratio === "number" && (
-                  <div>failure_ratio: {(status.failure_ratio * 100).toFixed(2)}%</div>
+                  <div>{t("configExtra.storage.failureRatio")}: {(status.failure_ratio * 100).toFixed(2)}%</div>
                 )}
                 {typeof status.retry_count === "number" && (
-                  <div>retry_count: {status.retry_count}</div>
+                  <div>{t("configExtra.storage.retryCount")}: {status.retry_count}</div>
                 )}
                 {typeof status.write_error_count === "number" && (
-                  <div>write_errors: {status.write_error_count}</div>
+                  <div>{t("configExtra.storage.writeErrors")}: {status.write_error_count}</div>
                 )}
-                {status.error && <div>error: {status.error}</div>}
-                {status.last_error && <div>last_error: {status.last_error}</div>}
+                {status.error && <div>{t("configExtra.storage.error")}: {status.error}</div>}
+                {status.last_error && <div>{t("configExtra.storage.lastError")}: {status.last_error}</div>}
               </div>
             )}
           </div>
@@ -250,7 +260,7 @@ const ConfigTab: React.FC = () => {
               onClick={async () => {
                 try {
                   await storageImport();
-                  toast.success("Imported to DB");
+                  toast.success(t("configExtra.storage.importedToDb"));
                 } catch (e) {
                   toast.error((e as Error).message);
                 }
@@ -259,13 +269,13 @@ const ConfigTab: React.FC = () => {
               className="py-1 px-3"
               disabled={(config?.persistence?.mode ?? "file") === "file"}
             >
-              Import from file
+              {t("configExtra.storage.importFromFile")}
             </Button>
             <Button
               onClick={async () => {
                 try {
                   await storageExport();
-                  toast.success("Exported to file");
+                  toast.success(t("configExtra.storage.exportedToFile"));
                 } catch (e) {
                   toast.error((e as Error).message);
                 }
@@ -274,7 +284,7 @@ const ConfigTab: React.FC = () => {
               className="py-1 px-3"
               disabled={(config?.persistence?.mode ?? "file") === "file"}
             >
-              Export to file
+              {t("configExtra.storage.exportToFile")}
             </Button>
           </div>
         </div>

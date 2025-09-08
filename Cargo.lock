@@ -692,7 +692,7 @@ checksum = "b94f61472cee1439c0b966b47e3aca9ae07e45d070759512cd390ea2bebc6675"
 
 [[package]]
 name = "clewdr"
-version = "0.11.14"
+version = "0.11.15"
 dependencies = [
  "arc-swap",
  "async-stream",
@@ -707,7 +707,7 @@ dependencies = [
  "const_format",
  "dhat",
  "enable-ansi-support",
- "etcetera 0.10.0",
+ "etcetera",
  "eventsource-stream",
  "figment",
  "futures",
@@ -1221,17 +1221,6 @@ dependencies = [
  "cfg-if",
  "home",
  "windows-sys 0.48.0",
-]
-
-[[package]]
-name = "etcetera"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26c7b13d0780cb82722fd59f6f57f925e143427e4a75313a6c77243bf5326ae6"
-dependencies = [
- "cfg-if",
- "home",
- "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3846,7 +3835,7 @@ dependencies = [
  "byteorder",
  "crc",
  "dotenvy",
- "etcetera 0.8.0",
+ "etcetera",
  "futures-channel",
  "futures-core",
  "futures-io",

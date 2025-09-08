@@ -18,6 +18,8 @@ pub struct GeminiContext {
     pub path: String,
     pub query: GeminiArgs,
     pub api_format: GeminiApiFormat,
+    pub cli_mode: bool,
+    pub auth_bearer: Option<String>,
 }
 
 pub struct GeminiPreprocess(pub GeminiRequestBody, pub GeminiContext);
@@ -27,7 +29,9 @@ impl FromRequest<GeminiState> for GeminiPreprocess {
 
     async fn from_request(mut req: Request, state: &GeminiState) -> Result<Self, Self::Rejection> {
         let Path(path) = req.extract_parts::<Path<String>>().await?;
-        let vertex = req.uri().to_string().contains("vertex");
+        let uri = req.uri().to_string();
+        let vertex = uri.contains("vertex");
+        let cli_mode = uri.contains("/gemini/cli/");
         if vertex && !CLEWDR_CONFIG.load().vertex.validate() {
             return Err(ClewdrError::BadRequest {
                 msg: "Vertex is not configured",
@@ -46,6 +50,13 @@ impl FromRequest<GeminiState> for GeminiPreprocess {
             });
         };
         let query = req.extract_parts::<GeminiArgs>().await?;
+        // extract Authorization bearer if present
+        let auth_bearer = req
+            .headers()
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .map(|s| s.to_string());
         let ctx = GeminiContext {
             vertex,
             model,
@@ -53,6 +64,8 @@ impl FromRequest<GeminiState> for GeminiPreprocess {
             path,
             query,
             api_format: GeminiApiFormat::Gemini,
+            cli_mode,
+            auth_bearer,
         };
         let Json(mut body) = Json::<GeminiRequestBody>::from_request(req, &()).await?;
         body.safety_off();
@@ -68,18 +81,28 @@ impl FromRequest<GeminiState> for GeminiOaiPreprocess {
     type Rejection = ClewdrError;
 
     async fn from_request(req: Request, state: &GeminiState) -> Result<Self, Self::Rejection> {
-        let vertex = req.uri().to_string().contains("vertex");
+        let uri = req.uri().to_string();
+        let vertex = uri.contains("vertex");
+        let cli_mode = uri.contains("/gemini/cli/");
         if vertex && !CLEWDR_CONFIG.load().vertex.validate() {
             return Err(ClewdrError::BadRequest {
                 msg: "Vertex is not configured",
             });
         }
+        // capture bearer before request is consumed
+        let auth_bearer = req
+            .headers()
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .map(|s| s.to_string());
         let Json(mut body) = Json::<CreateMessageParams>::from_request(req, &()).await?;
         let model = body.model.to_owned();
         if vertex {
             body.preprocess_vertex();
         }
         let stream = body.stream.unwrap_or_default();
+        // auth_bearer captured above
         let ctx = GeminiContext {
             vertex,
             model,
@@ -87,6 +110,8 @@ impl FromRequest<GeminiState> for GeminiOaiPreprocess {
             path: String::new(),
             query: GeminiArgs::default(),
             api_format: GeminiApiFormat::OpenAI,
+            cli_mode,
+            auth_bearer,
         };
         let mut state = state.clone();
         state.update_from_ctx(&ctx);

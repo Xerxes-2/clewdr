@@ -11,6 +11,7 @@ use crate::{
     services::{
         cookie_actor::{CookieActorHandle, CookieStatusInfo},
         key_actor::{KeyActorHandle, KeyStatusInfo},
+        cli_token_actor::{CliTokenActorHandle, CliTokenStatusInfo},
     },
 };
 
@@ -71,6 +72,54 @@ pub async fn api_post_key(
     }
 }
 
+pub async fn api_post_cli_token(
+    State(s): State<CliTokenActorHandle>,
+    AuthBearer(t): AuthBearer,
+    Json(body): Json<Value>,
+) -> StatusCode {
+    if !CLEWDR_CONFIG.load().admin_auth(&t) {
+        return StatusCode::UNAUTHORIZED;
+    }
+    // Accept either raw token JSON {"token":"ya29..."} or full OAuth JSON
+    let token = body
+        .get("token")
+        .and_then(|v| v.as_str())
+        .or_else(|| body.get("access_token").and_then(|v| v.as_str()))
+        .map(|s| s.to_string());
+    let Some(token) = token else {
+        warn!("CLI token submission missing token/access_token field");
+        return StatusCode::BAD_REQUEST;
+    };
+
+    // Optional metadata for refresh
+    use chrono::{DateTime, Utc};
+    let expiry = body
+        .get("expiry")
+        .and_then(|v| v.as_str())
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&Utc));
+    let meta = crate::config::CliOAuthMeta {
+        client_id: body.get("client_id").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        client_secret: body.get("client_secret").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        refresh_token: body.get("refresh_token").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        token_uri: body.get("token_uri").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        scopes: body
+            .get("scopes")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect()),
+        project_id: body.get("project_id").and_then(|v| v.as_str()).map(|s| s.to_string()),
+    };
+    let status = crate::config::CliTokenStatus { token: token.into(), count_403: 0, expiry, meta: Some(meta) };
+    info!("CLI token accepted: {}", status.token.ellipse());
+    match s.submit(status).await {
+        Ok(_) => StatusCode::OK,
+        Err(e) => {
+            error!("Failed to submit CLI token: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}
+
 /// API endpoint to retrieve all cookies and their status
 /// Gets information about valid, exhausted, and invalid cookies
 ///
@@ -105,6 +154,19 @@ pub async fn api_get_keys(
     match s.get_status().await {
         Ok(status) => Ok(Json(status)),
         Err(e) => Err(ApiError::internal(format!("Failed to get keys status: {}", e))),
+    }
+}
+
+pub async fn api_get_cli_tokens(
+    State(s): State<CliTokenActorHandle>,
+    AuthBearer(t): AuthBearer,
+) -> Result<Json<CliTokenStatusInfo>, ApiError> {
+    if !CLEWDR_CONFIG.load().admin_auth(&t) {
+        return Err(ApiError::unauthorized());
+    }
+    match s.get_status().await {
+        Ok(status) => Ok(Json(status)),
+        Err(e) => Err(ApiError::internal(format!("Failed to get CLI tokens status: {}", e))),
     }
 }
 
@@ -161,6 +223,20 @@ pub async fn api_delete_key(
             error!("Failed to delete key: {}", e);
             Err(ApiError::internal(format!("Failed to delete key: {}", e)))
         }
+    }
+}
+
+pub async fn api_delete_cli_token(
+    State(s): State<CliTokenActorHandle>,
+    AuthBearer(t): AuthBearer,
+    Json(c): Json<crate::config::CliTokenStatus>,
+) -> Result<StatusCode, ApiError> {
+    if !CLEWDR_CONFIG.load().admin_auth(&t) {
+        return Err(ApiError::unauthorized());
+    }
+    match s.delete(c.to_owned()).await {
+        Ok(_) => Ok(StatusCode::NO_CONTENT),
+        Err(e) => Err(ApiError::internal(format!("Failed to delete CLI token: {}", e))),
     }
 }
 

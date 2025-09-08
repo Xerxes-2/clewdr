@@ -26,7 +26,8 @@
     "cookie": "Cookie",
     "config": "Config",
     "keys": "Keys",
-    "auth": "Auth"
+    "auth": "Auth",
+    "cli": "CLI"
   },
   "cookieTab": {
     "submit": "Submit Cookie",
@@ -80,7 +81,8 @@
     },
     "noCookies": "No {{type}}",
     "deleteConfirm": "Are you sure you want to delete this cookie?",
-    "copy": "Copy to clipboard"
+    "copy": "Copy to clipboard",
+    "delete": "Delete cookie"
   },
   "config": {
     "title": "Configuration",
@@ -191,5 +193,62 @@
     "emptyHelp": "You haven't added any keys yet. Use the 'Submit Key' tab to add keys.",
     "deleteConfirm": "Are you sure you want to delete this key?",
     "delete": "Delete"
+  },
+  "cli": {
+    "tab": {
+      "submit": "Submit",
+      "status": "Status"
+    },
+    "form": {
+      "label": "CLI Credentials",
+      "placeholder": "Paste tokens or JSON (one per line)",
+      "help": "Accepts raw access tokens (ya29...) or full OAuth JSON (token/access_token present).",
+      "submit": "Submit",
+      "submitting": "Submitting...",
+      "resultDetails": "Submission details:"
+    },
+    "status": {
+      "title": "CLI Tokens",
+      "total": "Total: {{count}}",
+      "refresh": "Refresh",
+      "refreshing": "Refreshing",
+      "empty": "No CLI tokens",
+      "deleteConfirm": "Delete this CLI token?",
+      "delete": "Delete"
+    },
+    "messages": {
+      "submitted": "Submitted",
+      "allSuccess": "All {{count}} submitted successfully",
+      "allFailed": "All {{count}} failed to submit",
+      "partial": "{{success}} of {{total}} submitted successfully ({{failed}} failed)",
+      "invalidJson": "Invalid JSON",
+      "invalidJsonWithMsg": "Invalid JSON: {{message}}",
+      "empty": "Please enter at least one item"
+    }
+  },
+  "configExtra": {
+    "storage": {
+      "mode": "Persistence Mode",
+      "health": "Health",
+      "ok": "OK",
+      "down": "DOWN",
+      "na": "N/A",
+      "driver": "driver",
+      "latencyMs": "latency_ms",
+      "sqlitePath": "sqlite_path",
+      "databaseUrl": "database_url",
+      "lastWrite": "last_write",
+      "totalWrites": "total_writes",
+      "avgWriteMs": "avg_write_ms",
+      "failureRatio": "failure_ratio",
+      "retryCount": "retry_count",
+      "writeErrors": "write_errors",
+      "error": "error",
+      "lastError": "last_error",
+      "importFromFile": "Import from file",
+      "exportToFile": "Export to file",
+      "importedToDb": "Imported to DB",
+      "exportedToFile": "Exported to file"
+    }
   }
 }

@@ -49,9 +49,18 @@ pub async fn api_storage_status() -> Json<serde_json::Value> {
             return Json(s);
         }
     }
+    let cfg = CLEWDR_CONFIG.load();
+    let mode = match cfg.persistence.mode {
+        crate::config::PersistenceMode::File => "file",
+        crate::config::PersistenceMode::Sqlite => "sqlite",
+        crate::config::PersistenceMode::Postgres => "postgres",
+        crate::config::PersistenceMode::Mysql => "mysql",
+    };
     Json(json!({
         "enabled": false,
-        "mode": "file",
-        "healthy": false,
+        "mode": mode,
+        // For non-DB modes, report healthy as true to avoid confusion in UI
+        "healthy": true,
+        "details": { "driver": mode }
     }))
 }

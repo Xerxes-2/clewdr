@@ -5,7 +5,7 @@ use crate::{
     claude_code_state::ClaudeCodeState,
     claude_web_state::ClaudeWebState,
     gemini_state::GeminiState,
-    services::{cookie_actor::CookieActorHandle, key_actor::KeyActorHandle},
+    services::{cookie_actor::CookieActorHandle, key_actor::KeyActorHandle, cli_token_actor::CliTokenActorHandle},
 };
 use crate::routes::{
     build_admin_router,
@@ -14,6 +14,7 @@ use crate::routes::{
     build_claude_web_oai_router,
     build_claude_web_router,
     build_gemini_router,
+    build_gemini_cli_router,
 };
 
 /// RouterBuilder for the application
@@ -22,6 +23,7 @@ pub struct RouterBuilder {
     claude_code_state: ClaudeCodeState,
     cookie_actor_handle: CookieActorHandle,
     key_actor_handle: KeyActorHandle,
+    cli_token_handle: CliTokenActorHandle,
     gemini_state: GeminiState,
     inner: Router,
 }
@@ -41,7 +43,10 @@ impl RouterBuilder {
         let key_tx = KeyActorHandle::start()
             .await
             .expect("Failed to start KeyActorHandle");
-        let gemini_state = GeminiState::new(key_tx.to_owned());
+        let cli_token_tx = CliTokenActorHandle::start()
+            .await
+            .expect("Failed to start CliTokenActorHandle");
+        let gemini_state = GeminiState::new(key_tx.to_owned(), cli_token_tx.to_owned());
         // Background DB sync (keys/cookies) for multi-instance eventual consistency
         let _bg = crate::services::sync::spawn(cookie_handle.clone(), key_tx.clone());
         RouterBuilder {
@@ -49,6 +54,7 @@ impl RouterBuilder {
             claude_code_state,
             cookie_actor_handle: cookie_handle,
             key_actor_handle: key_tx,
+            cli_token_handle: cli_token_tx,
             gemini_state,
             inner: Router::new(),
         }
@@ -60,6 +66,8 @@ impl RouterBuilder {
         // compose domain routers then apply common layers
         let composed = Router::new()
             .merge(build_gemini_router(self.gemini_state.to_owned()))
+            // CLI-dedicated Gemini routes with separate prefix to avoid confusion
+            .merge(build_gemini_cli_router(self.gemini_state.to_owned()))
             .merge(build_claude_web_router(self.claude_web_state.to_owned().with_claude_format()))
             .merge(build_claude_code_router(self.claude_code_state.to_owned()))
             .merge(build_claude_web_oai_router(self.claude_web_state.to_owned().with_openai_format()))
@@ -67,6 +75,7 @@ impl RouterBuilder {
             .merge(build_admin_router(
                 self.cookie_actor_handle.to_owned(),
                 self.key_actor_handle.to_owned(),
+                self.cli_token_handle.to_owned(),
             ));
         self.inner = self.inner.merge(composed);
         self.setup_static_serving().with_tower_trace().with_cors()

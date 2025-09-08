@@ -26,7 +26,8 @@
     "cookie": "Cookie",
     "config": "配置",
     "keys": "密钥",
-    "auth": "认证"
+    "auth": "认证",
+    "cli": "CLI"
   },
   "cookieTab": {
     "submit": "提交Cookie",
@@ -80,7 +81,8 @@
     },
     "noCookies": "没有{{type}}",
     "deleteConfirm": "您确定要删除此cookie吗？",
-    "copy": "复制到剪贴板"
+    "copy": "复制到剪贴板",
+    "delete": "删除 Cookie"
   },
   "config": {
     "title": "配置",
@@ -191,5 +193,62 @@
     "emptyHelp": "您尚未添加任何密钥。使用\"提交密钥\"选项卡添加密钥。",
     "deleteConfirm": "您确定要删除此密钥吗？",
     "delete": "删除"
+  },
+  "cli": {
+    "tab": {
+      "submit": "提交",
+      "status": "状态"
+    },
+    "form": {
+      "label": "CLI 凭据",
+      "placeholder": "粘贴令牌或JSON（每行一个）",
+      "help": "支持原始访问令牌（ya29...）或完整OAuth JSON（包含 token/access_token）。",
+      "submit": "提交",
+      "submitting": "提交中...",
+      "resultDetails": "提交详情："
+    },
+    "status": {
+      "title": "CLI 令牌",
+      "total": "总计：{{count}}",
+      "refresh": "刷新",
+      "refreshing": "刷新中",
+      "empty": "没有 CLI 令牌",
+      "deleteConfirm": "删除此 CLI 令牌？",
+      "delete": "删除"
+    },
+    "messages": {
+      "submitted": "已提交",
+      "allSuccess": "全部 {{count}} 个提交成功",
+      "allFailed": "全部 {{count}} 个提交失败",
+      "partial": "{{total}} 个中 {{success}} 个提交成功（{{failed}} 个失败）",
+      "invalidJson": "无效的 JSON",
+      "invalidJsonWithMsg": "无效的 JSON：{{message}}",
+      "empty": "请输入至少一个条目"
+    }
+  },
+  "configExtra": {
+    "storage": {
+      "mode": "持久化模式",
+      "health": "健康",
+      "ok": "正常",
+      "down": "异常",
+      "na": "不适用",
+      "driver": "驱动",
+      "latencyMs": "延迟(ms)",
+      "sqlitePath": "sqlite 路径",
+      "databaseUrl": "数据库 URL",
+      "lastWrite": "最后写入",
+      "totalWrites": "总写入次数",
+      "avgWriteMs": "平均写入(ms)",
+      "failureRatio": "失败率",
+      "retryCount": "重试次数",
+      "writeErrors": "写入错误",
+      "error": "错误",
+      "lastError": "最后错误",
+      "importFromFile": "从文件导入",
+      "exportToFile": "导出到文件",
+      "importedToDb": "已导入到数据库",
+      "exportedToFile": "已导出到文件"
+    }
   }
 }

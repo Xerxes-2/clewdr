@@ -10,6 +10,7 @@ import LogoutPanel from "./components/auth/LogoutPanel";
 import CookieTabs from "./components/cookie";
 import ConfigTab from "./components/config";
 import KeysTabs from "./components/keys";
+import CliGuide from "./components/cli";
 import StatusMessage from "./components/common/StatusMessage";
 import ErrorBoundary from "./components/common/ErrorBoundary";
 import { useAppContext } from "./context/AppContext";
@@ -51,8 +52,9 @@ function App() {
   const tabs = [
     { id: "cookie", label: t("tabs.cookie"), color: "cyan" },
     { id: "keys", label: t("tabs.keys"), color: "purple" },
+    { id: "cli", label: t("tabs.cli"), color: "blue" },
     { id: "config", label: t("tabs.config"), color: "green" },
-    { id: "token", label: t("tabs.auth"), color: "violet" },
+    { id: "token", label: t("tabs.auth"), color: "amber" },
   ];
 
   return (
@@ -75,6 +77,8 @@ function App() {
                 <ConfigTab />
               ) : activeTab === "keys" ? (
                 <KeysTabs />
+              ) : activeTab === "cli" ? (
+                <CliGuide />
               ) : (
                 <LogoutPanel onLogout={handleLogout} />
               )}

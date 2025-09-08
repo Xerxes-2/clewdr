@@ -103,6 +103,8 @@ pub struct ClewdrConfig {
     pub wasted_cookie: HashSet<UselessCookie>,
     #[serde(default)]
     pub gemini_keys: HashSet<KeyStatus>,
+    #[serde(default)]
+    pub cli_tokens: HashSet<crate::config::CliTokenStatus>,
 
     // Persistence settings
     #[serde(default)]
@@ -187,6 +189,7 @@ impl Default for ClewdrConfig {
             cookie_array: HashSet::new(),
             wasted_cookie: HashSet::new(),
             gemini_keys: HashSet::new(),
+            cli_tokens: HashSet::new(),
             persistence: Default::default(),
             password: String::new(),
             admin_password: String::new(),

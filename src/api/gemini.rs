@@ -20,7 +20,7 @@ use crate::{
 };
 
 // Common handler function to process both Gemini and OpenAI format requests
-async fn handle_gemini_request<T: Serialize + Clone + Send + 'static>(
+pub async fn handle_gemini_request<T: Serialize + Clone + Send + 'static>(
     mut state: GeminiState,
     body: T,
     ctx: GeminiContext,
