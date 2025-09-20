@@ -104,12 +104,10 @@ impl GeminiState {
     pub async fn request_key(&mut self) -> Result<(), ClewdrError> {
         let key = self.key_handle.request().await?;
         self.key = Some(key.to_owned());
-        let client = ClientBuilder::new();
-        let client = if let Some(proxy) = CLEWDR_CONFIG.load().proxy.to_owned() {
-            client.proxy(proxy)
-        } else {
-            client
-        };
+        let mut client = ClientBuilder::new();
+        if let Some(proxy) = CLEWDR_CONFIG.load().wreq_proxy.to_owned() {
+            client = client.proxy(proxy);
+        }
         self.client = client.build().context(WreqSnafu {
             msg: "Failed to build Gemini client",
         })?;
@@ -129,12 +127,10 @@ impl GeminiState {
         &mut self,
         p: impl Sized + Serialize,
     ) -> Result<wreq::Response, ClewdrError> {
-        let client = ClientBuilder::new();
-        let client = if let Some(proxy) = CLEWDR_CONFIG.load().proxy.to_owned() {
-            client.proxy(proxy)
-        } else {
-            client
-        };
+        let mut client = ClientBuilder::new();
+        if let Some(proxy) = CLEWDR_CONFIG.load().wreq_proxy.to_owned() {
+            client = client.proxy(proxy);
+        }
         self.client = client.build().context(WreqSnafu {
             msg: "Failed to build Gemini client",
         })?;
