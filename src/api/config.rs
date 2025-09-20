@@ -27,7 +27,23 @@ pub async fn api_get_config(
         obj.remove("cookie_array");
         obj.remove("wasted_cookie");
         obj.remove("gemini_keys");
-        obj["vertex"]["credential"] = "placeholder".into();
+        if let Some(vertex) = obj.get_mut("vertex").and_then(|v| v.as_object_mut()) {
+            let entries: Vec<_> = CLEWDR_CONFIG
+                .load()
+                .vertex
+                .credentials
+                .iter()
+                .map(|entry| {
+                    json!({
+                        "id": entry.id.to_string(),
+                        "client_email": entry.credential.client_email,
+                        "project_id": entry.credential.project_id,
+                        "count_403": entry.count_403,
+                    })
+                })
+                .collect();
+            vertex.insert("credentials".into(), json!(entries));
+        }
     }
 
     Ok(Json(config_json))
@@ -57,9 +73,8 @@ pub async fn api_post_config(
         new_c.cookie_array = old_c.cookie_array.to_owned();
         new_c.wasted_cookie = old_c.wasted_cookie.to_owned();
         new_c.gemini_keys = old_c.gemini_keys.to_owned();
-        if new_c.vertex.credential.is_none() {
-            new_c.vertex.credential = old_c.vertex.credential.to_owned();
-        }
+        new_c.vertex.credentials = old_c.vertex.credentials.to_owned();
+        new_c.vertex.normalize();
         new_c
     });
     if let Err(e) = CLEWDR_CONFIG.load().save().await {

@@ -17,7 +17,10 @@ use crate::{
     config::{CLEWDR_CONFIG, GEMINI_ENDPOINT, KeyStatus},
     error::{CheckGeminiErr, ClewdrError, InvalidUriSnafu, WreqSnafu},
     middleware::gemini::*,
-    services::key_actor::KeyActorHandle,
+    services::{
+        key_actor::KeyActorHandle,
+        vertex_actor::{VertexActorHandle, VertexCredential},
+    },
     types::gemini::response::{FinishReason, GeminiResponse},
     utils::forward_response,
 };
@@ -70,16 +73,18 @@ pub struct GeminiState {
     pub vertex: bool,
     pub path: String,
     pub key: Option<KeyStatus>,
+    pub vertex_credential: Option<VertexCredential>,
     pub stream: bool,
     pub query: GeminiArgs,
     pub key_handle: KeyActorHandle,
+    pub vertex_handle: VertexActorHandle,
     pub api_format: GeminiApiFormat,
     pub client: Client,
 }
 
 impl GeminiState {
     /// Create a new AppState instance
-    pub fn new(tx: KeyActorHandle) -> Self {
+    pub fn new(key_handle: KeyActorHandle, vertex_handle: VertexActorHandle) -> Self {
         GeminiState {
             model: String::new(),
             vertex: false,
@@ -87,16 +92,22 @@ impl GeminiState {
             query: GeminiArgs::default(),
             stream: false,
             key: None,
-            key_handle: tx,
+            vertex_credential: None,
+            key_handle,
+            vertex_handle,
             api_format: GeminiApiFormat::Gemini,
             client: DUMMY_CLIENT.to_owned(),
         }
     }
 
-    pub async fn report_403(&self) -> Result<(), ClewdrError> {
+    pub async fn report_403(&mut self) -> Result<(), ClewdrError> {
         if let Some(mut key) = self.key.to_owned() {
             key.count_403 += 1;
             self.key_handle.return_key(key).await?;
+        }
+        if let Some(mut credential) = self.vertex_credential.take() {
+            credential.count_403 += 1;
+            self.vertex_handle.return_credential(credential).await?;
         }
         Ok(())
     }
@@ -112,6 +123,12 @@ impl GeminiState {
             msg: "Failed to build Gemini client",
         })?;
         Ok(())
+    }
+
+    async fn request_vertex_credential(&mut self) -> Result<VertexCredential, ClewdrError> {
+        let credential = self.vertex_handle.request().await?;
+        self.vertex_credential = Some(credential.clone());
+        Ok(credential)
     }
 
     pub fn update_from_ctx(&mut self, ctx: &GeminiContext) {
@@ -141,19 +158,19 @@ impl GeminiState {
         };
 
         // Get an access token
-        let Some(cred) = CLEWDR_CONFIG.load().vertex.credential.to_owned() else {
-            return Err(ClewdrError::BadRequest {
-                msg: "Vertex credential not found",
-            });
-        };
+        let vertex_credential = self.request_vertex_credential().await?;
 
-        let access_token = get_token(cred.to_owned()).await?;
+        let access_token = get_token(vertex_credential.credential.clone()).await?;
         let bearer = format!("Bearer {access_token}");
         let res = match self.api_format {
             GeminiApiFormat::Gemini => {
                 let endpoint = format!(
                     "https://aiplatform.googleapis.com/v1/projects/{}/locations/global/publishers/google/models/{}:{method}",
-                    cred.project_id.unwrap_or_default(),
+                    vertex_credential
+                        .credential
+                        .project_id
+                        .clone()
+                        .unwrap_or_default(),
                     self.model
                 );
                 let query_vec = self.query.to_vec();
@@ -173,7 +190,11 @@ impl GeminiState {
                 self.client
                     .post(format!(
                         "https://aiplatform.googleapis.com/v1beta1/projects/{}/locations/global/endpoints/openapi/chat/completions",
-                        cred.project_id.unwrap_or_default(),
+                        vertex_credential
+                            .credential
+                            .project_id
+                            .clone()
+                            .unwrap_or_default(),
                     ))
                     .header(AUTHORIZATION, bearer)
                     .json(&p)
@@ -185,6 +206,10 @@ impl GeminiState {
             }
         };
         let res = res.check_gemini().await?;
+        self.vertex_handle
+            .return_credential(vertex_credential)
+            .await?;
+        self.vertex_credential = None;
         Ok(res)
     }
 
@@ -261,6 +286,7 @@ impl GeminiState {
                         ClewdrError::GeminiHttpError { code, .. } => {
                             if code == 403 {
                                 spawn(async move {
+                                    let mut state = state;
                                     state.report_403().await.unwrap_or_else(|e| {
                                         error!("Failed to report 403: {}", e);
                                     });

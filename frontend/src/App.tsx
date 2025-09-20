@@ -7,9 +7,9 @@ import Card from "./components/common/Card";
 import TabNavigation from "./components/common/TabNavigation";
 import AuthGatekeeper from "./components/auth/AuthGatekeeper";
 import LogoutPanel from "./components/auth/LogoutPanel";
-import CookieTabs from "./components/cookie";
+import ClaudeTabs from "./components/claude";
 import ConfigTab from "./components/config";
-import KeysTabs from "./components/keys";
+import GeminiTab from "./components/gemini";
 import StatusMessage from "./components/common/StatusMessage";
 import ErrorBoundary from "./components/common/ErrorBoundary";
 import { useAppContext } from "./context/AppContext";
@@ -49,10 +49,10 @@ function App() {
 
   // Define tabs for the authenticated user
   const tabs = [
-    { id: "cookie", label: t("tabs.cookie"), color: "cyan" },
-    { id: "keys", label: t("tabs.keys"), color: "purple" },
+    { id: "claude", label: t("tabs.claude"), color: "cyan" },
+    { id: "gemini", label: t("tabs.gemini"), color: "purple" },
     { id: "config", label: t("tabs.config"), color: "green" },
-    { id: "token", label: t("tabs.auth"), color: "violet" },
+    { id: "auth", label: t("tabs.auth"), color: "violet" },
   ];
 
   return (
@@ -69,12 +69,12 @@ function App() {
             />
 
             <ErrorBoundary>
-              {activeTab === "cookie" ? (
-                <CookieTabs />
+              {activeTab === "claude" ? (
+                <ClaudeTabs />
+              ) : activeTab === "gemini" ? (
+                <GeminiTab />
               ) : activeTab === "config" ? (
                 <ConfigTab />
-              ) : activeTab === "keys" ? (
-                <KeysTabs />
               ) : (
                 <LogoutPanel onLogout={handleLogout} />
               )}

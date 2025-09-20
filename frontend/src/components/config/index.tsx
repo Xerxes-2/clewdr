@@ -127,17 +127,7 @@ const ConfigTab: React.FC = () => {
     }
 
     // Handle empty strings for nullable fields
-    if (name.startsWith("vertex.")) {
-      const vertexField = name.split(".")[1]; // Gets 'auth\_token', 'project\_id', or 'model\_id'
-      setConfig({
-        ...config,
-        vertex: {
-          ...config.vertex,
-          [vertexField]: value === "" ? null : value,
-        },
-      });
-      return;
-    } // Handle empty strings for nullable fields
+    // Handle empty strings for nullable fields
     if (
       ["proxy", "rproxy", "custom_h", "custom_a"].includes(name) &&
       value === ""

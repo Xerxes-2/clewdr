@@ -23,9 +23,9 @@
     "passwordChanged": "注意：由于您的密码已更改，您已被登出。请使用新的凭据登录。"
   },
   "tabs": {
-    "cookie": "Cookie",
+    "claude": "Claude",
+    "gemini": "Gemini",
     "config": "配置",
-    "keys": "密钥",
     "auth": "认证"
   },
   "cookieTab": {
@@ -83,6 +83,59 @@
     "deleteConfirm": "您确定要删除此cookie吗？",
     "copy": "复制到剪贴板"
   },
+  "geminiTab": {
+    "tabs": {
+      "aistudio": "AI Studio",
+      "vertex": "Vertex"
+    },
+    "vertex": {
+      "credential": {
+        "set": "服务账号凭证：已配置",
+        "unset": "服务账号凭证：未配置"
+      }
+    },
+    "vertexTabs": {
+      "submit": "提交凭证",
+      "status": "凭证状态"
+    },
+    "vertexSubmit": {
+      "title": "提交服务账号凭证",
+      "label": "服务账号 JSON 凭证",
+      "placeholder": "{\n  \"type\": \"service_account\",\n  ...\n}",
+      "submit": "提交凭证",
+      "success": "凭证保存成功。",
+      "error": {
+        "empty": "请粘贴服务账号 JSON 凭证。",
+        "general": "保存凭证失败：{{message}}"
+      }
+    },
+    "vertexStatus": {
+      "title": "凭证状态",
+      "description": "ClewdR 会轮换多份 Google Cloud 服务账号凭证用于 Vertex 请求。",
+      "badge": {
+        "configured": "已配置",
+        "empty": "未配置"
+      },
+      "item": {
+        "label": "服务账号凭证",
+        "caption": "Vertex 请求使用的凭证"
+      },
+      "refresh": "刷新",
+      "clear": "移除凭证",
+      "cleared": "凭证已移除。",
+      "empty": "尚未提交任何凭证。",
+      "deleteConfirm": "确认移除此服务账号凭证？",
+      "count": "403 次数：{{count}}",
+      "total": "总计：{{count}} 份凭证"
+    },
+    "status": {
+      "loading": "正在加载 Gemini 配置...",
+      "error": "加载 Gemini 配置失败：{{message}}"
+    },
+    "keys": {
+      "title": "密钥管理"
+    }
+  },
   "config": {
     "title": "配置",
     "saving": "保存中...",
@@ -116,12 +169,7 @@
       },
       "vertex": {
         "title": "Vertex 设置",
-        "credential": "Json凭证",
-        "clientSecret": "客户端密钥",
-        "clientId": "客户端 ID",
-        "projectId": "项目 ID",
-        "modelId": "模型 ID",
-        "modelIdNote": "注意：这将覆盖 API 查询中的模型"
+        "managedInGemini": "Vertex 服务账号凭证请在 Gemini · Vertex 页面管理。"
       },
       "api": {
         "title": "API设置",
@@ -157,7 +205,8 @@
       "healthLabel": "健康状态",
       "health": {
         "ok": "正常",
-        "down": "异常"
+        "down": "异常",
+        "na": "不适用"
       },
       "driver": "驱动：{{driver}}",
       "latency": "延迟（毫秒）：{{latency}}",

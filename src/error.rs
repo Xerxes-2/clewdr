@@ -118,6 +118,8 @@ pub enum ClewdrError {
     NoCookieAvailable,
     #[snafu(display("No key available"))]
     NoKeyAvailable,
+    #[snafu(display("No vertex credential available"))]
+    NoVertexCredentialAvailable,
     #[snafu(display("Invalid Cookie: {}", reason))]
     #[snafu(context(false))]
     InvalidCookie {
@@ -224,6 +226,12 @@ impl IntoResponse for ClewdrError {
                 (StatusCode::BAD_REQUEST, json!(self.to_string()))
             }
             ClewdrError::EmptyChoices => (StatusCode::NO_CONTENT, json!(self.to_string())),
+            ClewdrError::NoKeyAvailable => {
+                (StatusCode::SERVICE_UNAVAILABLE, json!(self.to_string()))
+            }
+            ClewdrError::NoVertexCredentialAvailable => {
+                (StatusCode::SERVICE_UNAVAILABLE, json!(self.to_string()))
+            }
             _ => (StatusCode::INTERNAL_SERVER_ERROR, json!(self.to_string())),
         };
         let err = ClaudeError {

@@ -1,10 +1,10 @@
-// frontend/src/components/keys/KeySubmitForm.tsx
+// frontend/src/components/gemini/aistudio/KeySubmitForm.tsx
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { postKey } from "../../api/keyApi";
-import Button from "../common/Button";
-import FormInput from "../common/FormInput";
-import StatusMessage from "../common/StatusMessage";
+import { postKey } from "../../../api/keyApi";
+import Button from "../../common/Button";
+import FormInput from "../../common/FormInput";
+import StatusMessage from "../../common/StatusMessage";
 
 interface KeyResult {
   key: string;

@@ -1,6 +1,8 @@
 use std::sync::LazyLock;
 
-use crate::config::{ClewdrConfig, CookieStatus, KeyStatus, UselessCookie};
+use crate::config::{
+    CLEWDR_CONFIG, ClewdrConfig, CookieStatus, KeyStatus, UselessCookie, VertexCredentialEntry,
+};
 use crate::error::ClewdrError;
 use serde_json::json;
 
@@ -45,6 +47,22 @@ pub trait StorageLayer: Send + Sync + 'static {
         &self,
         k: &KeyStatus,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ClewdrError>> + Send>>;
+    fn persist_vertex_upsert(
+        &self,
+        entry: &VertexCredentialEntry,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ClewdrError>> + Send>>;
+    fn delete_vertex_row(
+        &self,
+        id: uuid::Uuid,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ClewdrError>> + Send>>;
+    fn load_vertex_credentials(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<Vec<VertexCredentialEntry>, ClewdrError>>
+                + Send,
+        >,
+    >;
     fn import_from_file(
         &self,
     ) -> std::pin::Pin<
@@ -123,6 +141,34 @@ impl StorageLayer for FileLayer {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ClewdrError>> + Send>> {
         Box::pin(async { Ok(()) })
     }
+    fn persist_vertex_upsert(
+        &self,
+        _entry: &VertexCredentialEntry,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ClewdrError>> + Send>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn delete_vertex_row(
+        &self,
+        _id: uuid::Uuid,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ClewdrError>> + Send>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn load_vertex_credentials(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<Vec<VertexCredentialEntry>, ClewdrError>>
+                + Send,
+        >,
+    > {
+        Box::pin(async {
+            Ok(CLEWDR_CONFIG
+                .load()
+                .vertex
+                .credentials
+                .to_vec())
+        })
+    }
     fn import_from_file(
         &self,
     ) -> std::pin::Pin<
@@ -182,7 +228,9 @@ pub fn storage() -> &'static dyn StorageLayer {
 
 // Public helpers for read-only snapshots used by background sync
 #[cfg(feature = "db")]
-pub use db::repo::{load_all_cookies, load_all_keys, persist_key_upsert};
+pub use db::repo::{
+    load_all_cookies, load_all_keys, load_all_vertex_credentials, persist_key_upsert,
+};
 
 #[cfg(not(feature = "db"))]
 pub async fn load_all_keys() -> Result<Vec<KeyStatus>, ClewdrError> {
@@ -192,4 +240,12 @@ pub async fn load_all_keys() -> Result<Vec<KeyStatus>, ClewdrError> {
 pub async fn load_all_cookies()
 -> Result<(Vec<CookieStatus>, Vec<CookieStatus>, Vec<UselessCookie>), ClewdrError> {
     Ok((vec![], vec![], vec![]))
+}
+#[cfg(not(feature = "db"))]
+pub async fn load_all_vertex_credentials() -> Result<Vec<VertexCredentialEntry>, ClewdrError> {
+    Ok(CLEWDR_CONFIG
+        .load()
+        .vertex
+        .credentials
+        .to_vec())
 }
