@@ -23,7 +23,6 @@ RUN apt-get update && apt-get install -y \
     libclang-dev \
     perl \
     pkg-config \
-    mold \
     upx-ucl \
     && rm -rf /var/lib/apt/lists/*
 RUN rustup target add x86_64-unknown-linux-musl && \
@@ -45,10 +44,6 @@ case ${TARGETPLATFORM} in \
     *) echo "Unsupported architecture: ${TARGETPLATFORM}" >&2; exit 1 ;; \
 esac
 mkdir -p ~/.cargo
-cat > ~/.cargo/config.toml <<EOM
-[target.${RUST_TARGET}]
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
-EOM
 cargo chef cook --release --target ${RUST_TARGET} --no-default-features --features embed-resource,xdg --recipe-path recipe.json
 EOF
 

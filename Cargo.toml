@@ -1,6 +1,6 @@
 [package]
 name = "clewdr"
-version = "0.11.13"
+version = "0.11.14"
 edition = "2024"
 authors = ["Xerxes-2"]
 license = "AGPL-3.0"
@@ -84,9 +84,9 @@ ractor = "0.15"
 mimalloc = { version = "0.1", optional = true }
 dhat = { version = "0", optional = true }
 etcetera = { version = "0", optional = true }
-sea-orm = { version = "1.1", optional = true, default-features = false, features = [
+sea-orm = { version = "1", optional = true, default-features = false, features = [
     "macros",
-    "runtime-tokio-rustls"
+    "runtime-tokio-rustls",
 ] }
 
 [target.'cfg(windows)'.dependencies]

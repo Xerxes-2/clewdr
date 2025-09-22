@@ -1,5 +1,13 @@
-# v0.11.13
+# v0.11.14
+
+## Features
+
+- Add support for database persistence using SeaORM (optional feature).
 
 ## Bug Fixes
 
-- Specify log directory for clewdr in Dockerfile
+- Correctly handle 403 errors for CC
+
+## Improvements
+
+- Improve build process
