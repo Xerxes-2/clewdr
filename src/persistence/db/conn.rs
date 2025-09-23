@@ -51,6 +51,17 @@ async fn migrate(db: &DatabaseConnection) -> Result<(), ClewdrError> {
     db.execute(backend.build(&stmt)).await.ok();
     let stmt = schema.create_table_from_entity(EntityCookie);
     db.execute(backend.build(&stmt)).await.ok();
+    use sea_orm::sea_query::ColumnDef;
+    use sea_orm::sea_query::Table;
+    let stmt = Table::alter()
+        .table(EntityCookie)
+        .add_column(
+            ColumnDef::new(ColumnCookie::ClaudeSonnet1M)
+                .boolean()
+                .null(),
+        )
+        .to_owned();
+    db.execute(backend.build(&stmt)).await.ok();
     let stmt = schema.create_table_from_entity(EntityWasted);
     db.execute(backend.build(&stmt)).await.ok();
     let stmt = schema.create_table_from_entity(EntityKeyRow);

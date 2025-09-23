@@ -28,6 +28,8 @@ enum CookieActorMessage {
     Return(CookieStatus, Option<Reason>),
     /// Submit a new Cookie
     Submit(CookieStatus),
+    /// Update metadata for an existing cookie
+    Update(CookieStatus),
     /// Check for timed out Cookies
     CheckReset,
     /// Request to get a Cookie
@@ -75,6 +77,23 @@ impl CookieActor {
                 Err(e) => error!("Save task panicked: {}", e),
             }
         });
+    }
+
+    /// Replace cookie metadata in state if present.
+    fn apply_update(state: &mut CookieActorState, cookie: CookieStatus) -> bool {
+        let mut updated = false;
+        if let Some(slot) = state.valid.iter_mut().find(|c| **c == cookie) {
+            *slot = cookie.clone();
+            updated = true;
+        }
+        if state.exhausted.take(&cookie).is_some() {
+            state.exhausted.insert(cookie.clone());
+            updated = true;
+        }
+        if updated {
+            state.moka.invalidate_all();
+        }
+        updated
     }
 
     /// Logs the current state of cookie collections
@@ -143,11 +162,7 @@ impl CookieActor {
     /// Collects a returned cookie and processes it based on the return reason
     fn collect(state: &mut CookieActorState, mut cookie: CookieStatus, reason: Option<Reason>) {
         let Some(reason) = reason else {
-            // replace the cookie in valid collection
-            if cookie.token.is_some()
-                && let Some(c) = state.valid.iter_mut().find(|c| **c == cookie)
-            {
-                *c = cookie;
+            if Self::apply_update(state, cookie) {
                 Self::save(state);
             }
             return;
@@ -331,6 +346,21 @@ impl Actor for CookieActor {
                     });
                 }
             }
+            CookieActorMessage::Update(cookie) => {
+                let storage = self.storage;
+                let updated = Self::apply_update(state, cookie.clone());
+                if updated {
+                    Self::save(state);
+                    let to_persist = cookie.clone();
+                    if storage.is_enabled() {
+                        tokio::spawn(async move {
+                            if let Err(e) = storage.persist_cookie_upsert(&to_persist).await {
+                                error!("Failed to upsert cookie: {}", e);
+                            }
+                        });
+                    }
+                }
+            }
             CookieActorMessage::CheckReset => {
                 Self::reset(state, self.storage);
             }
@@ -440,6 +470,16 @@ impl CookieActorHandle {
             ClewdrError::RactorError {
                 loc: Location::generate(),
                 msg: format!("Failed to communicate with CookieActor for submit operation: {e}"),
+            }
+        })
+    }
+
+    /// Update metadata for an existing cookie without altering its queue position
+    pub async fn update_cookie(&self, cookie: CookieStatus) -> Result<(), ClewdrError> {
+        ractor::cast!(self.actor_ref, CookieActorMessage::Update(cookie)).map_err(|e| {
+            ClewdrError::RactorError {
+                loc: Location::generate(),
+                msg: format!("Failed to communicate with CookieActor for update operation: {e}"),
             }
         })
     }

@@ -86,6 +86,7 @@ pub async fn persist_cookie_upsert(c: &CookieStatus) -> Result<(), ClewdrError> 
     let am = ActiveModelCookie {
         cookie: Set(c.cookie.to_string()),
         reset_time: Set(c.reset_time),
+        claude_sonnet_1m: Set(c.claude_sonnet_1m),
         token_access: Set(acc),
         token_refresh: Set(rtk),
         token_expires_at: Set(exp_at),
@@ -98,6 +99,7 @@ pub async fn persist_cookie_upsert(c: &CookieStatus) -> Result<(), ClewdrError> 
             OnConflict::column(ColumnCookie::Cookie)
                 .update_columns([
                     ColumnCookie::ResetTime,
+                    ColumnCookie::ClaudeSonnet1M,
                     ColumnCookie::TokenAccess,
                     ColumnCookie::TokenRefresh,
                     ColumnCookie::TokenExpiresAt,
@@ -332,6 +334,7 @@ pub async fn export_current_config() -> Result<serde_json::Value, ClewdrError> {
                 expires_in,
             });
         }
+        c.claude_sonnet_1m = r.claude_sonnet_1m;
         cfg.cookie_array.insert(c);
     }
     // wasted
@@ -436,6 +439,7 @@ pub async fn load_all_cookies()
                 expires_in,
             });
         }
+        c.claude_sonnet_1m = r.claude_sonnet_1m;
         if c.reset_time.is_some() {
             exhausted.push(c);
         } else {
