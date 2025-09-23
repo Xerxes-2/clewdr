@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use tiktoken_rs::o200k_base;
 
 use super::claude::{CreateMessageParams as ClaudeCreateMessageParams, *};
-use crate::{config::CLEWDR_CONFIG, types::claude::Message};
+use crate::types::claude::Message;
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -148,9 +148,6 @@ impl CreateMessageParams {
     pub fn preprocess_vertex(&mut self) {
         self.optimize_for_gemini();
         self.model = self.model.trim_start_matches("google/").to_string();
-        if let Some(model) = CLEWDR_CONFIG.load().vertex.model_id.to_owned() {
-            self.model = model;
-        }
         self.model = format!("google/{}", self.model);
     }
 }

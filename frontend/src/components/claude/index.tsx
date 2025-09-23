@@ -4,7 +4,7 @@ import TabNavigation from "../common/TabNavigation";
 import CookieSubmitForm from "./CookieSubmitForm";
 import CookieVisualization from "./CookieVisualization";
 
-const CookieTabs: React.FC = () => {
+const ClaudeTabs: React.FC = () => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<"submit" | "status">("submit");
 
@@ -27,4 +27,4 @@ const CookieTabs: React.FC = () => {
   );
 };
 
-export default CookieTabs;
+export default ClaudeTabs;

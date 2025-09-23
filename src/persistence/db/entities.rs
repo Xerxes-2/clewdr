@@ -89,6 +89,26 @@ pub mod entity_key {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+pub mod entity_vertex_credential {
+    use super::*;
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "vertex_credentials")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: String,
+        pub credential: String,
+        pub count_403: i64,
+    }
+    #[derive(Copy, Clone, Debug, EnumIter)]
+    pub enum Relation {}
+    impl RelationTrait for Relation {
+        fn def(&self) -> RelationDef {
+            panic!()
+        }
+    }
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 // Convenient aliases to match previous names used in code
 pub use entity_config::{
     ActiveModel as ActiveModelConfig, Column as ColumnConfig, Entity as EntityConfig,
@@ -98,6 +118,10 @@ pub use entity_cookie::{
 };
 pub use entity_key::{
     ActiveModel as ActiveModelKeyRow, Column as ColumnKeyRow, Entity as EntityKeyRow,
+};
+pub use entity_vertex_credential::{
+    ActiveModel as ActiveModelVertexCredential, Column as ColumnVertexCredential,
+    Entity as EntityVertexCredential,
 };
 pub use entity_wasted::{
     ActiveModel as ActiveModelWasted, Column as ColumnWasted, Entity as EntityWasted,

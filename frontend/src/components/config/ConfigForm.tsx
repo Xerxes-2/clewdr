@@ -108,28 +108,9 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ config, onChange }) => {
 
       {/* Vertex Settings Section */}
       <ConfigSection title={t("config.sections.vertex.title")}>
-        <FormInput
-          id="vertex.credential"
-          name="vertex.credential"
-          type="password"
-          value={config.vertex.credential || ""}
-          onChange={onChange}
-          label={t("config.sections.vertex.credential")}
-        />
-
-        <div className="relative">
-          <FormInput
-            id="vertex.model_id"
-            name="vertex.model_id"
-            type="text"
-            value={config.vertex.model_id || ""}
-            onChange={onChange}
-            label={t("config.sections.vertex.modelId")}
-          />
-          <div className="text-amber-400 text-xs mt-1">
-            {t("config.sections.vertex.modelIdNote")}
-          </div>
-        </div>
+        <p className="text-sm text-gray-300">
+          {t("config.sections.vertex.managedInGemini")}
+        </p>
       </ConfigSection>
 
       {/* API Settings Section */}

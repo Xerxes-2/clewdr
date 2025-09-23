@@ -52,11 +52,32 @@ fn generate_password() -> String {
     pg.generate_one().unwrap()
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VertexCredentialEntry {
+    pub id: uuid::Uuid,
+    pub credential: ServiceAccountKey,
+    #[serde(default)]
+    pub count_403: u32,
+}
+
+impl VertexCredentialEntry {
+    pub fn new(credential: ServiceAccountKey) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4(),
+            credential,
+            count_403: 0,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct VertexConfig {
     #[serde(default)]
-    pub credential: Option<ServiceAccountKey>,
-    pub model_id: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub credentials: Vec<VertexCredentialEntry>,
+    #[serde(default)]
+    #[serde(skip)]
+    pub legacy_credential: Option<ServiceAccountKey>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
@@ -86,8 +107,34 @@ pub struct PersistenceConfig {
 }
 
 impl VertexConfig {
-    pub fn validate(&self) -> bool {
-        self.credential.is_some()
+    pub fn normalize(&mut self) {
+        if let Some(legacy) = self.legacy_credential.take() {
+            self.push_credential(legacy);
+        }
+        for entry in self.credentials.iter_mut() {
+            if entry.id.is_nil() {
+                entry.id = uuid::Uuid::new_v4();
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        self.credentials.retain(|entry| seen.insert(entry.id));
+    }
+
+    pub fn push_credential(&mut self, credential: ServiceAccountKey) {
+        if self
+            .credentials
+            .iter()
+            .any(|entry| entry.credential.client_email == credential.client_email)
+        {
+            tracing::warn!("Vertex credential already exists for provided client_email");
+            return;
+        }
+        self.credentials
+            .push(VertexCredentialEntry::new(credential));
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        !self.credentials.is_empty()
     }
 }
 
@@ -257,7 +304,7 @@ impl Display for ClewdrConfig {
         if let Some(ref rproxy) = self.rproxy {
             writeln!(f, "Reverse Proxy: {}", rproxy.to_string().blue())?;
         }
-        if self.vertex.validate() {
+        if self.vertex.is_enabled() {
             writeln!(f, "Vertex {}", "Enabled".green().bold())?;
         }
         writeln!(f, "Skip non Pro: {}", enabled(self.skip_non_pro))?;
@@ -366,7 +413,7 @@ impl ClewdrConfig {
                 .map_err(|e| error!("Failed to parse vertex credential: {}", e))
                 .ok()
         }) {
-            config.vertex.credential = Some(credential);
+            config.vertex.push_credential(credential);
         }
         if let Some(ref f) = Args::try_parse().ok().and_then(|a| a.file) {
             // load cookies from file
@@ -431,6 +478,8 @@ impl ClewdrConfig {
 
     /// Validate the configuration
     pub fn validate(mut self) -> Self {
+        self.vertex.normalize();
+
         if self.password.trim().is_empty() {
             self.password = generate_password();
         }

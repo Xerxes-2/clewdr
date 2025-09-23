@@ -39,9 +39,15 @@ export interface ConfigData {
   persistence?: PersistenceConfig;
 }
 
+interface VertexCredentialSummary {
+  id: string;
+  client_email?: string | null;
+  project_id?: string | null;
+  count_403?: number;
+}
+
 interface VertexConfig {
-  credential: string | null;
-  model_id: string | null;
+  credentials: VertexCredentialSummary[];
 }
 
 export type PersistenceMode = "file" | "sqlite" | "postgres";

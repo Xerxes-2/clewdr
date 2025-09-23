@@ -16,7 +16,9 @@ use crate::{
         RequireAdminAuth, RequireBearerAuth, RequireQueryKeyAuth, RequireXApiKeyAuth,
         claude::{add_usage_info, apply_stop_sequences, check_overloaded, to_oai},
     },
-    services::{cookie_actor::CookieActorHandle, key_actor::KeyActorHandle},
+    services::{
+        cookie_actor::CookieActorHandle, key_actor::KeyActorHandle, vertex_actor::VertexActorHandle,
+    },
 };
 
 /// RouterBuilder for the application
@@ -25,6 +27,7 @@ pub struct RouterBuilder {
     claude_code_state: ClaudeCodeState,
     cookie_actor_handle: CookieActorHandle,
     key_actor_handle: KeyActorHandle,
+    vertex_actor_handle: VertexActorHandle,
     gemini_state: GeminiState,
     inner: Router,
 }
@@ -44,14 +47,22 @@ impl RouterBuilder {
         let key_tx = KeyActorHandle::start()
             .await
             .expect("Failed to start KeyActorHandle");
-        let gemini_state = GeminiState::new(key_tx.to_owned());
-        // Background DB sync (keys/cookies) for multi-instance eventual consistency
-        let _bg = crate::services::sync::spawn(cookie_handle.clone(), key_tx.clone());
+        let vertex_handle = VertexActorHandle::start()
+            .await
+            .expect("Failed to start VertexActorHandle");
+        let gemini_state = GeminiState::new(key_tx.to_owned(), vertex_handle.to_owned());
+        // Background DB sync (keys/cookies/vertex) for multi-instance eventual consistency
+        let _bg = crate::services::sync::spawn(
+            cookie_handle.clone(),
+            key_tx.clone(),
+            vertex_handle.clone(),
+        );
         RouterBuilder {
             claude_web_state,
             claude_code_state,
             cookie_actor_handle: cookie_handle,
             key_actor_handle: key_tx,
+            vertex_actor_handle: vertex_handle,
             gemini_state,
             inner: Router::new(),
         }
@@ -130,6 +141,13 @@ impl RouterBuilder {
             .route("/key", post(api_post_key).delete(api_delete_key))
             .route("/keys", get(api_get_keys))
             .with_state(self.key_actor_handle.to_owned());
+        let vertex_router = Router::new()
+            .route(
+                "/vertex/credential",
+                post(api_post_vertex_credential).delete(api_delete_vertex_credential),
+            )
+            .route("/vertex/credentials", get(api_get_vertex_credentials))
+            .with_state(self.vertex_actor_handle.to_owned());
         let admin_router = Router::new()
             .route("/auth", get(api_auth))
             .route("/config", get(api_get_config).put(api_post_config))
@@ -141,6 +159,7 @@ impl RouterBuilder {
                 "/api",
                 cookie_router
                     .merge(key_router)
+                    .merge(vertex_router)
                     .merge(admin_router)
                     .layer(from_extractor::<RequireAdminAuth>()),
             )

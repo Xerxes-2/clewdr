@@ -28,21 +28,18 @@ impl FromRequest<GeminiState> for GeminiPreprocess {
     async fn from_request(mut req: Request, state: &GeminiState) -> Result<Self, Self::Rejection> {
         let Path(path) = req.extract_parts::<Path<String>>().await?;
         let vertex = req.uri().to_string().contains("vertex");
-        if vertex && !CLEWDR_CONFIG.load().vertex.validate() {
+        if vertex && !CLEWDR_CONFIG.load().vertex.is_enabled() {
             return Err(ClewdrError::BadRequest {
                 msg: "Vertex is not configured",
             });
         }
-        let mut model = path
+        let model = path
             .split('/')
             .next_back()
             .map(|s| s.split_once(':').map(|s| s.0).unwrap_or(s).to_string());
-        if vertex {
-            model = CLEWDR_CONFIG.load().vertex.model_id.to_owned().or(model)
-        }
         let Some(model) = model else {
             return Err(ClewdrError::BadRequest {
-                msg: "Model not found in path or vertex config",
+                msg: "Model not found in request path",
             });
         };
         let query = req.extract_parts::<GeminiArgs>().await?;
@@ -69,7 +66,7 @@ impl FromRequest<GeminiState> for GeminiOaiPreprocess {
 
     async fn from_request(req: Request, state: &GeminiState) -> Result<Self, Self::Rejection> {
         let vertex = req.uri().to_string().contains("vertex");
-        if vertex && !CLEWDR_CONFIG.load().vertex.validate() {
+        if vertex && !CLEWDR_CONFIG.load().vertex.is_enabled() {
             return Err(ClewdrError::BadRequest {
                 msg: "Vertex is not configured",
             });

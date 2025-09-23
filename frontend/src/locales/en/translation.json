@@ -23,9 +23,9 @@
     "passwordChanged": "Note: You have been logged out because your password was changed. Please log in with your new credentials."
   },
   "tabs": {
-    "cookie": "Cookie",
+    "claude": "Claude",
+    "gemini": "Gemini",
     "config": "Config",
-    "keys": "Keys",
     "auth": "Auth"
   },
   "cookieTab": {
@@ -83,6 +83,59 @@
     "deleteConfirm": "Are you sure you want to delete this cookie?",
     "copy": "Copy to clipboard"
   },
+  "geminiTab": {
+    "tabs": {
+      "aistudio": "AI Studio",
+      "vertex": "Vertex"
+    },
+    "vertex": {
+      "credential": {
+        "set": "Service account credential: configured",
+        "unset": "Service account credential: not configured"
+      }
+    },
+    "vertexTabs": {
+      "submit": "Submit Credential",
+      "status": "Credential Status"
+    },
+    "vertexSubmit": {
+      "title": "Submit service account credential",
+      "label": "Service account JSON credential",
+      "placeholder": "{\n  \"type\": \"service_account\",\n  ...\n}",
+      "submit": "Submit credential",
+      "success": "Credential saved successfully.",
+      "error": {
+        "empty": "Please paste the service account JSON credential.",
+        "general": "Failed to save credential: {{message}}"
+      }
+    },
+    "vertexStatus": {
+      "title": "Credential status",
+      "description": "ClewdR rotates Google Cloud service account credentials for Vertex requests.",
+      "badge": {
+        "configured": "Configured",
+        "empty": "Not configured"
+      },
+      "item": {
+        "label": "Service account credential",
+        "caption": "Active credential used for Vertex requests"
+      },
+      "refresh": "Refresh",
+      "clear": "Remove credential",
+      "cleared": "Credential removed successfully.",
+      "empty": "No credential has been submitted yet.",
+      "deleteConfirm": "Remove this service account credential?",
+      "count": "403 responses: {{count}}",
+      "total": "Total: {{count}} credentials"
+    },
+    "status": {
+      "loading": "Loading Gemini configuration...",
+      "error": "Failed to load Gemini configuration: {{message}}"
+    },
+    "keys": {
+      "title": "Key Management"
+    }
+  },
   "config": {
     "title": "Configuration",
     "saving": "Saving...",
@@ -116,12 +169,7 @@
       },
       "vertex": {
         "title": "Vertex Settings",
-        "credential": "Credential",
-        "clientSecret": "Client Secret",
-        "clientId": "Client ID",
-        "projectId": "Project ID",
-        "modelId": "Model ID",
-        "modelIdNote": "Note: This will override model in API queries"
+        "managedInGemini": "Vertex service-account credentials are managed from the Gemini · Vertex tab."
       },
       "api": {
         "title": "API Settings",
@@ -157,7 +205,8 @@
       "healthLabel": "Health",
       "health": {
         "ok": "OK",
-        "down": "DOWN"
+        "down": "DOWN",
+        "na": "N/A"
       },
       "driver": "Driver: {{driver}}",
       "latency": "Latency (ms): {{latency}}",

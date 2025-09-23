@@ -5,7 +5,8 @@ use sea_orm::{ConnectionTrait, Database, DatabaseConnection, Schema};
 use crate::error::ClewdrError;
 
 use super::entities::{
-    ColumnCookie, ColumnKeyRow, EntityConfig, EntityCookie, EntityKeyRow, EntityWasted,
+    ColumnCookie, ColumnKeyRow, ColumnVertexCredential, EntityConfig, EntityCookie, EntityKeyRow,
+    EntityVertexCredential, EntityWasted,
 };
 
 static CONN: LazyLock<std::sync::Mutex<Option<DatabaseConnection>>> =
@@ -55,6 +56,8 @@ async fn migrate(db: &DatabaseConnection) -> Result<(), ClewdrError> {
     db.execute(backend.build(&stmt)).await.ok();
     let stmt = schema.create_table_from_entity(EntityKeyRow);
     db.execute(backend.build(&stmt)).await.ok();
+    let stmt = schema.create_table_from_entity(EntityVertexCredential);
+    db.execute(backend.build(&stmt)).await.ok();
     // indexes
     use sea_orm::sea_query::Index;
     // cookies(token_org_uuid)
@@ -76,6 +79,12 @@ async fn migrate(db: &DatabaseConnection) -> Result<(), ClewdrError> {
         .name("idx_keys_count")
         .table(EntityKeyRow)
         .col(ColumnKeyRow::Count403)
+        .to_owned();
+    db.execute(backend.build(&idx)).await.ok();
+    let idx = Index::create()
+        .name("idx_vertex_credentials_count")
+        .table(EntityVertexCredential)
+        .col(ColumnVertexCredential::Count403)
         .to_owned();
     db.execute(backend.build(&idx)).await.ok();
     Ok(())

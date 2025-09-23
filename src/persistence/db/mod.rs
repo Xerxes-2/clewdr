@@ -4,7 +4,7 @@ pub mod metrics;
 pub mod repo;
 
 use crate::{
-    config::{ClewdrConfig, CookieStatus, KeyStatus, UselessCookie},
+    config::{ClewdrConfig, CookieStatus, KeyStatus, UselessCookie, VertexCredentialEntry},
     error::ClewdrError,
     persistence::StorageLayer,
 };
@@ -79,6 +79,29 @@ impl StorageLayer for DbLayer {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ClewdrError>> + Send>> {
         let kk = k.clone();
         Box::pin(async move { repo::delete_key_row(&kk).await })
+    }
+    fn persist_vertex_upsert(
+        &self,
+        entry: &VertexCredentialEntry,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ClewdrError>> + Send>> {
+        let e = entry.clone();
+        Box::pin(async move { repo::persist_vertex_upsert(&e).await })
+    }
+    fn delete_vertex_row(
+        &self,
+        id: uuid::Uuid,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ClewdrError>> + Send>> {
+        Box::pin(async move { repo::delete_vertex_row(id).await })
+    }
+    fn load_vertex_credentials(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<Vec<VertexCredentialEntry>, ClewdrError>>
+                + Send,
+        >,
+    > {
+        Box::pin(async move { repo::load_all_vertex_credentials().await })
     }
     fn import_from_file(
         &self,

@@ -1,9 +1,12 @@
 use super::error::ApiError;
 use axum::{Json, extract::State};
 use axum_auth::AuthBearer;
+use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing::{error, info, warn};
+use uuid::Uuid;
 use wreq::StatusCode;
+use yup_oauth2::ServiceAccountKey;
 
 use crate::{
     VERSION_INFO,
@@ -12,6 +15,7 @@ use crate::{
     services::{
         cookie_actor::{CookieActorHandle, CookieStatusInfo},
         key_actor::{KeyActorHandle, KeyStatusInfo},
+        vertex_actor::{VertexActorHandle, VertexCredentialInfo},
     },
 };
 
@@ -152,6 +156,70 @@ pub async fn api_get_keys(
             e
         ))),
     }
+}
+
+#[derive(Deserialize)]
+pub struct VertexCredentialRequest {
+    pub credential: String,
+}
+
+#[derive(Deserialize)]
+pub struct VertexCredentialDeleteRequest {
+    pub id: String,
+}
+
+pub async fn api_post_vertex_credential(
+    State(handle): State<VertexActorHandle>,
+    AuthBearer(t): AuthBearer,
+    Json(payload): Json<VertexCredentialRequest>,
+) -> Result<StatusCode, ApiError> {
+    if !CLEWDR_CONFIG.load().admin_auth(&t) {
+        return Err(ApiError::unauthorized());
+    }
+    ensure_db_writable().await?;
+    let credential =
+        serde_json::from_str::<ServiceAccountKey>(&payload.credential).map_err(|e| {
+            warn!("Invalid vertex credential payload: {}", e);
+            ApiError::bad_request("Invalid credential JSON")
+        })?;
+    handle
+        .submit(credential)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    Ok(StatusCode::OK)
+}
+
+pub async fn api_get_vertex_credentials(
+    State(handle): State<VertexActorHandle>,
+    AuthBearer(t): AuthBearer,
+) -> Result<Json<VertexCredentialInfo>, ApiError> {
+    if !CLEWDR_CONFIG.load().admin_auth(&t) {
+        return Err(ApiError::unauthorized());
+    }
+
+    let info = handle
+        .get_status()
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    Ok(Json(info))
+}
+
+pub async fn api_delete_vertex_credential(
+    State(handle): State<VertexActorHandle>,
+    AuthBearer(t): AuthBearer,
+    Json(payload): Json<VertexCredentialDeleteRequest>,
+) -> Result<StatusCode, ApiError> {
+    if !CLEWDR_CONFIG.load().admin_auth(&t) {
+        return Err(ApiError::unauthorized());
+    }
+    ensure_db_writable().await?;
+    let id =
+        Uuid::parse_str(&payload.id).map_err(|_| ApiError::bad_request("Invalid credential id"))?;
+    handle
+        .delete(id)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// API endpoint to delete a specific cookie

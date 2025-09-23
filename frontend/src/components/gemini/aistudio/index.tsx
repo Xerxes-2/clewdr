@@ -1,11 +1,11 @@
-// frontend/src/components/keys/index.tsx
+// frontend/src/components/gemini/aistudio/index.tsx
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import TabNavigation from "../common/TabNavigation";
+import TabNavigation from "../../common/TabNavigation";
 import KeySubmitForm from "./KeySubmitForm";
 import KeyVisualization from "./KeyVisualization";
 
-const KeysTabs: React.FC = () => {
+const AiStudioTabs: React.FC = () => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<"submit" | "status">("submit");
 
@@ -28,4 +28,4 @@ const KeysTabs: React.FC = () => {
   );
 };
 
-export default KeysTabs;
+export default AiStudioTabs;

@@ -72,6 +72,16 @@ export function StorageSummary({ status, mode }: StorageSummaryProps) {
 
   const hasDetails = infoLines.length > 0;
 
+  const isEnabled = Boolean(status.enabled);
+  const isFileMode = resolvedMode === "file";
+  const healthKey = !isEnabled || isFileMode
+    ? "na"
+    : status.healthy
+    ? "ok"
+    : "down";
+
+  const allowDetails = hasDetails;
+
   return (
     <div className="space-y-2">
       <div className="text-md font-medium text-cyan-300">
@@ -79,12 +89,9 @@ export function StorageSummary({ status, mode }: StorageSummaryProps) {
       </div>
       <div className="text-white text-sm font-medium">{modeLabel}</div>
       <div className="text-xs text-gray-400">
-        {t("config.storage.healthLabel")}: {" "}
-        {status.healthy
-          ? t("config.storage.health.ok")
-          : t("config.storage.health.down")}
+        {t("config.storage.healthLabel")}: {t(`config.storage.health.${healthKey}`)}
       </div>
-      {hasDetails && (
+      {allowDetails && (
         <button
           type="button"
           onClick={() => setExpanded((prev) => !prev)}
@@ -95,7 +102,7 @@ export function StorageSummary({ status, mode }: StorageSummaryProps) {
             : t("config.storage.details.show")}
         </button>
       )}
-      {expanded && hasDetails && (
+      {expanded && allowDetails && (
         <div className="text-xs text-gray-400 space-y-1">
           {infoLines.map((line, index) => (
             <div key={index} className="break-words">

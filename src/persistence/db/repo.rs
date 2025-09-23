@@ -1,12 +1,21 @@
 use serde_json::json;
 use tracing::error;
+use uuid::Uuid;
+use yup_oauth2::ServiceAccountKey;
 
 use sea_orm::{ActiveValue::Set, entity::prelude::*};
 
-use crate::config::{ClewdrConfig, CookieStatus, KeyStatus, UselessCookie};
+use crate::config::{ClewdrConfig, CookieStatus, KeyStatus, UselessCookie, VertexCredentialEntry};
 use crate::error::ClewdrError;
 
-use super::{conn::ensure_conn, entities::*, metrics::*};
+use super::{
+    conn::ensure_conn,
+    entities::*,
+    metrics::{
+        LAST_ERROR, LAST_WRITE_TS, TOTAL_WRITE_NANOS, TOTAL_WRITES, WRITE_ERROR_COUNT,
+        mark_write_err, mark_write_ok, record_duration, record_error_msg,
+    },
+};
 
 pub async fn bootstrap_from_db_if_enabled() -> Result<(), ClewdrError> {
     if !crate::config::CLEWDR_CONFIG.load().is_db_mode() {
@@ -247,6 +256,113 @@ pub async fn persist_key_upsert(k: &KeyStatus) -> Result<(), ClewdrError> {
             mark_write_err();
             return Err(ClewdrError::Whatever {
                 message: "upsert_key".into(),
+                source: Some(Box::new(e)),
+            });
+        }
+    }
+    Ok(())
+}
+
+pub async fn load_all_vertex_credentials() -> Result<Vec<VertexCredentialEntry>, ClewdrError> {
+    if !crate::config::CLEWDR_CONFIG.load().is_db_mode() {
+        return Ok(crate::config::CLEWDR_CONFIG
+            .load()
+            .vertex
+            .credentials
+            .iter()
+            .cloned()
+            .collect());
+    }
+    let db = ensure_conn().await?;
+    let rows =
+        EntityVertexCredential::find()
+            .all(&db)
+            .await
+            .map_err(|e| ClewdrError::Whatever {
+                message: "load_vertex_credentials".into(),
+                source: Some(Box::new(e)),
+            })?;
+    let mut result = Vec::with_capacity(rows.len());
+    for row in rows {
+        let credential =
+            serde_json::from_str::<ServiceAccountKey>(&row.credential).map_err(|e| {
+                ClewdrError::Whatever {
+                    message: "parse_vertex_credential".into(),
+                    source: Some(Box::new(e)),
+                }
+            })?;
+        let id = Uuid::parse_str(&row.id).map_err(|e| ClewdrError::Whatever {
+            message: "parse_vertex_id".into(),
+            source: Some(Box::new(e)),
+        })?;
+        result.push(VertexCredentialEntry {
+            id,
+            credential,
+            count_403: row.count_403 as u32,
+        });
+    }
+    Ok(result)
+}
+
+pub async fn persist_vertex_upsert(entry: &VertexCredentialEntry) -> Result<(), ClewdrError> {
+    if !crate::config::CLEWDR_CONFIG.load().is_db_mode() {
+        return Ok(());
+    }
+    let db = ensure_conn().await?;
+    use sea_orm::sea_query::OnConflict;
+    let am = ActiveModelVertexCredential {
+        id: Set(entry.id.to_string()),
+        credential: Set(serde_json::to_string(&entry.credential)?),
+        count_403: Set(entry.count_403 as i64),
+    };
+    let start = std::time::Instant::now();
+    let res = EntityVertexCredential::insert(am)
+        .on_conflict(
+            OnConflict::column(ColumnVertexCredential::Id)
+                .update_columns([
+                    ColumnVertexCredential::Credential,
+                    ColumnVertexCredential::Count403,
+                ])
+                .to_owned(),
+        )
+        .exec(&db)
+        .await;
+    match res {
+        Ok(_) => {
+            record_duration(start);
+            mark_write_ok();
+        }
+        Err(e) => {
+            record_error_msg(&e);
+            mark_write_err();
+            return Err(ClewdrError::Whatever {
+                message: "upsert_vertex_credential".into(),
+                source: Some(Box::new(e)),
+            });
+        }
+    }
+    Ok(())
+}
+
+pub async fn delete_vertex_row(id: Uuid) -> Result<(), ClewdrError> {
+    if !crate::config::CLEWDR_CONFIG.load().is_db_mode() {
+        return Ok(());
+    }
+    let db = ensure_conn().await?;
+    let start = std::time::Instant::now();
+    let res = EntityVertexCredential::delete_by_id(id.to_string())
+        .exec(&db)
+        .await;
+    match res {
+        Ok(_) => {
+            record_duration(start);
+            mark_write_ok();
+        }
+        Err(e) => {
+            record_error_msg(&e);
+            mark_write_err();
+            return Err(ClewdrError::Whatever {
+                message: "delete_vertex_credential".into(),
                 source: Some(Box::new(e)),
             });
         }

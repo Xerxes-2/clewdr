@@ -1,11 +1,11 @@
-// frontend/src/components/keys/KeyVisualization.tsx
+// frontend/src/components/gemini/aistudio/KeyVisualization.tsx
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { getKeyStatus, deleteKey } from "../../api/keyApi";
-import { KeyStatusInfo } from "../../types/key.types";
-import Button from "../common/Button";
-import LoadingSpinner from "../common/LoadingSpinner";
-import StatusMessage from "../common/StatusMessage";
+import { getKeyStatus, deleteKey } from "../../../api/keyApi";
+import { KeyStatusInfo } from "../../../types/key.types";
+import Button from "../../common/Button";
+import LoadingSpinner from "../../common/LoadingSpinner";
+import StatusMessage from "../../common/StatusMessage";
 import KeyValue from "./KeyValue";
 import DeleteButton from "./DeleteButton";
 
