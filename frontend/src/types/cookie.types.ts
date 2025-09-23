@@ -2,6 +2,7 @@
 export interface CookieStatus {
   cookie: string;
   reset_time: number | null;
+  claude_sonnet_1m?: boolean | null;
 }
 
 export interface UselessCookie {

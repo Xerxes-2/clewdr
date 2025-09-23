@@ -30,6 +30,8 @@ pub mod entity_cookie {
         pub cookie: String,
         #[sea_orm(column_type = "BigInteger", nullable)]
         pub reset_time: Option<i64>,
+        #[sea_orm(column_type = "Boolean", nullable)]
+        pub claude_sonnet_1m: Option<bool>,
         #[sea_orm(nullable)]
         pub token_access: Option<String>,
         #[sea_orm(nullable)]

@@ -86,6 +86,7 @@ pub fn spawn(
                         cookie: u.cookie.clone(),
                         token: None,
                         reset_time: None,
+                        claude_sonnet_1m: None,
                     };
                     let _ = c_handle.return_cookie(tmp, Some(u.reason.clone())).await;
                 }

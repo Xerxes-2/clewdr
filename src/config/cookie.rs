@@ -49,6 +49,8 @@ pub struct CookieStatus {
     pub token: Option<TokenInfo>,
     #[serde(default)]
     pub reset_time: Option<i64>,
+    #[serde(default)]
+    pub claude_sonnet_1m: Option<bool>,
 }
 
 impl PartialEq for CookieStatus {
@@ -92,6 +94,7 @@ impl CookieStatus {
             cookie,
             token: None,
             reset_time,
+            claude_sonnet_1m: None,
         })
     }
 
