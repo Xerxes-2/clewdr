@@ -56,7 +56,7 @@ async fn migrate(db: &DatabaseConnection) -> Result<(), ClewdrError> {
     let stmt = Table::alter()
         .table(EntityCookie)
         .add_column(
-            ColumnDef::new(ColumnCookie::ClaudeSonnet1M)
+            ColumnDef::new(ColumnCookie::ClaudeSonnet1m)
                 .boolean()
                 .null(),
         )

@@ -100,74 +100,49 @@ impl ClaudeCodeState {
         access_token: String,
         mut p: CreateMessageParams,
     ) -> Result<axum::response::Response, ClewdrError> {
-        const STANDARD_BETA_HEADER: &str = "oauth-2025-04-20";
-        const SONNET_1M_BETA_HEADER: &str = "oauth-2025-04-20,context-1m-2025-08-07";
-
         let normalized = strip_sonnet_1m_suffix(p.model.as_str());
         let wants_1m = normalized.is_some();
         if let Some(base_model) = normalized {
             p.model = base_model;
         }
+        let support_hint = self.cookie.as_ref().and_then(|c| c.claude_sonnet_1m);
+        let plan = plan_beta_header(p.model.as_str(), wants_1m, support_hint);
 
-        if wants_1m && is_claude_sonnet_model(p.model.as_str()) {
-            match self.cookie.as_ref().and_then(|c| c.claude_sonnet_1m) {
-                Some(true) => {
-                    let api_res = self
-                        .perform_chat_request(access_token.as_str(), &p, SONNET_1M_BETA_HEADER)
-                        .await?;
-                    return forward_response(api_res);
+        match plan {
+            BetaAttempt::Direct(beta) => {
+                let api_res = self
+                    .perform_chat_request(access_token.as_str(), &p, beta)
+                    .await?;
+                forward_response(api_res)
+            }
+            BetaAttempt::Probe { primary, fallback } => {
+                if let Some(cookie) = &self.cookie {
+                    info!(
+                        "[1M] probing {} for claude-sonnet-4 1M context",
+                        cookie.cookie.ellipse().yellow()
+                    );
                 }
-                Some(false) => {
-                    let api_res = self
-                        .perform_chat_request(access_token.as_str(), &p, STANDARD_BETA_HEADER)
-                        .await?;
-                    return forward_response(api_res);
-                }
-                None => {
-                    if let Some(cookie) = &self.cookie {
-                        info!(
-                            "[1M] Probing {} for claude-sonnet-4 1M context",
-                            cookie.cookie.ellipse().yellow()
-                        );
+                match self
+                    .perform_chat_request(access_token.as_str(), &p, primary)
+                    .await
+                {
+                    Ok(api_res) => {
+                        self.persist_sonnet_support(true).await;
+                        forward_response(api_res)
                     }
-                    match self
-                        .perform_chat_request(access_token.as_str(), &p, SONNET_1M_BETA_HEADER)
-                        .await
-                    {
-                        Ok(api_res) => {
-                            self.persist_sonnet_support(true).await;
-                            return forward_response(api_res);
+                    Err(err) => {
+                        if is_sonnet_context_denied(&err) {
+                            self.persist_sonnet_support(false).await;
+                            let fallback_res = self
+                                .perform_chat_request(access_token.as_str(), &p, fallback)
+                                .await?;
+                            return forward_response(fallback_res);
                         }
-                        Err(err) => {
-                            if is_sonnet_context_denied(&err) {
-                                self.persist_sonnet_support(false).await;
-                                let fallback = self
-                                    .perform_chat_request(
-                                        access_token.as_str(),
-                                        &p,
-                                        STANDARD_BETA_HEADER,
-                                    )
-                                    .await?;
-                                return forward_response(fallback);
-                            }
-                            return Err(err);
-                        }
+                        Err(err)
                     }
                 }
             }
         }
-
-        // Either not a 1M request or another model; fallback to old behaviour.
-        let beta_header = if wants_1m {
-            SONNET_1M_BETA_HEADER
-        } else {
-            STANDARD_BETA_HEADER
-        };
-
-        let api_res = self
-            .perform_chat_request(access_token.as_str(), &p, beta_header)
-            .await?;
-        forward_response(api_res)
     }
 }
 
@@ -204,14 +179,14 @@ impl ClaudeCodeState {
         let cookie_clone = cookie.clone();
         if let Err(e) = self.cookie_actor_handle.update_cookie(cookie_clone).await {
             error!("Failed to persist 1M context flag: {}", e);
-        } else {
-            let styled = if support {
-                "enabled".green()
-            } else {
-                "disabled".red()
-            };
-            info!("[1M] {} {}", cookie.cookie.ellipse().yellow(), styled);
+            return;
         }
+        let styled = if support {
+            "enabled".green()
+        } else {
+            "disabled".red()
+        };
+        info!("[1M] {} {}", cookie.cookie.ellipse().yellow(), styled);
     }
 }
 
@@ -224,6 +199,23 @@ fn strip_sonnet_1m_suffix(model: &str) -> Option<String> {
 
 fn is_claude_sonnet_model(model: &str) -> bool {
     model.starts_with("claude-sonnet-4")
+}
+
+fn plan_beta_header(model: &str, wants_1m: bool, support_hint: Option<bool>) -> BetaAttempt {
+    if !wants_1m {
+        return BetaAttempt::Direct(STANDARD_BETA_HEADER);
+    }
+    if !is_claude_sonnet_model(model) {
+        return BetaAttempt::Direct(SONNET_1M_BETA_HEADER);
+    }
+    match support_hint {
+        Some(true) => BetaAttempt::Direct(SONNET_1M_BETA_HEADER),
+        Some(false) => BetaAttempt::Direct(STANDARD_BETA_HEADER),
+        None => BetaAttempt::Probe {
+            primary: SONNET_1M_BETA_HEADER,
+            fallback: STANDARD_BETA_HEADER,
+        },
+    }
 }
 
 fn is_sonnet_context_denied(err: &ClewdrError) -> bool {
@@ -264,4 +256,15 @@ fn is_sonnet_context_denied(err: &ClewdrError) -> bool {
         "missing",
     ];
     DENIAL_PHRASES.iter().any(|phrase| message.contains(phrase))
+}
+
+const STANDARD_BETA_HEADER: &str = "oauth-2025-04-20";
+const SONNET_1M_BETA_HEADER: &str = "oauth-2025-04-20,context-1m-2025-08-07";
+
+enum BetaAttempt {
+    Direct(&'static str),
+    Probe {
+        primary: &'static str,
+        fallback: &'static str,
+    },
 }

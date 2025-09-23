@@ -99,7 +99,7 @@ pub async fn persist_cookie_upsert(c: &CookieStatus) -> Result<(), ClewdrError> 
             OnConflict::column(ColumnCookie::Cookie)
                 .update_columns([
                     ColumnCookie::ResetTime,
-                    ColumnCookie::ClaudeSonnet1M,
+                    ColumnCookie::ClaudeSonnet1m,
                     ColumnCookie::TokenAccess,
                     ColumnCookie::TokenRefresh,
                     ColumnCookie::TokenExpiresAt,
