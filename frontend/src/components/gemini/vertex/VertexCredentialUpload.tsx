@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "react-hot-toast";
 import { VertexServiceAccount } from "../../../types/vertex.types";
+import FormInput from "../../common/FormInput";
 
 interface VertexCredentialUploadProps {
   onSubmit: (credential: VertexServiceAccount) => Promise<void>;
@@ -13,16 +14,20 @@ const VertexCredentialUpload: React.FC<VertexCredentialUploadProps> = ({
   const { t } = useTranslation();
   const [rawInput, setRawInput] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
+      setSelectedFile("");
       return;
     }
 
     try {
       const text = await file.text();
       setRawInput(text);
+      setSelectedFile(file.name);
       toast.success(t("geminiVertex.notifications.fileLoaded"));
     } catch (error) {
       console.error("Failed to read credential file", error);
@@ -46,6 +51,10 @@ const VertexCredentialUpload: React.FC<VertexCredentialUploadProps> = ({
       setIsSubmitting(true);
       await onSubmit(parsed);
       setRawInput("");
+      setSelectedFile("");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     } catch (error) {
       console.error("Failed to parse credential JSON", error);
       toast.error(t("geminiVertex.errors.parse"));
@@ -60,25 +69,39 @@ const VertexCredentialUpload: React.FC<VertexCredentialUploadProps> = ({
         {t("geminiVertex.form.instructions")}
       </p>
 
-      <textarea
-        className="w-full h-52 rounded-md bg-gray-900/60 border border-gray-700 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        placeholder={t("geminiVertex.form.placeholder") || ""}
+      <FormInput
+        id="vertex-service-account"
+        name="vertex-service-account"
         value={rawInput}
         onChange={(event) => setRawInput(event.target.value)}
+        placeholder={t("geminiVertex.form.placeholder") || ""}
+        label={t("geminiVertex.form.jsonLabel")}
+        isTextarea
+        rows={10}
+        disabled={isSubmitting}
       />
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <label className="block">
-          <span className="text-sm text-gray-400">
-            {t("geminiVertex.form.loadFromFile")}
-          </span>
+        <div className="flex items-center gap-3">
           <input
+            ref={fileInputRef}
             type="file"
             accept="application/json"
             onChange={handleFile}
-            className="mt-1 text-sm text-gray-300"
+            className="hidden"
           />
-        </label>
+          <button
+            type="button"
+            className="px-4 py-2 rounded-md text-sm font-medium bg-gray-700 hover:bg-gray-600 text-gray-100 transition-colors"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isSubmitting}
+          >
+            {t("geminiVertex.form.chooseFile")}
+          </button>
+          <span className="text-sm text-gray-400 truncate max-w-[220px]">
+            {selectedFile || t("geminiVertex.form.noFile")}
+          </span>
+        </div>
 
         <button
           type="submit"

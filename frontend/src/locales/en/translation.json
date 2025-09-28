@@ -65,9 +65,11 @@
       "keyId": "Key ID: {{id}}"
     },
     "form": {
-    "instructions": "Paste the Google Cloud service account JSON payload. The private key is stored with your Clewdr configuration (file/DB), so keep this host secured and rotate credentials if compromised.",
+      "instructions": "Paste the Google Cloud service account JSON payload.",
       "placeholder": "{ \"client_email\": \"service-account@project.iam.gserviceaccount.com\" }",
-      "loadFromFile": "Load from JSON file",
+      "jsonLabel": "Service Account JSON",
+      "chooseFile": "Choose JSON file",
+      "noFile": "No file selected",
       "submitting": "Uploading...",
       "button": "Upload"
     }
@@ -153,10 +155,6 @@
         "proxyPlaceholder": "http://proxy:port",
         "rproxy": "Reverse Proxy (optional)",
         "rproxyPlaceholder": "https://example.com"
-      },
-      "vertex": {
-        "title": "Vertex Settings",
-        "manageInPanel": "Manage Vertex service accounts from the Gemini → Vertex page."
       },
       "api": {
         "title": "API Settings",

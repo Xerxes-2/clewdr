@@ -65,9 +65,11 @@
       "keyId": "密钥 ID：{{id}}"
     },
     "form": {
-    "instructions": "粘贴 Google Cloud 服务账号的 JSON 内容。私钥会随 Clewdr 配置（文件/数据库）一同保存，请确保部署环境安全，如有泄露及时轮换。",
+      "instructions": "粘贴 Google Cloud 服务账号的 JSON 内容。",
       "placeholder": "{ \"client_email\": \"service-account@project.iam.gserviceaccount.com\" }",
-      "loadFromFile": "从 JSON 文件加载",
+      "jsonLabel": "服务账号 JSON",
+      "chooseFile": "选择 JSON 文件",
+      "noFile": "未选择文件",
       "submitting": "上传中...",
       "button": "上传"
     }
@@ -153,10 +155,6 @@
         "proxyPlaceholder": "http://proxy:port",
         "rproxy": "反向代理（可选）",
         "rproxyPlaceholder": "https://example.com"
-      },
-      "vertex": {
-        "title": "Vertex 设置",
-        "manageInPanel": "请在“Gemini → Vertex”页面管理服务账号。"
       },
       "api": {
         "title": "API设置",

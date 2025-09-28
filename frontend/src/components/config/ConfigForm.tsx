@@ -106,13 +106,6 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ config, onChange }) => {
         />
       </ConfigSection>
 
-      {/* Vertex Settings Section */}
-      <ConfigSection title={t("config.sections.vertex.title")}>
-        <p className="text-sm text-gray-400">
-          {t("config.sections.vertex.manageInPanel")}
-        </p>
-      </ConfigSection>
-
       {/* API Settings Section */}
       <ConfigSection title={t("config.sections.api.title")}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
