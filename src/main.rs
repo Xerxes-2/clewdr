@@ -49,6 +49,11 @@ where
 /// Result indicating success or failure of the application execution
 #[tokio::main]
 async fn main() -> Result<(), ClewdrError> {
+    // Ensure aws-lc crypto provider is installed before rustls usage (yup-oauth2 / hyper-rustls)
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("failed to install aws-lc crypto provider");
+
     // DB drivers setup is handled by SeaORM (via sqlx features) when compiled with db-*
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();

@@ -74,6 +74,8 @@ yup-oauth2 = { version = "12", default-features = false, features = [
     "hyper-rustls",
     "service-account",
 ] }
+aws-lc-rs = "1"
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
 hyper-util = "0.1"
 hyper-http-proxy = "1"
 http = "1"

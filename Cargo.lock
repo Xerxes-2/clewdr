@@ -222,6 +222,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94b8ff6c09cd57b16da53641caa860168b88c172a5ee163b0288d3d6eea12786"
 dependencies = [
  "aws-lc-sys",
+ "untrusted 0.7.1",
  "zeroize",
 ]
 
@@ -654,6 +655,7 @@ version = "0.11.14"
 dependencies = [
  "arc-swap",
  "async-stream",
+ "aws-lc-rs",
  "axum 0.8.4",
  "axum-auth",
  "base64 0.22.1",
@@ -680,6 +682,7 @@ dependencies = [
  "passwords",
  "ractor",
  "regex",
+ "rustls",
  "sea-orm",
  "self-replace",
  "serde",
@@ -3036,7 +3039,7 @@ dependencies = [
  "cfg-if",
  "getrandom 0.2.16",
  "libc",
- "untrusted",
+ "untrusted 0.9.0",
  "windows-sys 0.52.0",
 ]
 
@@ -3167,7 +3170,7 @@ dependencies = [
  "aws-lc-rs",
  "ring",
  "rustls-pki-types",
- "untrusted",
+ "untrusted 0.9.0",
 ]
 
 [[package]]
@@ -4587,6 +4590,12 @@ name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
+
+[[package]]
+name = "untrusted"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
 
 [[package]]
 name = "untrusted"
