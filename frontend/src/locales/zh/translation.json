@@ -156,9 +156,7 @@
       },
       "vertex": {
         "title": "Vertex 设置",
-        "manageInPanel": "请在“Gemini → Vertex”页面管理服务账号。",
-        "modelId": "模型 ID",
-        "modelIdNote": "注意：这将覆盖 API 查询中的模型"
+        "manageInPanel": "请在“Gemini → Vertex”页面管理服务账号。"
       },
       "api": {
         "title": "API设置",

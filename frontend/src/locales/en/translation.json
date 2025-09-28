@@ -156,9 +156,7 @@
       },
       "vertex": {
         "title": "Vertex Settings",
-        "manageInPanel": "Manage Vertex service accounts from the Gemini → Vertex page.",
-        "modelId": "Model ID",
-        "modelIdNote": "Note: This will override model in API queries"
+        "manageInPanel": "Manage Vertex service accounts from the Gemini → Vertex page."
       },
       "api": {
         "title": "API Settings",

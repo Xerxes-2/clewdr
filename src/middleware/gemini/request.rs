@@ -37,13 +37,10 @@ where
                 msg: "Vertex is not configured",
             });
         }
-        let mut model = path
+        let model = path
             .split('/')
             .next_back()
             .map(|s| s.split_once(':').map(|s| s.0).unwrap_or(s).to_string());
-        if vertex {
-            model = CLEWDR_CONFIG.load().vertex.model_id.to_owned().or(model)
-        }
         let Some(model) = model else {
             return Err(ClewdrError::BadRequest {
                 msg: "Model not found in path or vertex config",

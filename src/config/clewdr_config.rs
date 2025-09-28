@@ -58,7 +58,6 @@ pub struct VertexConfig {
     pub credential: Option<ServiceAccountKey>,
     #[serde(default)]
     pub credentials: Vec<ServiceAccountKey>,
-    pub model_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]

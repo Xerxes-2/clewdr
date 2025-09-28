@@ -40,7 +40,6 @@ export interface ConfigData {
 }
 
 interface VertexConfig {
-  model_id: string | null;
 }
 
 export type PersistenceMode = "file" | "sqlite" | "postgres";
