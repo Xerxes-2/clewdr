@@ -1,13 +1,15 @@
 use super::error::ApiError;
 use axum::{Json, extract::State};
 use axum_auth::AuthBearer;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::{error, info, warn};
 use wreq::StatusCode;
+use yup_oauth2::ServiceAccountKey;
 
 use crate::{
     VERSION_INFO,
-    config::{CLEWDR_CONFIG, CookieStatus, KeyStatus},
+    config::{CLEWDR_CONFIG, ClewdrConfig, CookieStatus, KeyStatus},
     persistence,
     services::{
         cookie_actor::{CookieActorHandle, CookieStatusInfo},
@@ -16,6 +18,23 @@ use crate::{
 };
 
 const DB_UNAVAILABLE_MESSAGE: &str = "Database storage is unavailable";
+
+#[derive(Deserialize)]
+pub struct VertexCredentialPayload {
+    pub credential: ServiceAccountKey,
+}
+
+#[derive(Deserialize)]
+pub struct VertexCredentialDeletePayload {
+    pub client_email: String,
+}
+
+#[derive(Serialize)]
+pub struct VertexCredentialInfo {
+    pub client_email: String,
+    pub project_id: Option<String>,
+    pub private_key_id: Option<String>,
+}
 
 async fn ensure_db_writable() -> Result<(), ApiError> {
     let storage = persistence::storage();
@@ -109,6 +128,113 @@ pub async fn api_post_key(
             Err(ApiError::internal(format!("Failed to submit key: {}", e)))
         }
     }
+}
+
+pub async fn api_get_vertex_credentials(
+    AuthBearer(t): AuthBearer,
+) -> Result<Json<Vec<VertexCredentialInfo>>, ApiError> {
+    if !CLEWDR_CONFIG.load().admin_auth(&t) {
+        return Err(ApiError::unauthorized());
+    }
+
+    let infos = CLEWDR_CONFIG
+        .load()
+        .vertex
+        .credential_list()
+        .into_iter()
+        .map(|cred| VertexCredentialInfo {
+            client_email: cred.client_email.clone(),
+            project_id: cred.project_id.clone(),
+            private_key_id: cred.private_key_id.clone(),
+        })
+        .collect();
+
+    Ok(Json(infos))
+}
+
+pub async fn api_post_vertex_credential(
+    AuthBearer(t): AuthBearer,
+    Json(payload): Json<VertexCredentialPayload>,
+) -> Result<StatusCode, ApiError> {
+    if !CLEWDR_CONFIG.load().admin_auth(&t) {
+        return Err(ApiError::unauthorized());
+    }
+    ensure_db_writable().await?;
+    let client_email = payload.credential.client_email.clone();
+    if client_email.trim().is_empty() {
+        return Err(ApiError::bad_request("client_email is required"));
+    }
+
+    CLEWDR_CONFIG.rcu(|config| {
+        let mut new_config = ClewdrConfig::clone(config);
+        new_config
+            .vertex
+            .credentials
+            .retain(|cred| !cred.client_email.eq_ignore_ascii_case(&client_email));
+        new_config
+            .vertex
+            .credentials
+            .push(payload.credential.clone());
+        new_config = new_config.validate();
+        new_config
+    });
+
+    if let Err(e) = CLEWDR_CONFIG.load().save().await {
+        error!("Failed to persist vertex credential: {}", e);
+        return Err(ApiError::internal(format!(
+            "Failed to persist vertex credential: {}",
+            e
+        )));
+    }
+
+    info!("Vertex credential accepted: {}", client_email);
+    Ok(StatusCode::OK)
+}
+
+pub async fn api_delete_vertex_credential(
+    AuthBearer(t): AuthBearer,
+    Json(payload): Json<VertexCredentialDeletePayload>,
+) -> Result<StatusCode, ApiError> {
+    if !CLEWDR_CONFIG.load().admin_auth(&t) {
+        return Err(ApiError::unauthorized());
+    }
+    ensure_db_writable().await?;
+
+    let exists = CLEWDR_CONFIG
+        .load()
+        .vertex
+        .credential_list()
+        .iter()
+        .any(|cred| {
+            cred.client_email
+                .eq_ignore_ascii_case(&payload.client_email)
+        });
+
+    if !exists {
+        return Err(ApiError::bad_request("Credential not found"));
+    }
+
+    CLEWDR_CONFIG.rcu(|config| {
+        let mut new_config = ClewdrConfig::clone(config);
+        new_config.vertex.credentials.retain(|cred| {
+            !cred
+                .client_email
+                .eq_ignore_ascii_case(&payload.client_email)
+        });
+        new_config = new_config.validate();
+        new_config
+    });
+
+    if let Err(e) = CLEWDR_CONFIG.load().save().await {
+        error!("Failed to delete vertex credential: {}", e);
+        return Err(ApiError::internal(format!(
+            "Failed to delete vertex credential: {}",
+            e
+        )));
+    }
+
+    info!("Vertex credential deleted: {}", payload.client_email);
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// API endpoint to retrieve all cookies and their status

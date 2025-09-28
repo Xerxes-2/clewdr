@@ -75,6 +75,7 @@ pub struct GeminiState {
     pub key_handle: KeyActorHandle,
     pub api_format: GeminiApiFormat,
     pub client: Client,
+    pub vertex_credential: Option<ServiceAccountKey>,
 }
 
 impl GeminiState {
@@ -90,6 +91,7 @@ impl GeminiState {
             key_handle: tx,
             api_format: GeminiApiFormat::Gemini,
             client: DUMMY_CLIENT.to_owned(),
+            vertex_credential: None,
         }
     }
 
@@ -141,7 +143,14 @@ impl GeminiState {
         };
 
         // Get an access token
-        let Some(cred) = CLEWDR_CONFIG.load().vertex.credential.to_owned() else {
+        let Some(cred) = self.vertex_credential.to_owned().or_else(|| {
+            CLEWDR_CONFIG
+                .load()
+                .vertex
+                .credential_list()
+                .into_iter()
+                .next()
+        }) else {
             return Err(ClewdrError::BadRequest {
                 msg: "Vertex credential not found",
             });

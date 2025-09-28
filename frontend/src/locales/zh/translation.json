@@ -23,14 +23,54 @@
     "passwordChanged": "注意：由于您的密码已更改，您已被登出。请使用新的凭据登录。"
   },
   "tabs": {
-    "cookie": "Cookie",
+    "claude": "Claude",
+    "gemini": "Gemini",
     "config": "配置",
-    "keys": "密钥",
     "auth": "认证"
   },
-  "cookieTab": {
+  "claudeTab": {
     "submit": "提交Cookie",
     "status": "Cookie状态"
+  },
+  "geminiTabs": {
+    "aistudio": "AI Studio",
+    "vertex": "Vertex AI"
+  },
+  "geminiAiStudio": {
+    "submit": "提交API密钥",
+    "status": "密钥状态"
+  },
+  "geminiVertex": {
+    "tabUpload": "上传服务账号",
+    "tabStatus": "服务账号列表",
+    "notifications": {
+      "uploaded": "服务账号已保存",
+      "deleted": "服务账号已删除",
+      "fileLoaded": "文件已加载"
+    },
+    "errors": {
+      "load": "无法加载服务账号。",
+      "upload": "上传服务账号失败。",
+      "delete": "删除服务账号失败。",
+      "readFile": "读取文件失败。",
+      "empty": "请粘贴服务账号 JSON。",
+      "missingEmail": "服务账号缺少 client_email 字段。",
+      "parse": "JSON 格式无效。"
+    },
+    "status": {
+      "loading": "正在加载服务账号...",
+      "empty": "尚未配置任何服务账号。",
+      "project": "项目：{{project}}",
+      "unknown": "未知",
+      "keyId": "密钥 ID：{{id}}"
+    },
+    "form": {
+      "instructions": "粘贴 Google Cloud 服务账号的 JSON 内容。私钥仅保留在您的浏览器中。",
+      "placeholder": "{ \"client_email\": \"service-account@project.iam.gserviceaccount.com\" }",
+      "loadFromFile": "从 JSON 文件加载",
+      "submitting": "上传中...",
+      "button": "上传"
+    }
   },
   "cookieSubmit": {
     "value": "Cookie值",
@@ -116,10 +156,7 @@
       },
       "vertex": {
         "title": "Vertex 设置",
-        "credential": "Json凭证",
-        "clientSecret": "客户端密钥",
-        "clientId": "客户端 ID",
-        "projectId": "项目 ID",
+        "manageInPanel": "请在“Gemini → Vertex”页面管理服务账号。",
         "modelId": "模型 ID",
         "modelIdNote": "注意：这将覆盖 API 查询中的模型"
       },

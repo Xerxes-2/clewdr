@@ -9,23 +9,20 @@ use tower_http::{compression::CompressionLayer, cors::CorsLayer};
 
 use crate::{
     api::*,
-    claude_code_state::ClaudeCodeState,
-    claude_web_state::ClaudeWebState,
-    gemini_state::GeminiState,
     middleware::{
         RequireAdminAuth, RequireBearerAuth, RequireQueryKeyAuth, RequireXApiKeyAuth,
         claude::{add_usage_info, apply_stop_sequences, check_overloaded, to_oai},
     },
+    providers::{claude::ClaudeProviders, gemini::GeminiProviders},
     services::{cookie_actor::CookieActorHandle, key_actor::KeyActorHandle},
 };
 
 /// RouterBuilder for the application
 pub struct RouterBuilder {
-    claude_web_state: ClaudeWebState,
-    claude_code_state: ClaudeCodeState,
+    claude_providers: ClaudeProviders,
     cookie_actor_handle: CookieActorHandle,
     key_actor_handle: KeyActorHandle,
-    gemini_state: GeminiState,
+    gemini_providers: GeminiProviders,
     inner: Router,
 }
 
@@ -39,20 +36,18 @@ impl RouterBuilder {
         let cookie_handle = CookieActorHandle::start()
             .await
             .expect("Failed to start CookieActor");
-        let claude_web_state = ClaudeWebState::new(cookie_handle.to_owned());
-        let claude_code_state = ClaudeCodeState::new(cookie_handle.to_owned());
+        let claude_providers = crate::providers::claude::build_providers(cookie_handle.clone());
         let key_tx = KeyActorHandle::start()
             .await
             .expect("Failed to start KeyActorHandle");
-        let gemini_state = GeminiState::new(key_tx.to_owned());
+        let gemini_providers = GeminiProviders::new(key_tx.clone());
         // Background DB sync (keys/cookies) for multi-instance eventual consistency
         let _bg = crate::services::sync::spawn(cookie_handle.clone(), key_tx.clone());
         RouterBuilder {
-            claude_web_state,
-            claude_code_state,
+            claude_providers,
             cookie_actor_handle: cookie_handle,
             key_actor_handle: key_tx,
-            gemini_state,
+            gemini_providers,
             inner: Router::new(),
         }
     }
@@ -77,13 +72,13 @@ impl RouterBuilder {
             .route("/v1/vertex/v1beta/{*path}", post(api_post_gemini))
             .layer(from_extractor::<RequireQueryKeyAuth>())
             .layer(CompressionLayer::new())
-            .with_state(self.gemini_state.to_owned());
+            .with_state(self.gemini_providers.clone());
         let router_oai = Router::new()
             .route("/gemini/chat/completions", post(api_post_gemini_oai))
             .route("/gemini/vertex/chat/completions", post(api_post_gemini_oai))
             .layer(from_extractor::<RequireBearerAuth>())
             .layer(CompressionLayer::new())
-            .with_state(self.gemini_state.to_owned());
+            .with_state(self.gemini_providers.clone());
         let router = router_gemini.merge(router_oai);
         self.inner = self.inner.merge(router);
         self
@@ -101,7 +96,7 @@ impl RouterBuilder {
                     .layer(map_response(apply_stop_sequences))
                     .layer(map_response(check_overloaded)),
             )
-            .with_state(self.claude_web_state.to_owned().with_claude_format());
+            .with_state(self.claude_providers.web());
         self.inner = self.inner.merge(router);
         self
     }
@@ -115,7 +110,7 @@ impl RouterBuilder {
                     .layer(from_extractor::<RequireXApiKeyAuth>())
                     .layer(CompressionLayer::new()),
             )
-            .with_state(self.claude_code_state.to_owned());
+            .with_state(self.claude_providers.code());
         self.inner = self.inner.merge(router);
         self
     }
@@ -130,6 +125,12 @@ impl RouterBuilder {
             .route("/key", post(api_post_key).delete(api_delete_key))
             .route("/keys", get(api_get_keys))
             .with_state(self.key_actor_handle.to_owned());
+        let vertex_router = Router::new()
+            .route("/vertex/credentials", get(api_get_vertex_credentials))
+            .route(
+                "/vertex/credential",
+                post(api_post_vertex_credential).delete(api_delete_vertex_credential),
+            );
         let admin_router = Router::new()
             .route("/auth", get(api_auth))
             .route("/config", get(api_get_config).put(api_post_config))
@@ -141,6 +142,7 @@ impl RouterBuilder {
                 "/api",
                 cookie_router
                     .merge(key_router)
+                    .merge(vertex_router)
                     .merge(admin_router)
                     .layer(from_extractor::<RequireAdminAuth>()),
             )
@@ -162,7 +164,7 @@ impl RouterBuilder {
                     .layer(map_response(apply_stop_sequences))
                     .layer(map_response(check_overloaded)),
             )
-            .with_state(self.claude_web_state.to_owned().with_openai_format());
+            .with_state(self.claude_providers.web());
         self.inner = self.inner.merge(router);
         self
     }
@@ -178,7 +180,7 @@ impl RouterBuilder {
                     .layer(CompressionLayer::new())
                     .layer(map_response(to_oai)),
             )
-            .with_state(self.claude_code_state.to_owned());
+            .with_state(self.claude_providers.code());
         self.inner = self.inner.merge(router);
         self
     }

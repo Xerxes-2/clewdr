@@ -27,7 +27,10 @@ pub async fn api_get_config(
         obj.remove("cookie_array");
         obj.remove("wasted_cookie");
         obj.remove("gemini_keys");
-        obj["vertex"]["credential"] = "placeholder".into();
+        if let Some(vertex) = obj.get_mut("vertex").and_then(|v| v.as_object_mut()) {
+            vertex.insert("credential".to_string(), json!("placeholder"));
+            vertex.insert("credentials".to_string(), json!([]));
+        }
     }
 
     Ok(Json(config_json))
@@ -57,7 +60,8 @@ pub async fn api_post_config(
         new_c.cookie_array = old_c.cookie_array.to_owned();
         new_c.wasted_cookie = old_c.wasted_cookie.to_owned();
         new_c.gemini_keys = old_c.gemini_keys.to_owned();
-        if new_c.vertex.credential.is_none() {
+        if new_c.vertex.credentials.is_empty() && new_c.vertex.credential.is_none() {
+            new_c.vertex.credentials = old_c.vertex.credentials.to_owned();
             new_c.vertex.credential = old_c.vertex.credential.to_owned();
         }
         new_c

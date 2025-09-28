@@ -7,10 +7,11 @@ use super::GeminiArgs;
 use crate::{
     config::CLEWDR_CONFIG,
     error::ClewdrError,
-    gemini_state::{GeminiApiFormat, GeminiState},
+    gemini_state::GeminiApiFormat,
     types::{gemini::request::GeminiRequestBody, oai::CreateMessageParams},
 };
 
+#[derive(Clone)]
 pub struct GeminiContext {
     pub model: String,
     pub vertex: bool,
@@ -22,10 +23,13 @@ pub struct GeminiContext {
 
 pub struct GeminiPreprocess(pub GeminiRequestBody, pub GeminiContext);
 
-impl FromRequest<GeminiState> for GeminiPreprocess {
+impl<S> FromRequest<S> for GeminiPreprocess
+where
+    S: Send + Sync,
+{
     type Rejection = ClewdrError;
 
-    async fn from_request(mut req: Request, state: &GeminiState) -> Result<Self, Self::Rejection> {
+    async fn from_request(mut req: Request, _: &S) -> Result<Self, Self::Rejection> {
         let Path(path) = req.extract_parts::<Path<String>>().await?;
         let vertex = req.uri().to_string().contains("vertex");
         if vertex && !CLEWDR_CONFIG.load().vertex.validate() {
@@ -56,18 +60,19 @@ impl FromRequest<GeminiState> for GeminiPreprocess {
         };
         let Json(mut body) = Json::<GeminiRequestBody>::from_request(req, &()).await?;
         body.safety_off();
-        let mut state = state.clone();
-        state.update_from_ctx(&ctx);
         Ok(GeminiPreprocess(body, ctx))
     }
 }
 
 pub struct GeminiOaiPreprocess(pub CreateMessageParams, pub GeminiContext);
 
-impl FromRequest<GeminiState> for GeminiOaiPreprocess {
+impl<S> FromRequest<S> for GeminiOaiPreprocess
+where
+    S: Send + Sync,
+{
     type Rejection = ClewdrError;
 
-    async fn from_request(req: Request, state: &GeminiState) -> Result<Self, Self::Rejection> {
+    async fn from_request(req: Request, _: &S) -> Result<Self, Self::Rejection> {
         let vertex = req.uri().to_string().contains("vertex");
         if vertex && !CLEWDR_CONFIG.load().vertex.validate() {
             return Err(ClewdrError::BadRequest {
@@ -88,8 +93,6 @@ impl FromRequest<GeminiState> for GeminiOaiPreprocess {
             query: GeminiArgs::default(),
             api_format: GeminiApiFormat::OpenAI,
         };
-        let mut state = state.clone();
-        state.update_from_ctx(&ctx);
         Ok(GeminiOaiPreprocess(body, ctx))
     }
 }

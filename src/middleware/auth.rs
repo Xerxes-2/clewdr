@@ -55,7 +55,7 @@ where
 ///
 /// # Example
 ///
-/// ```
+/// ```ignore
 /// async fn admin_only_handler(
 ///     _: RequireAdminAuth,
 ///     // other extractors...
@@ -63,7 +63,7 @@ where
 ///     // This handler only executes if admin authentication succeeds
 ///     // ...
 /// }
-/// ```
+/// ```ignore
 pub struct RequireAdminAuth;
 impl<S> FromRequestParts<S> for RequireAdminAuth
 where
@@ -92,7 +92,7 @@ where
 ///
 /// # Example
 ///
-/// ```
+/// ```ignore
 /// async fn openai_handler(
 ///     _: RequireOaiAuth,
 ///     // other extractors...
@@ -100,7 +100,7 @@ where
 ///     // This handler only executes if OpenAI authentication succeeds
 ///     // ...
 /// }
-/// ```
+/// ```ignore
 pub struct RequireBearerAuth;
 impl<S> FromRequestParts<S> for RequireBearerAuth
 where

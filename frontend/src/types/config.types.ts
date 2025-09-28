@@ -40,7 +40,6 @@ export interface ConfigData {
 }
 
 interface VertexConfig {
-  credential: string | null;
   model_id: string | null;
 }
 

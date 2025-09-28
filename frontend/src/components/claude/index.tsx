@@ -1,17 +1,16 @@
-// frontend/src/components/keys/index.tsx
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import TabNavigation from "../common/TabNavigation";
-import KeySubmitForm from "./KeySubmitForm";
-import KeyVisualization from "./KeyVisualization";
+import CookieSubmitForm from "./CookieSubmitForm";
+import CookieVisualization from "./CookieVisualization";
 
-const KeysTabs: React.FC = () => {
+const ClaudeTabs: React.FC = () => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<"submit" | "status">("submit");
 
   const tabs = [
-    { id: "submit", label: t("keyTab.submit"), color: "purple" },
-    { id: "status", label: t("keyTab.status"), color: "violet" },
+    { id: "submit", label: t("claudeTab.submit"), color: "blue" },
+    { id: "status", label: t("claudeTab.status"), color: "amber" },
   ];
 
   return (
@@ -23,9 +22,9 @@ const KeysTabs: React.FC = () => {
         className="mb-6"
       />
 
-      {activeTab === "submit" ? <KeySubmitForm /> : <KeyVisualization />}
+      {activeTab === "submit" ? <CookieSubmitForm /> : <CookieVisualization />}
     </div>
   );
 };
 
-export default KeysTabs;
+export default ClaudeTabs;

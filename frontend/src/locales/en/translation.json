@@ -23,14 +23,54 @@
     "passwordChanged": "Note: You have been logged out because your password was changed. Please log in with your new credentials."
   },
   "tabs": {
-    "cookie": "Cookie",
+    "claude": "Claude",
+    "gemini": "Gemini",
     "config": "Config",
-    "keys": "Keys",
     "auth": "Auth"
   },
-  "cookieTab": {
+  "claudeTab": {
     "submit": "Submit Cookie",
     "status": "Cookie Status"
+  },
+  "geminiTabs": {
+    "aistudio": "AI Studio",
+    "vertex": "Vertex AI"
+  },
+  "geminiAiStudio": {
+    "submit": "Submit API Key",
+    "status": "Key Status"
+  },
+  "geminiVertex": {
+    "tabUpload": "Upload Service Account",
+    "tabStatus": "Service Accounts",
+    "notifications": {
+      "uploaded": "Service account saved",
+      "deleted": "Service account removed",
+      "fileLoaded": "File loaded"
+    },
+    "errors": {
+      "load": "Failed to load service accounts.",
+      "upload": "Failed to upload service account.",
+      "delete": "Failed to delete service account.",
+      "readFile": "Failed to read the selected file.",
+      "empty": "Please paste the service account JSON.",
+      "missingEmail": "The service account is missing client_email.",
+      "parse": "Invalid JSON payload."
+    },
+    "status": {
+      "loading": "Loading service accounts...",
+      "empty": "No service accounts configured.",
+      "project": "Project: {{project}}",
+      "unknown": "Unknown",
+      "keyId": "Key ID: {{id}}"
+    },
+    "form": {
+      "instructions": "Paste the Google Cloud service account JSON payload. The private key stays only in your browser.",
+      "placeholder": "{ \"client_email\": \"service-account@project.iam.gserviceaccount.com\" }",
+      "loadFromFile": "Load from JSON file",
+      "submitting": "Uploading...",
+      "button": "Upload"
+    }
   },
   "cookieSubmit": {
     "value": "Cookie Value",
@@ -116,10 +156,7 @@
       },
       "vertex": {
         "title": "Vertex Settings",
-        "credential": "Credential",
-        "clientSecret": "Client Secret",
-        "clientId": "Client ID",
-        "projectId": "Project ID",
+        "manageInPanel": "Manage Vertex service accounts from the Gemini → Vertex page.",
         "modelId": "Model ID",
         "modelIdNote": "Note: This will override model in API queries"
       },

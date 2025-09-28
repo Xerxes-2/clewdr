@@ -56,6 +56,8 @@ fn generate_password() -> String {
 pub struct VertexConfig {
     #[serde(default)]
     pub credential: Option<ServiceAccountKey>,
+    #[serde(default)]
+    pub credentials: Vec<ServiceAccountKey>,
     pub model_id: Option<String>,
 }
 
@@ -87,7 +89,20 @@ pub struct PersistenceConfig {
 
 impl VertexConfig {
     pub fn validate(&self) -> bool {
-        self.credential.is_some()
+        !self.credential_list().is_empty()
+    }
+
+    pub fn credential_list(&self) -> Vec<ServiceAccountKey> {
+        let mut list = self.credentials.clone();
+        if let Some(single) = &self.credential {
+            if !list
+                .iter()
+                .any(|cred| cred.client_email == single.client_email)
+            {
+                list.push(single.clone());
+            }
+        }
+        list
     }
 }
 
@@ -446,6 +461,15 @@ impl ClewdrConfig {
                 })
                 .ok()
         });
+        let mut seen = HashSet::new();
+        let mut credentials = Vec::new();
+        for cred in self.vertex.credential_list() {
+            if seen.insert(cred.client_email.clone()) {
+                credentials.push(cred);
+            }
+        }
+        self.vertex.credentials = credentials;
+        self.vertex.credential = None;
         self
     }
 }

@@ -1,16 +1,16 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import TabNavigation from "../common/TabNavigation";
-import CookieSubmitForm from "./CookieSubmitForm";
-import CookieVisualization from "./CookieVisualization";
+import KeySubmitForm from "./KeySubmitForm";
+import KeyVisualization from "./KeyVisualization";
 
-const CookieTabs: React.FC = () => {
+const AiStudioTabs: React.FC = () => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<"submit" | "status">("submit");
 
   const tabs = [
-    { id: "submit", label: t("cookieTab.submit"), color: "blue" },
-    { id: "status", label: t("cookieTab.status"), color: "amber" },
+    { id: "submit", label: t("geminiAiStudio.submit"), color: "purple" },
+    { id: "status", label: t("geminiAiStudio.status"), color: "violet" },
   ];
 
   return (
@@ -22,9 +22,9 @@ const CookieTabs: React.FC = () => {
         className="mb-6"
       />
 
-      {activeTab === "submit" ? <CookieSubmitForm /> : <CookieVisualization />}
+      {activeTab === "submit" ? <KeySubmitForm /> : <KeyVisualization />}
     </div>
   );
 };
 
-export default CookieTabs;
+export default AiStudioTabs;

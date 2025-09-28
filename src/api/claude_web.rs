@@ -1,14 +1,12 @@
-use std::time::Instant;
+use std::sync::Arc;
 
 use axum::{Extension, extract::State, response::Response};
-use colored::Colorize;
-use tracing::info;
 
 use crate::{
-    claude_web_state::ClaudeWebState,
     error::ClewdrError,
-    middleware::claude::{ClaudeApiFormat, ClaudeContext, ClaudeWebPreprocess},
-    utils::{enabled, print_out_json},
+    middleware::claude::{ClaudeContext, ClaudeWebPreprocess},
+    providers::LLMProvider,
+    providers::claude::{ClaudeInvocation, ClaudeProviderResponse, ClaudeWebProvider},
 };
 /// Axum handler for the API messages
 /// Main API endpoint for handling message requests to Claude
@@ -22,34 +20,14 @@ use crate::{
 /// # Returns
 /// * `Response` - Stream or JSON response from Claude
 pub async fn api_claude_web(
-    State(mut state): State<ClaudeWebState>,
-    ClaudeWebPreprocess(p, f): ClaudeWebPreprocess,
+    State(provider): State<Arc<ClaudeWebProvider>>,
+    ClaudeWebPreprocess(params, context): ClaudeWebPreprocess,
 ) -> Result<(Extension<ClaudeContext>, Response), ClewdrError> {
-    let stream = p.stream.unwrap_or_default();
-    print_out_json(&p, "claude_web_client_req.json");
-    state.api_format = f.api_format();
-    state.stream = stream;
-    state.usage = f.usage().to_owned();
-    let format_display = match f.api_format() {
-        ClaudeApiFormat::Claude => ClaudeApiFormat::Claude.to_string().green(),
-        ClaudeApiFormat::OpenAI => ClaudeApiFormat::OpenAI.to_string().yellow(),
-    };
-    info!(
-        "[REQ] stream: {}, msgs: {}, model: {}, think: {}, format: {}",
-        enabled(stream),
-        p.messages.len().to_string().green(),
-        p.model.green(),
-        enabled(p.thinking.is_some()),
-        format_display
-    );
-    let stopwatch = Instant::now();
-    let res = state.try_chat(p).await;
-
-    let elapsed = stopwatch.elapsed();
-    info!(
-        "[FIN] elapsed: {}s",
-        format!("{}", elapsed.as_secs_f32()).green()
-    );
-
-    res.map(|r| (Extension(f), r))
+    let ClaudeProviderResponse { context, response } = provider
+        .invoke(ClaudeInvocation {
+            params,
+            context: context.clone(),
+        })
+        .await?;
+    Ok((Extension(context), response))
 }

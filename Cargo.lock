@@ -655,6 +655,7 @@ version = "0.11.14"
 dependencies = [
  "arc-swap",
  "async-stream",
+ "async-trait",
  "aws-lc-rs",
  "axum 0.8.4",
  "axum-auth",
