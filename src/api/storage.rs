@@ -52,6 +52,14 @@ pub async fn api_storage_status() -> Json<serde_json::Value> {
     Json(json!({
         "enabled": false,
         "mode": "file",
-        "healthy": false,
+        "healthy": true,
+        "details": {
+            "driver": "file"
+        },
+        "write_error_count": 0,
+        "total_writes": 0,
+        "avg_write_ms": 0.0,
+        "failure_ratio": 0.0,
+        "last_write_ts": 0,
     }))
 }

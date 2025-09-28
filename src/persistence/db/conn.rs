@@ -1,6 +1,5 @@
-use std::sync::LazyLock;
-
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, Schema};
+use tokio::sync::OnceCell;
 
 use crate::error::ClewdrError;
 
@@ -8,39 +7,37 @@ use super::entities::{
     ColumnCookie, ColumnKeyRow, EntityConfig, EntityCookie, EntityKeyRow, EntityWasted,
 };
 
-static CONN: LazyLock<std::sync::Mutex<Option<DatabaseConnection>>> =
-    LazyLock::new(|| std::sync::Mutex::new(None));
+static CONN: OnceCell<DatabaseConnection> = OnceCell::const_new();
 
 pub async fn ensure_conn() -> Result<DatabaseConnection, ClewdrError> {
-    if let Ok(Some(db)) = CONN.lock().map(|g| g.as_ref().cloned()) {
-        return Ok(db);
-    }
-    let cfg = crate::config::CLEWDR_CONFIG.load();
-    if !cfg.is_db_mode() {
+    if !crate::config::CLEWDR_CONFIG.load().is_db_mode() {
         return Err(ClewdrError::Whatever {
             message: "DB mode not enabled".into(),
             source: None,
         });
     }
-    let url = cfg.database_url().ok_or(ClewdrError::UnexpectedNone {
-        msg: "Database URL not provided",
-    })?;
-    if url.starts_with("sqlite://") && !cfg.no_fs {
-        if let Some(parent) = std::path::Path::new(&url["sqlite://".len()..]).parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-    }
-    let db = Database::connect(&url)
-        .await
-        .map_err(|e| ClewdrError::Whatever {
-            message: "db_connect".into(),
-            source: Some(Box::new(e)),
-        })?;
-    migrate(&db).await?;
-    if let Ok(mut g) = CONN.lock() {
-        *g = Some(db.clone());
-    }
-    Ok(db)
+    let db = CONN
+        .get_or_try_init(|| async {
+            let cfg = crate::config::CLEWDR_CONFIG.load();
+            let url = cfg.database_url().ok_or(ClewdrError::UnexpectedNone {
+                msg: "Database URL not provided",
+            })?;
+            if url.starts_with("sqlite://") && !cfg.no_fs {
+                if let Some(parent) = std::path::Path::new(&url["sqlite://".len()..]).parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+            }
+            let db = Database::connect(&url)
+                .await
+                .map_err(|e| ClewdrError::Whatever {
+                    message: "db_connect".into(),
+                    source: Some(Box::new(e)),
+                })?;
+            migrate(&db).await?;
+            Ok::<_, ClewdrError>(db)
+        })
+        .await?;
+    Ok(db.clone())
 }
 
 async fn migrate(db: &DatabaseConnection) -> Result<(), ClewdrError> {
