@@ -65,7 +65,7 @@
       "keyId": "密钥 ID：{{id}}"
     },
     "form": {
-      "instructions": "粘贴 Google Cloud 服务账号的 JSON 内容。私钥仅保留在您的浏览器中。",
+    "instructions": "粘贴 Google Cloud 服务账号的 JSON 内容。私钥会随 Clewdr 配置（文件/数据库）一同保存，请确保部署环境安全，如有泄露及时轮换。",
       "placeholder": "{ \"client_email\": \"service-account@project.iam.gserviceaccount.com\" }",
       "loadFromFile": "从 JSON 文件加载",
       "submitting": "上传中...",

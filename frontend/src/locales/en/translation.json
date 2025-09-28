@@ -65,7 +65,7 @@
       "keyId": "Key ID: {{id}}"
     },
     "form": {
-      "instructions": "Paste the Google Cloud service account JSON payload. The private key stays only in your browser.",
+    "instructions": "Paste the Google Cloud service account JSON payload. The private key is stored with your Clewdr configuration (file/DB), so keep this host secured and rotate credentials if compromised.",
       "placeholder": "{ \"client_email\": \"service-account@project.iam.gserviceaccount.com\" }",
       "loadFromFile": "Load from JSON file",
       "submitting": "Uploading...",
