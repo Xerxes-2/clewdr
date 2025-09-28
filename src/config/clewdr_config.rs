@@ -94,13 +94,12 @@ impl VertexConfig {
 
     pub fn credential_list(&self) -> Vec<ServiceAccountKey> {
         let mut list = self.credentials.clone();
-        if let Some(single) = &self.credential {
-            if !list
+        if let Some(single) = &self.credential
+            && !list
                 .iter()
                 .any(|cred| cred.client_email == single.client_email)
-            {
-                list.push(single.clone());
-            }
+        {
+            list.push(single.clone());
         }
         list
     }
