@@ -39,10 +39,20 @@ pub fn print_out_text(text: String, file_name: &str) {
     if CLEWDR_CONFIG.load().no_fs {
         return;
     }
-    let file_name = LOG_DIR.join(file_name);
+    let path = LOG_DIR.join(file_name);
     spawn(async move {
-        if let Err(e) = tokio::fs::write(file_name, text).await {
-            error!("Failed to write to file: {}\n", e);
+        if let Some(dir) = path.parent()
+            && let Err(e) = tokio::fs::create_dir_all(dir).await
+        {
+            error!("Failed to create log directory {}: {}", dir.display(), e);
+            return;
+        }
+        if let Err(e) = tokio::fs::write(&path, text).await {
+            error!(
+                "Failed to write log file {}: {}",
+                path.display(),
+                e
+            );
         }
     });
 }
