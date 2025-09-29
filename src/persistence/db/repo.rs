@@ -91,6 +91,7 @@ pub async fn persist_cookie_upsert(c: &CookieStatus) -> Result<(), ClewdrError> 
         token_expires_at: Set(exp_at),
         token_expires_in: Set(exp_in),
         token_org_uuid: Set(org),
+        supports_claude_1m: Set(c.supports_claude_1m),
     };
     let start = std::time::Instant::now();
     let res = EntityCookie::insert(am)
@@ -103,6 +104,7 @@ pub async fn persist_cookie_upsert(c: &CookieStatus) -> Result<(), ClewdrError> 
                     ColumnCookie::TokenExpiresAt,
                     ColumnCookie::TokenExpiresIn,
                     ColumnCookie::TokenOrgUuid,
+                    ColumnCookie::SupportsClaude1m,
                 ])
                 .to_owned(),
         )
@@ -332,6 +334,7 @@ pub async fn export_current_config() -> Result<serde_json::Value, ClewdrError> {
                 expires_in,
             });
         }
+        c.supports_claude_1m = r.supports_claude_1m;
         cfg.cookie_array.insert(c);
     }
     // wasted
@@ -436,6 +439,7 @@ pub async fn load_all_cookies()
                 expires_in,
             });
         }
+        c.supports_claude_1m = r.supports_claude_1m;
         if c.reset_time.is_some() {
             exhausted.push(c);
         } else {

@@ -128,6 +128,40 @@ const CookieVisualization: React.FC = () => {
     cookieStatus.exhausted.length +
     cookieStatus.invalid.length;
 
+  const renderContextBadge = (flag: boolean | null | undefined) => {
+    if (flag === undefined) {
+      return null;
+    }
+
+    const { label, classes } = (() => {
+      if (flag === true) {
+        return {
+          label: t("cookieStatus.context.enabled"),
+          classes:
+            "bg-emerald-500/20 text-emerald-200 border border-emerald-400/60",
+        };
+      }
+      if (flag === false) {
+        return {
+          label: t("cookieStatus.context.disabled"),
+          classes: "bg-red-500/20 text-red-200 border border-red-500/60",
+        };
+      }
+      return {
+        label: t("cookieStatus.context.unknown"),
+        classes: "bg-gray-700 text-gray-300 border border-gray-600/80",
+      };
+    })();
+
+    return (
+      <span
+        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${classes}`}
+      >
+        {label}
+      </span>
+    );
+  };
+
   return (
     <div className="space-y-6 w-full">
       {/* Header */}
@@ -209,6 +243,7 @@ const CookieVisualization: React.FC = () => {
           cookies={cookieStatus.valid}
           color="green"
           renderStatus={(status, index) => {
+            const contextBadge = renderContextBadge(status.supports_claude_1m);
             return (
               <div
                 key={index}
@@ -216,6 +251,11 @@ const CookieVisualization: React.FC = () => {
               >
                 <div className="text-green-300 flex-grow mr-4 min-w-0 mb-1 sm:mb-0">
                   <CookieValue cookie={status.cookie} />
+                  {contextBadge && (
+                    <div className="mt-1 flex items-center gap-2">
+                      {contextBadge}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center">
                   <span className="text-gray-400">
@@ -238,6 +278,7 @@ const CookieVisualization: React.FC = () => {
           cookies={cookieStatus.exhausted}
           color="yellow"
           renderStatus={(status, index) => {
+            const contextBadge = renderContextBadge(status.supports_claude_1m);
             return (
               <div
                 key={index}
@@ -245,6 +286,11 @@ const CookieVisualization: React.FC = () => {
               >
                 <div className="text-yellow-300 flex-grow mr-4 min-w-0 mb-1 sm:mb-0">
                   <CookieValue cookie={status.cookie} />
+                  {contextBadge && (
+                    <div className="mt-1 flex items-center gap-2">
+                      {contextBadge}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center">
                   <span className="text-gray-400">

@@ -40,6 +40,8 @@ pub mod entity_cookie {
         pub token_expires_in: Option<i64>,
         #[sea_orm(nullable)]
         pub token_org_uuid: Option<String>,
+        #[sea_orm(nullable)]
+        pub supports_claude_1m: Option<bool>,
     }
     #[derive(Copy, Clone, Debug, EnumIter)]
     pub enum Relation {}

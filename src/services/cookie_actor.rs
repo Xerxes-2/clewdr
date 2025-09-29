@@ -143,11 +143,8 @@ impl CookieActor {
     /// Collects a returned cookie and processes it based on the return reason
     fn collect(state: &mut CookieActorState, mut cookie: CookieStatus, reason: Option<Reason>) {
         let Some(reason) = reason else {
-            // replace the cookie in valid collection
-            if cookie.token.is_some()
-                && let Some(c) = state.valid.iter_mut().find(|c| **c == cookie)
-            {
-                *c = cookie;
+            if let Some(existing) = state.valid.iter_mut().find(|c| **c == cookie) {
+                *existing = cookie;
                 Self::save(state);
             }
             return;

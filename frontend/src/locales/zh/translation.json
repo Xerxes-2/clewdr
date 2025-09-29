@@ -121,6 +121,12 @@
         "unknown": "未知"
       }
     },
+    "context": {
+      "label": "1M 上下文",
+      "enabled": "已启用 1M 上下文",
+      "disabled": "未开通 1M 上下文",
+      "unknown": "尚未探测 1M 上下文"
+    },
     "noCookies": "没有{{type}}",
     "deleteConfirm": "您确定要删除此cookie吗？",
     "copy": "复制到剪贴板"

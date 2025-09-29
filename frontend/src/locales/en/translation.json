@@ -121,6 +121,12 @@
         "unknown": "Unknown"
       }
     },
+    "context": {
+      "label": "1M context",
+      "enabled": "1M context enabled",
+      "disabled": "1M context unavailable",
+      "unknown": "1M context not tested"
+    },
     "noCookies": "No {{type}}",
     "deleteConfirm": "Are you sure you want to delete this cookie?",
     "copy": "Copy to clipboard"

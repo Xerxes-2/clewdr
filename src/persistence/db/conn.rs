@@ -53,7 +53,7 @@ async fn migrate(db: &DatabaseConnection) -> Result<(), ClewdrError> {
     let stmt = schema.create_table_from_entity(EntityKeyRow);
     db.execute(backend.build(&stmt)).await.ok();
     // indexes
-    use sea_orm::sea_query::Index;
+    use sea_orm::sea_query::{ColumnDef, Index, TableAlterStatement};
     // cookies(token_org_uuid)
     let idx = Index::create()
         .name("idx_cookies_org_uuid")
@@ -75,5 +75,16 @@ async fn migrate(db: &DatabaseConnection) -> Result<(), ClewdrError> {
         .col(ColumnKeyRow::Count403)
         .to_owned();
     db.execute(backend.build(&idx)).await.ok();
+
+    // Ensure supports_claude_1m column exists on cookies table
+    let alter = TableAlterStatement::new()
+        .table(EntityCookie)
+        .add_column(
+            ColumnDef::new(ColumnCookie::SupportsClaude1m)
+                .boolean()
+                .null(),
+        )
+        .to_owned();
+    db.execute(backend.build(&alter)).await.ok();
     Ok(())
 }

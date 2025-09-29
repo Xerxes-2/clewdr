@@ -49,6 +49,8 @@ pub struct CookieStatus {
     pub token: Option<TokenInfo>,
     #[serde(default)]
     pub reset_time: Option<i64>,
+    #[serde(default)]
+    pub supports_claude_1m: Option<bool>,
 }
 
 impl PartialEq for CookieStatus {
@@ -92,6 +94,7 @@ impl CookieStatus {
             cookie,
             token: None,
             reset_time,
+            supports_claude_1m: None,
         })
     }
 
@@ -115,6 +118,10 @@ impl CookieStatus {
 
     pub fn add_token(&mut self, token: TokenInfo) {
         self.token = Some(token);
+    }
+
+    pub fn set_claude_1m_support(&mut self, value: Option<bool>) {
+        self.supports_claude_1m = value;
     }
 }
 
