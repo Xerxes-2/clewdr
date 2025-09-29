@@ -133,6 +133,9 @@
       "totalInput": "累计输入 Token",
       "totalOutput": "累计输出 Token"
     },
+    "meta": {
+      "summary": "查看详情"
+    },
     "noCookies": "没有{{type}}",
     "deleteConfirm": "您确定要删除此cookie吗？",
     "copy": "复制到剪贴板"
@@ -169,10 +172,11 @@
         "rproxyPlaceholder": "https://example.com"
       },
       "api": {
-        "title": "API设置",
-        "maxRetries": "最大重试次数",
-        "preserveChats": "保留聊天",
-        "webSearch": "网页搜索"
+      "title": "API设置",
+      "maxRetries": "最大重试次数",
+      "preserveChats": "保留聊天",
+      "webSearch": "网页搜索",
+      "webCountTokens": "允许 Web 渠道调用 count_tokens"
       },
       "cookie": {
         "title": "Cookie设置",

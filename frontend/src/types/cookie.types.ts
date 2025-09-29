@@ -3,6 +3,7 @@ export interface CookieStatus {
   cookie: string;
   reset_time: number | null;
   supports_claude_1m?: boolean | null;
+  count_tokens_allowed?: boolean | null;
   total_input_tokens?: number;
   total_output_tokens?: number;
   window_input_tokens?: number;

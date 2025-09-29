@@ -72,7 +72,7 @@ const CookieVisualization: React.FC = () => {
     }
 
     return (
-      <div className="mt-1 grid gap-1 text-xs text-gray-400">
+      <div className="grid gap-1 text-xs text-gray-400">
         <div className="flex gap-3 flex-wrap">
           <span>
             {t("cookieStatus.usage.currentInput")}: {currentInput}
@@ -276,6 +276,8 @@ const CookieVisualization: React.FC = () => {
           color="green"
           renderStatus={(status, index) => {
             const contextBadge = renderContextBadge(status.supports_claude_1m);
+            const usageStats = renderUsageStats(status);
+            const hasMeta = contextBadge || usageStats;
             return (
               <div
                 key={index}
@@ -283,12 +285,21 @@ const CookieVisualization: React.FC = () => {
               >
                 <div className="text-green-300 flex-grow mr-4 min-w-0 mb-1 sm:mb-0">
                   <CookieValue cookie={status.cookie} />
-                  {contextBadge && (
-                    <div className="mt-1 flex items-center gap-2">
-                      {contextBadge}
-                    </div>
+                  {hasMeta && (
+                    <details className="mt-1 text-xs text-gray-400">
+                      <summary className="cursor-pointer text-gray-500 hover:text-gray-300">
+                        {t("cookieStatus.meta.summary")}
+                      </summary>
+                      <div className="mt-2 space-y-2">
+                        {contextBadge && (
+                          <div className="flex items-center gap-2 text-gray-300">
+                            {contextBadge}
+                          </div>
+                        )}
+                        {usageStats}
+                      </div>
+                    </details>
                   )}
-                  {renderUsageStats(status)}
                 </div>
                 <div className="flex items-center">
                   <span className="text-gray-400">
@@ -312,6 +323,8 @@ const CookieVisualization: React.FC = () => {
           color="yellow"
           renderStatus={(status, index) => {
             const contextBadge = renderContextBadge(status.supports_claude_1m);
+            const usageStats = renderUsageStats(status);
+            const hasMeta = contextBadge || usageStats;
             return (
               <div
                 key={index}
@@ -319,12 +332,21 @@ const CookieVisualization: React.FC = () => {
               >
                 <div className="text-yellow-300 flex-grow mr-4 min-w-0 mb-1 sm:mb-0">
                   <CookieValue cookie={status.cookie} />
-                  {contextBadge && (
-                    <div className="mt-1 flex items-center gap-2">
-                      {contextBadge}
-                    </div>
+                  {hasMeta && (
+                    <details className="mt-1 text-xs text-gray-400">
+                      <summary className="cursor-pointer text-gray-500 hover:text-gray-300">
+                        {t("cookieStatus.meta.summary")}
+                      </summary>
+                      <div className="mt-2 space-y-2">
+                        {contextBadge && (
+                          <div className="flex items-center gap-2 text-gray-300">
+                            {contextBadge}
+                          </div>
+                        )}
+                        {usageStats}
+                      </div>
+                    </details>
                   )}
-                  {renderUsageStats(status)}
                 </div>
                 <div className="flex items-center">
                   <span className="text-gray-400">

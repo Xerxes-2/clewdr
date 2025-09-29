@@ -52,6 +52,8 @@ pub struct CookieStatus {
     #[serde(default)]
     pub supports_claude_1m: Option<bool>,
     #[serde(default)]
+    pub count_tokens_allowed: Option<bool>,
+    #[serde(default)]
     pub total_input_tokens: u64,
     #[serde(default)]
     pub total_output_tokens: u64,
@@ -103,6 +105,7 @@ impl CookieStatus {
             token: None,
             reset_time,
             supports_claude_1m: None,
+            count_tokens_allowed: None,
             total_input_tokens: 0,
             total_output_tokens: 0,
             window_input_tokens: 0,
@@ -136,6 +139,10 @@ impl CookieStatus {
 
     pub fn set_claude_1m_support(&mut self, value: Option<bool>) {
         self.supports_claude_1m = value;
+    }
+
+    pub fn set_count_tokens_allowed(&mut self, value: Option<bool>) {
+        self.count_tokens_allowed = value;
     }
 
     pub fn add_usage(&mut self, input: u64, output: u64) {

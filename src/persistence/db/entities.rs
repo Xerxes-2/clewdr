@@ -42,6 +42,8 @@ pub mod entity_cookie {
         pub token_org_uuid: Option<String>,
         #[sea_orm(nullable)]
         pub supports_claude_1m: Option<bool>,
+        #[sea_orm(nullable)]
+        pub count_tokens_allowed: Option<bool>,
         #[sea_orm(column_type = "BigInteger", nullable)]
         pub total_input_tokens: Option<i64>,
         #[sea_orm(column_type = "BigInteger", nullable)]

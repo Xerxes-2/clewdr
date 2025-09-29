@@ -200,7 +200,7 @@ impl LLMProvider for ClaudeCodeProvider {
                     params.model.green()
                 );
                 let stopwatch = Instant::now();
-                let response = state.try_count_tokens(params).await?;
+                let response = state.try_count_tokens(params, context.is_web()).await?;
                 let elapsed = stopwatch.elapsed();
                 info!(
                     "[TOKENS] elapsed: {}s",

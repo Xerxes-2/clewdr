@@ -22,10 +22,12 @@ pub async fn ensure_conn() -> Result<DatabaseConnection, ClewdrError> {
             let url = cfg.database_url().ok_or(ClewdrError::UnexpectedNone {
                 msg: "Database URL not provided",
             })?;
-            if url.starts_with("sqlite://") && !cfg.no_fs {
-                if let Some(parent) = std::path::Path::new(&url["sqlite://".len()..]).parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
+            if url.starts_with("sqlite://")
+                && !cfg.no_fs
+                && let Some(parent) =
+                    std::path::Path::new(&url["sqlite://".len()..]).parent()
+            {
+                let _ = std::fs::create_dir_all(parent);
             }
             let db = Database::connect(&url)
                 .await
@@ -81,6 +83,11 @@ async fn migrate(db: &DatabaseConnection) -> Result<(), ClewdrError> {
         .table(EntityCookie)
         .add_column(
             ColumnDef::new(ColumnCookie::SupportsClaude1m)
+                .boolean()
+                .null(),
+        )
+        .add_column(
+            ColumnDef::new(ColumnCookie::CountTokensAllowed)
                 .boolean()
                 .null(),
         )

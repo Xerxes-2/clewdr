@@ -133,6 +133,9 @@
       "totalInput": "Total input tokens",
       "totalOutput": "Total output tokens"
     },
+    "meta": {
+      "summary": "Details"
+    },
     "noCookies": "No {{type}}",
     "deleteConfirm": "Are you sure you want to delete this cookie?",
     "copy": "Copy to clipboard"
@@ -169,10 +172,11 @@
         "rproxyPlaceholder": "https://example.com"
       },
       "api": {
-        "title": "API Settings",
-        "maxRetries": "Max Retries",
-        "preserveChats": "Preserve Chats",
-        "webSearch": "Web Search"
+      "title": "API Settings",
+      "maxRetries": "Max Retries",
+      "preserveChats": "Preserve Chats",
+      "webSearch": "Web Search",
+      "webCountTokens": "Enable web count_tokens"
       },
       "cookie": {
         "title": "Cookie Settings",

@@ -20,6 +20,7 @@ export interface ConfigData {
   max_retries: number;
   preserve_chats: boolean;
   web_search: boolean;
+  enable_web_count_tokens: boolean;
 
   // Cookie settings
   skip_first_warning: boolean;

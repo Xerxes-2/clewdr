@@ -132,6 +132,13 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ config, onChange }) => {
             onChange={onChange}
             label={t("config.sections.api.webSearch")}
           />
+
+          <ConfigCheckbox
+            name="enable_web_count_tokens"
+            checked={!!config.enable_web_count_tokens}
+            onChange={onChange}
+            label={t("config.sections.api.webCountTokens")}
+          />
         </div>
       </ConfigSection>
 

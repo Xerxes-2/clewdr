@@ -1,3 +1,4 @@
+use axum::{Json, response::IntoResponse};
 use colored::Colorize;
 use snafu::{GenerateImplicitData, ResultExt};
 use tracing::{Instrument, error, info, warn};
@@ -6,7 +7,7 @@ use crate::{
     claude_code_state::{ClaudeCodeState, TokenStatus},
     config::CLEWDR_CONFIG,
     error::{CheckClaudeErr, ClewdrError, WreqSnafu},
-    types::claude::CreateMessageParams,
+    types::claude::{CountMessageTokensResponse, CreateMessageParams},
     utils::forward_response,
 };
 
@@ -200,9 +201,23 @@ impl ClaudeCodeState {
         }
     }
 
+    async fn persist_count_tokens_allowed(&mut self, value: bool) {
+        if let Some(cookie) = self.cookie.as_mut() {
+            if cookie.count_tokens_allowed == Some(value) {
+                return;
+            }
+            cookie.set_count_tokens_allowed(Some(value));
+            let cloned = cookie.clone();
+            if let Err(err) = self.cookie_actor_handle.return_cookie(cloned, None).await {
+                warn!("Failed to persist count_tokens permission: {}", err);
+            }
+        }
+    }
+
     pub async fn try_count_tokens(
         &mut self,
         p: CreateMessageParams,
+        for_web: bool,
     ) -> Result<axum::response::Response, ClewdrError> {
         for i in 0..CLEWDR_CONFIG.load().max_retries + 1 {
             if i > 0 {
@@ -212,6 +227,14 @@ impl ClaudeCodeState {
             let p = p.to_owned();
 
             let cookie = state.request_cookie().await?;
+            let web_attempt_allowed = CLEWDR_CONFIG.load().enable_web_count_tokens;
+            let cookie_disallows = matches!(cookie.count_tokens_allowed, Some(false));
+            if cookie_disallows || (for_web && !web_attempt_allowed) {
+                if cookie_disallows {
+                    state.persist_count_tokens_allowed(false).await;
+                }
+                return Ok(Self::local_count_tokens_response(&p));
+            }
             let retry = async {
                 match state.check_token() {
                     TokenStatus::None => {
@@ -237,7 +260,7 @@ impl ClaudeCodeState {
                     });
                 };
                 state
-                    .perform_count_tokens(access_token.access_token.to_owned(), p)
+                    .perform_count_tokens(access_token.access_token.to_owned(), p, for_web)
                     .await
             }
             .instrument(tracing::info_span!(
@@ -269,6 +292,7 @@ impl ClaudeCodeState {
         &mut self,
         access_token: String,
         mut p: CreateMessageParams,
+        allow_fallback: bool,
     ) -> Result<axum::response::Response, ClewdrError> {
         p.stream = Some(false);
         let (base_model, requested_1m) = match p.model.strip_suffix("-1M") {
@@ -303,6 +327,7 @@ impl ClaudeCodeState {
                 .await
             {
                 Ok(response) => {
+                    self.persist_count_tokens_allowed(true).await;
                     if is_sonnet && use_1m {
                         self.persist_claude_1m_support(true).await;
                     }
@@ -310,6 +335,13 @@ impl ClaudeCodeState {
                     return Ok(resp);
                 }
                 Err(err) => {
+                    let unauthorized = Self::is_count_tokens_unauthorized(&err);
+                    if unauthorized {
+                        self.persist_count_tokens_allowed(false).await;
+                        if allow_fallback {
+                            return Ok(Self::local_count_tokens_response(&p));
+                        }
+                    }
                     let is_last_attempt = idx + 1 == attempts.len();
                     let should_retry = use_1m
                         && is_sonnet
@@ -435,6 +467,13 @@ impl ClaudeCodeState {
         model.starts_with(CLAUDE_SONNET_4_PREFIX)
     }
 
+    fn local_count_tokens_response(body: &CreateMessageParams) -> axum::response::Response {
+        let estimate = CountMessageTokensResponse {
+            input_tokens: body.count_tokens(),
+        };
+        Json(estimate).into_response()
+    }
+
     fn is_context_1m_forbidden(error: &ClewdrError) -> bool {
         if let ClewdrError::ClaudeHttpError { code, inner } = error
             && (code.as_u16() == 403 || code.as_u16() == 400)
@@ -446,6 +485,17 @@ impl ClaudeCodeState {
                 .unwrap_or_default();
             return message
                 .contains("the long context beta is not yet available for this subscription.");
+        }
+        false
+    }
+
+    fn is_count_tokens_unauthorized(error: &ClewdrError) -> bool {
+        if let ClewdrError::ClaudeHttpError { code, .. } = error {
+            return match code.as_u16() {
+                401 | 404 => true,
+                403 => !Self::is_context_1m_forbidden(error),
+                _ => false,
+            };
         }
         false
     }

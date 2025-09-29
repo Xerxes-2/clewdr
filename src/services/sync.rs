@@ -87,6 +87,7 @@ pub fn spawn(
                         token: None,
                         reset_time: None,
                         supports_claude_1m: None,
+                        count_tokens_allowed: None,
                         total_input_tokens: 0,
                         total_output_tokens: 0,
                         window_input_tokens: 0,
