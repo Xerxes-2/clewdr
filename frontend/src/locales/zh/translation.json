@@ -127,6 +127,12 @@
       "disabled": "未开通 1M 上下文",
       "unknown": "尚未探测 1M 上下文"
     },
+    "usage": {
+      "currentInput": "本轮输入 Token",
+      "currentOutput": "本轮输出 Token",
+      "totalInput": "累计输入 Token",
+      "totalOutput": "累计输出 Token"
+    },
     "noCookies": "没有{{type}}",
     "deleteConfirm": "您确定要删除此cookie吗？",
     "copy": "复制到剪贴板"

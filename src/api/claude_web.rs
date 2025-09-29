@@ -24,10 +24,7 @@ pub async fn api_claude_web(
     ClaudeWebPreprocess(params, context): ClaudeWebPreprocess,
 ) -> Result<(Extension<ClaudeContext>, Response), ClewdrError> {
     let ClaudeProviderResponse { context, response } = provider
-        .invoke(ClaudeInvocation {
-            params,
-            context: context.clone(),
-        })
+        .invoke(ClaudeInvocation::messages(params, context.clone()))
         .await?;
     Ok((Extension(context), response))
 }

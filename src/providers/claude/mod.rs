@@ -16,10 +16,35 @@ use crate::{
 
 use super::LLMProvider;
 
+#[derive(Clone, Copy)]
+pub enum ClaudeOperation {
+    Messages,
+    CountTokens,
+}
+
 #[derive(Clone)]
 pub struct ClaudeInvocation {
     pub params: CreateMessageParams,
     pub context: ClaudeContext,
+    pub operation: ClaudeOperation,
+}
+
+impl ClaudeInvocation {
+    pub fn messages(params: CreateMessageParams, context: ClaudeContext) -> Self {
+        Self {
+            params,
+            context,
+            operation: ClaudeOperation::Messages,
+        }
+    }
+
+    pub fn count_tokens(params: CreateMessageParams, context: ClaudeContext) -> Self {
+        Self {
+            params,
+            context,
+            operation: ClaudeOperation::CountTokens,
+        }
+    }
 }
 
 pub struct ClaudeProviderResponse {
@@ -84,7 +109,16 @@ impl LLMProvider for ClaudeWebProvider {
         state.api_format = request.context.api_format();
         state.stream = stream;
         state.usage = request.context.usage().to_owned();
-        let ClaudeInvocation { params, context } = request;
+        let ClaudeInvocation {
+            params,
+            context,
+            operation,
+        } = request;
+        if !matches!(operation, ClaudeOperation::Messages) {
+            return Err(ClewdrError::BadRequest {
+                msg: "Unsupported operation for Claude Web",
+            });
+        }
         let format_display = match context.api_format() {
             ClaudeApiFormat::Claude => ClaudeApiFormat::Claude.to_string().green(),
             ClaudeApiFormat::OpenAI => ClaudeApiFormat::OpenAI.to_string().yellow(),
@@ -131,27 +165,50 @@ impl LLMProvider for ClaudeCodeProvider {
         state.stream = request.context.is_stream();
         state.system_prompt_hash = request.context.system_prompt_hash();
         state.usage = request.context.usage().to_owned();
-        let ClaudeInvocation { params, context } = request;
-        let format_display = match context.api_format() {
-            ClaudeApiFormat::Claude => ClaudeApiFormat::Claude.to_string().green(),
-            ClaudeApiFormat::OpenAI => ClaudeApiFormat::OpenAI.to_string().yellow(),
-        };
-        info!(
-            "[REQ] stream: {}, msgs: {}, model: {}, format: {}",
-            enabled(state.stream),
-            params.messages.len().to_string().green(),
-            params.model.green(),
-            format_display
-        );
-        print_out_json(&params, "claude_code_client_req.json");
-        let stopwatch = Instant::now();
-        let response = state.try_chat(params).await?;
-        let elapsed = stopwatch.elapsed();
-        info!(
-            "[FIN] elapsed: {}s",
-            format!("{}", elapsed.as_secs_f32()).green()
-        );
-        Ok(ClaudeProviderResponse { context, response })
+        let ClaudeInvocation {
+            params,
+            context,
+            operation,
+        } = request;
+        match operation {
+            ClaudeOperation::Messages => {
+                let format_display = match context.api_format() {
+                    ClaudeApiFormat::Claude => ClaudeApiFormat::Claude.to_string().green(),
+                    ClaudeApiFormat::OpenAI => ClaudeApiFormat::OpenAI.to_string().yellow(),
+                };
+                info!(
+                    "[REQ] stream: {}, msgs: {}, model: {}, format: {}",
+                    enabled(state.stream),
+                    params.messages.len().to_string().green(),
+                    params.model.green(),
+                    format_display
+                );
+                print_out_json(&params, "claude_code_client_req.json");
+                let stopwatch = Instant::now();
+                let response = state.try_chat(params).await?;
+                let elapsed = stopwatch.elapsed();
+                info!(
+                    "[FIN] elapsed: {}s",
+                    format!("{}", elapsed.as_secs_f32()).green()
+                );
+                Ok(ClaudeProviderResponse { context, response })
+            }
+            ClaudeOperation::CountTokens => {
+                info!(
+                    "[TOKENS] msgs: {}, model: {}",
+                    params.messages.len().to_string().green(),
+                    params.model.green()
+                );
+                let stopwatch = Instant::now();
+                let response = state.try_count_tokens(params).await?;
+                let elapsed = stopwatch.elapsed();
+                info!(
+                    "[TOKENS] elapsed: {}s",
+                    format!("{}", elapsed.as_secs_f32()).green()
+                );
+                Ok(ClaudeProviderResponse { context, response })
+            }
+        }
     }
 }
 

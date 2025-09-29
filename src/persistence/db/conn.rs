@@ -84,6 +84,26 @@ async fn migrate(db: &DatabaseConnection) -> Result<(), ClewdrError> {
                 .boolean()
                 .null(),
         )
+        .add_column(
+            ColumnDef::new(ColumnCookie::TotalInputTokens)
+                .big_integer()
+                .null(),
+        )
+        .add_column(
+            ColumnDef::new(ColumnCookie::TotalOutputTokens)
+                .big_integer()
+                .null(),
+        )
+        .add_column(
+            ColumnDef::new(ColumnCookie::WindowInputTokens)
+                .big_integer()
+                .null(),
+        )
+        .add_column(
+            ColumnDef::new(ColumnCookie::WindowOutputTokens)
+                .big_integer()
+                .null(),
+        )
         .to_owned();
     db.execute(backend.build(&alter)).await.ok();
     Ok(())

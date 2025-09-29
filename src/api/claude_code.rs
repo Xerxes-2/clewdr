@@ -14,10 +14,18 @@ pub async fn api_claude_code(
     ClaudeCodePreprocess(params, context): ClaudeCodePreprocess,
 ) -> Result<(Extension<ClaudeContext>, Response), ClewdrError> {
     let ClaudeProviderResponse { context, response } = provider
-        .invoke(ClaudeInvocation {
-            params,
-            context: context.clone(),
-        })
+        .invoke(ClaudeInvocation::messages(params, context.clone()))
         .await?;
     Ok((Extension(context), response))
+}
+
+pub async fn api_claude_code_count_tokens(
+    State(provider): State<Arc<ClaudeCodeProvider>>,
+    ClaudeCodePreprocess(mut params, context): ClaudeCodePreprocess,
+) -> Result<Response, ClewdrError> {
+    params.stream = Some(false);
+    let ClaudeProviderResponse { response, .. } = provider
+        .invoke(ClaudeInvocation::count_tokens(params, context))
+        .await?;
+    Ok(response)
 }

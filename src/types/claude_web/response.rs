@@ -68,10 +68,12 @@ impl ClaudeWebState {
     /// # Returns
     /// * `axum::response::Response` - Transformed response in the requested format
     pub async fn transform_response(
-        &self,
+        &mut self,
         wreq_res: wreq::Response,
     ) -> Result<axum::response::Response, ClewdrError> {
         if self.stream {
+            self.persist_usage_totals(self.usage.input_tokens as u64, 0)
+                .await;
             return forward_response(wreq_res);
         }
 
@@ -79,11 +81,14 @@ impl ClaudeWebState {
         let stream = stream.eventsource();
         let text = merge_sse(stream).await?;
         print_out_text(text.to_owned(), "claude_web_non_stream.txt");
-        Ok(Json(CreateMessageResponse::text(
-            text,
-            Default::default(),
-            self.usage.to_owned(),
-        ))
-        .into_response())
+        let mut response =
+            CreateMessageResponse::text(text, Default::default(), self.usage.to_owned());
+        let output_tokens = response.count_tokens();
+        let mut usage = self.usage.to_owned();
+        usage.output_tokens = output_tokens;
+        response.usage = Some(usage.clone());
+        self.persist_usage_totals(usage.input_tokens as u64, output_tokens as u64)
+            .await;
+        Ok(Json(response).into_response())
     }
 }

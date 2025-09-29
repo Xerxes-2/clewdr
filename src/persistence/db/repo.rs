@@ -8,6 +8,14 @@ use crate::error::ClewdrError;
 
 use super::{conn::ensure_conn, entities::*, metrics::*};
 
+fn clamp_u64_to_i64(value: u64) -> i64 {
+    if value > i64::MAX as u64 {
+        i64::MAX
+    } else {
+        value as i64
+    }
+}
+
 pub async fn bootstrap_from_db_if_enabled() -> Result<(), ClewdrError> {
     if !crate::config::CLEWDR_CONFIG.load().is_db_mode() {
         return Ok(());
@@ -92,6 +100,10 @@ pub async fn persist_cookie_upsert(c: &CookieStatus) -> Result<(), ClewdrError> 
         token_expires_in: Set(exp_in),
         token_org_uuid: Set(org),
         supports_claude_1m: Set(c.supports_claude_1m),
+        total_input_tokens: Set(Some(clamp_u64_to_i64(c.total_input_tokens))),
+        total_output_tokens: Set(Some(clamp_u64_to_i64(c.total_output_tokens))),
+        window_input_tokens: Set(Some(clamp_u64_to_i64(c.window_input_tokens))),
+        window_output_tokens: Set(Some(clamp_u64_to_i64(c.window_output_tokens))),
     };
     let start = std::time::Instant::now();
     let res = EntityCookie::insert(am)
@@ -105,6 +117,10 @@ pub async fn persist_cookie_upsert(c: &CookieStatus) -> Result<(), ClewdrError> 
                     ColumnCookie::TokenExpiresIn,
                     ColumnCookie::TokenOrgUuid,
                     ColumnCookie::SupportsClaude1m,
+                    ColumnCookie::TotalInputTokens,
+                    ColumnCookie::TotalOutputTokens,
+                    ColumnCookie::WindowInputTokens,
+                    ColumnCookie::WindowOutputTokens,
                 ])
                 .to_owned(),
         )
@@ -335,6 +351,10 @@ pub async fn export_current_config() -> Result<serde_json::Value, ClewdrError> {
             });
         }
         c.supports_claude_1m = r.supports_claude_1m;
+        c.total_input_tokens = r.total_input_tokens.unwrap_or(0).max(0) as u64;
+        c.total_output_tokens = r.total_output_tokens.unwrap_or(0).max(0) as u64;
+        c.window_input_tokens = r.window_input_tokens.unwrap_or(0).max(0) as u64;
+        c.window_output_tokens = r.window_output_tokens.unwrap_or(0).max(0) as u64;
         cfg.cookie_array.insert(c);
     }
     // wasted
@@ -440,6 +460,10 @@ pub async fn load_all_cookies()
             });
         }
         c.supports_claude_1m = r.supports_claude_1m;
+        c.total_input_tokens = r.total_input_tokens.unwrap_or(0).max(0) as u64;
+        c.total_output_tokens = r.total_output_tokens.unwrap_or(0).max(0) as u64;
+        c.window_input_tokens = r.window_input_tokens.unwrap_or(0).max(0) as u64;
+        c.window_output_tokens = r.window_output_tokens.unwrap_or(0).max(0) as u64;
         if c.reset_time.is_some() {
             exhausted.push(c);
         } else {

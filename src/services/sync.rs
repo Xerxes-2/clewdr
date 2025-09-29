@@ -87,6 +87,10 @@ pub fn spawn(
                         token: None,
                         reset_time: None,
                         supports_claude_1m: None,
+                        total_input_tokens: 0,
+                        total_output_tokens: 0,
+                        window_input_tokens: 0,
+                        window_output_tokens: 0,
                     };
                     let _ = c_handle.return_cookie(tmp, Some(u.reason.clone())).await;
                 }

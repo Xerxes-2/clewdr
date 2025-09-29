@@ -105,6 +105,10 @@ impl RouterBuilder {
     fn route_claude_code_endpoints(mut self) -> Self {
         let router = Router::new()
             .route("/code/v1/messages", post(api_claude_code))
+            .route(
+                "/code/v1/messages/count_tokens",
+                post(api_claude_code_count_tokens),
+            )
             .layer(
                 ServiceBuilder::new()
                     .layer(from_extractor::<RequireXApiKeyAuth>())

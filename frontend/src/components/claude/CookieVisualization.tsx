@@ -61,6 +61,38 @@ const CookieVisualization: React.FC = () => {
     return message;
   };
 
+  const renderUsageStats = (status: any) => {
+    const currentInput = status.window_input_tokens ?? status.windowInputTokens ?? 0;
+    const currentOutput = status.window_output_tokens ?? status.windowOutputTokens ?? 0;
+    const totalInput = status.total_input_tokens ?? status.totalInputTokens ?? 0;
+    const totalOutput = status.total_output_tokens ?? status.totalOutputTokens ?? 0;
+
+    if (currentInput === 0 && currentOutput === 0 && totalInput === 0 && totalOutput === 0) {
+      return null;
+    }
+
+    return (
+      <div className="mt-1 grid gap-1 text-xs text-gray-400">
+        <div className="flex gap-3 flex-wrap">
+          <span>
+            {t("cookieStatus.usage.currentInput")}: {currentInput}
+          </span>
+          <span>
+            {t("cookieStatus.usage.currentOutput")}: {currentOutput}
+          </span>
+        </div>
+        <div className="flex gap-3 flex-wrap">
+          <span>
+            {t("cookieStatus.usage.totalInput")}: {totalInput}
+          </span>
+          <span>
+            {t("cookieStatus.usage.totalOutput")}: {totalOutput}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
   const handleDeleteCookie = async (cookie: string) => {
     if (!window.confirm(t("cookieStatus.deleteConfirm"))) return;
 
@@ -256,6 +288,7 @@ const CookieVisualization: React.FC = () => {
                       {contextBadge}
                     </div>
                   )}
+                  {renderUsageStats(status)}
                 </div>
                 <div className="flex items-center">
                   <span className="text-gray-400">
@@ -291,6 +324,7 @@ const CookieVisualization: React.FC = () => {
                       {contextBadge}
                     </div>
                   )}
+                  {renderUsageStats(status)}
                 </div>
                 <div className="flex items-center">
                   <span className="text-gray-400">
@@ -324,6 +358,7 @@ const CookieVisualization: React.FC = () => {
               >
                 <div className="text-red-300 flex-grow mr-4 min-w-0 mb-1 sm:mb-0">
                   <CookieValue cookie={status.cookie} />
+                  {renderUsageStats(status)}
                 </div>
                 <div className="flex items-center">
                   <span className="text-gray-400">

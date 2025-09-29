@@ -10,7 +10,7 @@ mod error;
 mod gemini;
 mod misc;
 mod storage;
-pub use claude_code::api_claude_code;
+pub use claude_code::{api_claude_code, api_claude_code_count_tokens};
 /// Message handling endpoints for creating and managing chat conversations
 pub use claude_web::api_claude_web;
 /// Configuration related endpoints for retrieving and updating Clewdr settings
