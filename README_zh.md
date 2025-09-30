@@ -258,6 +258,11 @@ Vertex AI:     http://127.0.0.1:8484/v1/vertex/v1beta/            # Vertex AI
 
 **Github 聚合 Wiki**: <https://github.com/Xerxes-2/clewdr/wiki>
 
+## 📚 文档
+
+- [cache_control 使用说明](./docs/cache_control_usage.md) - 详细介绍 Claude API 提示缓存功能的使用
+- [cache_control Usage (English)](./docs/cache_control_usage_en.md) - Documentation for Claude API prompt caching feature
+
 ## 致谢
 
 - [wreq](https://github.com/0x676e67/wreq) - 用于API访问的出色浏览器指纹识别库。
