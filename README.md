@@ -298,6 +298,11 @@ database_url = "postgres://user:pass@db:5432/clewdr"
 **Github Aggregated Wiki**: <https://github.com/Xerxes-2/clewdr/wiki>
 - [Database persistence guide (中文)](wiki/database.md)
 
+## 📚 Documentation
+
+- [cache_control Usage Documentation](./docs/cache_control_usage_en.md) - Detailed guide on Claude API prompt caching feature
+- [cache_control 使用说明 (中文)](./docs/cache_control_usage.md) - Claude API 提示缓存功能详细说明
+
 ## Acknowledgements
 
 - [wreq](https://github.com/0x676e67/wreq) - Excellent browser fingerprinting library used for API access.
