@@ -222,6 +222,7 @@ pub enum ContentBlock {
     #[serde(rename = "tool_result")]
     ToolResult {
         tool_use_id: String,
+        #[serde(deserialize_with = "deserialize_tool_result_content")]
         content: String,
     },
 }
@@ -484,4 +485,46 @@ pub struct StreamError {
     #[serde(rename = "type")]
     pub type_: String,
     pub message: String,
+}
+
+/// Custom deserializer for tool_result content that handles both String and Array formats
+///
+/// This function processes MCP tool results which can come in two formats:
+/// 1. Simple string: "result text"
+/// 2. Array of content objects: [{"type": "text", "text": "result text"}, ...]
+///
+/// When an array is received, it extracts text from all items with type="text" and joins them.
+fn deserialize_tool_result_content<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum ToolResultContent {
+        String(String),
+        Array(Vec<serde_json::Value>),
+    }
+
+    let content = ToolResultContent::deserialize(deserializer)?;
+
+    match content {
+        ToolResultContent::String(s) => Ok(s),
+        ToolResultContent::Array(arr) => {
+            // Extract text from all content items with type="text"
+            let text_parts: Vec<String> = arr
+                .iter()
+                .filter_map(|item| {
+                    if item.get("type")?.as_str()? == "text" {
+                        Some(item.get("text")?.as_str()?.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            Ok(text_parts.join("\n\n"))
+        }
+    }
 }
