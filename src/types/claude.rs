@@ -238,6 +238,38 @@ pub struct ImageSource {
     pub data: String,
 }
 
+impl ImageSource {
+    /// Parse a data URI into an ImageSource
+    /// Supports format: data:<media_type>[;params];base64,<data>
+    /// e.g., data:image/png;base64,iVBORw0KGgo...
+    /// e.g., data:image/png;name=foo;base64,iVBORw0KGgo...
+    pub fn from_data_url(url: &str) -> Option<Self> {
+        if !url.starts_with("data:") {
+            return None;
+        }
+        let (metadata, base64_data) = url.split_once(',')?;
+        // reject empty data
+        if base64_data.is_empty() {
+            return None;
+        }
+        let after_data = metadata.strip_prefix("data:")?;
+        // find the last ";base64" marker (case-insensitive)
+        let lower = after_data.to_lowercase();
+        let base64_pos = lower.rfind(";base64")?;
+        let media_type = &after_data[..base64_pos];
+        // reject empty media type
+        if media_type.is_empty() {
+            return None;
+        }
+
+        Some(Self {
+            type_: "base64".to_string(),
+            media_type: media_type.to_string(),
+            data: base64_data.to_owned(),
+        })
+    }
+}
+
 // oai image
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub struct ImageUrl {
