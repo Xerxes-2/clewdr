@@ -3,7 +3,39 @@ use serde_json::{Value, json};
 use tiktoken_rs::o200k_base;
 
 use super::claude::{CreateMessageParams as ClaudeCreateMessageParams, *};
-use crate::types::claude::Message;
+use crate::types::claude::{ImageSource, Message};
+
+/// Convert OAI ImageUrl to Claude Image format
+fn normalize_block(block: ContentBlock) -> Option<ContentBlock> {
+    match block {
+        ContentBlock::Text { .. } => Some(block),
+        ContentBlock::Image { .. } => Some(block),
+        ContentBlock::ImageUrl { image_url } => {
+            ImageSource::from_data_url(&image_url.url).map(|source| ContentBlock::Image { source })
+        }
+        _ => Some(block),
+    }
+}
+
+/// Normalize all blocks in a message content
+/// Returns None if the message becomes empty after filtering
+fn normalize_message(msg: Message) -> Option<Message> {
+    let content = match msg.content {
+        MessageContent::Blocks { content } => {
+            let blocks: Vec<_> = content.into_iter().filter_map(normalize_block).collect();
+            // skip empty messages
+            if blocks.is_empty() {
+                return None;
+            }
+            MessageContent::Blocks { content: blocks }
+        }
+        other => other,
+    };
+    Some(Message {
+        role: msg.role,
+        content,
+    })
+}
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -20,6 +52,7 @@ impl From<CreateMessageParams> for ClaudeCreateMessageParams {
             .messages
             .into_iter()
             .partition(|m| m.role == Role::System);
+        // normalize system blocks (convert ImageUrl to Image)
         let systems = systems
             .into_iter()
             .map(|m| m.content)
@@ -27,10 +60,13 @@ impl From<CreateMessageParams> for ClaudeCreateMessageParams {
                 MessageContent::Text { content } => vec![ContentBlock::Text { text: content }],
                 MessageContent::Blocks { content } => content,
             })
-            .filter(|b| matches!(b, ContentBlock::Text { .. }))
+            .filter_map(normalize_block)
+            .filter(|b| matches!(b, ContentBlock::Text { .. } | ContentBlock::Image { .. }))
             .map(|b| json!(b))
             .collect::<Vec<_>>();
         let system = (!systems.is_empty()).then(|| json!(systems));
+        // normalize messages (convert ImageUrl to Image, skip empty messages)
+        let messages = messages.into_iter().filter_map(normalize_message).collect();
         Self {
             max_tokens: (params.max_tokens.or(params.max_completion_tokens))
                 .unwrap_or_else(default_max_tokens),
