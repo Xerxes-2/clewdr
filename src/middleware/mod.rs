@@ -9,4 +9,4 @@
 mod auth;
 pub mod claude;
 
-pub use auth::{RequireAdminAuth, RequireBearerAuth, RequireFlexibleAuth, RequireXApiKeyAuth};
+pub use auth::{RequireAdminAuth, RequireBearerAuth, RequireFlexibleAuth};

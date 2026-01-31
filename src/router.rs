@@ -10,7 +10,7 @@ use tower_http::{compression::CompressionLayer, cors::CorsLayer};
 use crate::{
     api::*,
     middleware::{
-        RequireAdminAuth, RequireBearerAuth, RequireFlexibleAuth, RequireXApiKeyAuth,
+        RequireAdminAuth, RequireBearerAuth, RequireFlexibleAuth,
         claude::{add_usage_info, apply_stop_sequences, check_overloaded, to_oai},
     },
     providers::claude::ClaudeProviders,
@@ -61,7 +61,7 @@ impl RouterBuilder {
             .route("/v1/messages", post(api_claude_web))
             .layer(
                 ServiceBuilder::new()
-                    .layer(from_extractor::<RequireXApiKeyAuth>())
+                    .layer(from_extractor::<RequireFlexibleAuth>())
                     .layer(CompressionLayer::new())
                     .layer(map_response(add_usage_info))
                     .layer(map_response(apply_stop_sequences))
