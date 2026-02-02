@@ -1,5 +1,6 @@
 use std::{
     hash::{DefaultHasher, Hash, Hasher},
+    mem,
     sync::LazyLock,
     vec,
 };
@@ -17,7 +18,7 @@ use crate::{
     middleware::claude::{ClaudeApiFormat, ClaudeContext},
     types::{
         claude::{
-            ContentBlock, CreateMessageParams, Message, Role, Thinking, Usage,
+            ContentBlock, CreateMessageParams, Message, MessageContent, Role, Thinking, Usage,
         },
         oai::CreateMessageParams as OaiCreateMessageParams,
     },
@@ -73,6 +74,46 @@ static TEST_MESSAGE_OAI: LazyLock<Message> = LazyLock::new(|| Message::new_text(
 
 struct NormalizeRequest(CreateMessageParams, ClaudeApiFormat);
 
+fn sanitize_messages(msgs: Vec<Message>) -> Vec<Message> {
+    msgs.into_iter()
+        .filter_map(|m| {
+            let role = m.role;
+            let content = match m.content {
+                MessageContent::Text { content } => {
+                    let trimmed = content.trim().to_string();
+                    if role == Role::Assistant && trimmed.is_empty() {
+                        return None;
+                    }
+                    MessageContent::Text { content: trimmed }
+                }
+                MessageContent::Blocks { content } => {
+                    let mut new_blocks: Vec<ContentBlock> = content
+                        .into_iter()
+                        .filter_map(|b| match b {
+                            ContentBlock::Text { text, .. } => {
+                                let t = text.trim().to_string();
+                                if t.is_empty() {
+                                    None
+                                } else {
+                                    Some(ContentBlock::text(t))
+                                }
+                            }
+                            other => Some(other),
+                        })
+                        .collect();
+                    if role == Role::Assistant && new_blocks.is_empty() {
+                        return None;
+                    }
+                    MessageContent::Blocks {
+                        content: mem::take(&mut new_blocks),
+                    }
+                }
+            };
+            Some(Message { role, content })
+        })
+        .collect()
+}
+
 impl<S> FromRequest<S> for NormalizeRequest
 where
     S: Send + Sync,
@@ -93,6 +134,10 @@ where
             }
             ClaudeApiFormat::Claude => Json::<CreateMessageParams>::from_request(req, &()).await?,
         };
+        if CLEWDR_CONFIG.load().sanitize_messages {
+            // Trim whitespace and drop empty assistant turns when enabled.
+            body.messages = sanitize_messages(body.messages);
+        }
         if body.model.ends_with("-thinking") {
             body.model = body.model.trim_end_matches("-thinking").to_string();
             body.thinking.get_or_insert(Thinking::new(4096));

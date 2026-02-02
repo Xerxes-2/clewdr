@@ -149,7 +149,8 @@
         "maxRetries": "Max Retries",
         "preserveChats": "Preserve Chats",
         "webSearch": "Web Search",
-        "webCountTokens": "Enable web count_tokens"
+        "webCountTokens": "Enable web count_tokens",
+        "sanitizeMessages": "Sanitize messages (trim whitespace)"
       },
       "cookie": {
         "title": "Cookie Settings",

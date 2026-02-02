@@ -20,6 +20,7 @@ export interface ConfigData {
   preserve_chats: boolean;
   web_search: boolean;
   enable_web_count_tokens: boolean;
+  sanitize_messages: boolean;
 
   // Cookie settings
   skip_first_warning: boolean;

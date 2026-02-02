@@ -74,9 +74,11 @@ jobs:
           - os: windows
             target_vendor_sys_env: pc-windows-msvc
           # runner
-          - target_arch: x86_64
+          - os: linux
+            target_arch: x86_64
             runner: ubuntu-latest
-          - target_arch: aarch64
+          - os: linux
+            target_arch: aarch64
             runner: ubuntu-24.04-arm
           - os: android
             runner: ubuntu-latest
@@ -86,10 +88,13 @@ jobs:
             runner: macos-latest
           # musl packages
           - os: musllinux
-            musl_packages: "clang musl-tools"
+            cross: true
+            runner: ubuntu-latest
         exclude:
           - os: android
             target_arch: x86_64
+          - os: musllinux
+            target_arch: aarch64
 
     runs-on: ${{ matrix.runner }}
     steps:
@@ -113,7 +118,7 @@ jobs:
         if: contains(matrix.runner, 'ubuntu')
         run: |
           sudo apt-get update
-          sudo apt-get install -y ${{ matrix.musl_packages }} ${{ env.APT_PACKAGES }}
+          sudo apt-get install -y ${{ env.APT_PACKAGES }}
 
       - name: Install Chocolatey Packages
         if: matrix.os == 'windows'
@@ -125,6 +130,12 @@ jobs:
         run: |
           brew update
           brew install ${{ env.HOMEBREW_PACKAGES }}
+
+      - name: Install cross
+        if: ${{ matrix.cross }}
+        run: |
+          cargo install cross --locked
+          echo "CROSS_NO_DEFAULT_TOOLCHAIN=1" >> $GITHUB_ENV
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -145,7 +156,7 @@ jobs:
         if: ${{ matrix.os != 'android' }}
         shell: bash
         run: |
-          if [ ${{ matrix.os }} == "musllinux" ]; then
+          if [ ${{ matrix.os }} == "musllinux" ] && [ "${{ matrix.cross }}" != "true" ]; then
             export CXX=${{ matrix.target_arch }}-linux-gnu-g++
             if [ ${{ matrix.target_arch }} == "aarch64" ]; then
               export RUSTFLAGS='-C link-arg=-Wl,--allow-shlib-undefined'
@@ -155,7 +166,11 @@ jobs:
           if [ ${{ matrix.os }} == "windows" ]; then
             export RUSTFLAGS="-C target-feature=+crt-static"
           fi
-          cargo build --release --target ${{ steps.target.outputs.triple }} $FEATURE_ARGS
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --release --target ${{ steps.target.outputs.triple }} $FEATURE_ARGS
+          else
+            cargo build --release --target ${{ steps.target.outputs.triple }} $FEATURE_ARGS
+          fi
 
       - name: Build with Android NDK
         if: ${{ matrix.os == 'android' }}

@@ -139,6 +139,13 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ config, onChange }) => {
             onChange={onChange}
             label={t("config.sections.api.webCountTokens")}
           />
+
+          <ConfigCheckbox
+            name="sanitize_messages"
+            checked={config.sanitize_messages}
+            onChange={onChange}
+            label={t("config.sections.api.sanitizeMessages")}
+          />
         </div>
       </ConfigSection>
 
