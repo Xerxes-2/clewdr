@@ -1,5 +1,6 @@
 use axum::{
     Router,
+    extract::DefaultBodyLimit,
     http::Method,
     middleware::{from_extractor, map_response},
     routing::{delete, get, post},
@@ -198,5 +199,6 @@ impl RouterBuilder {
     /// Finalizes the router configuration for use with axum
     pub fn build(self) -> Router {
         self.inner
+            .layer(DefaultBodyLimit::max(32 * 1024 * 1024))
     }
 }
