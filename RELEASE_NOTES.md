@@ -1,4 +1,5 @@
 # Release Notes
 
-- ci: restore x64-musllinux in ci (use cross tools)
-- feature: restore santizer and add an option for it
+- fix: increase default body size limit to 32MB
+- feature: add claude-opus-4-6 model support
+- feature: add experimental 1M probing support for claude-opus-4-6

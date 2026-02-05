@@ -119,13 +119,13 @@ impl ClaudeCodeState {
             None => (p.model.clone(), false),
         };
 
-        let is_sonnet = Self::is_sonnet4_model(&base_model);
+        let supports_auto_1m_probe = Self::is_auto_1m_probe_model(&base_model);
         let cookie_support = self
             .cookie
             .as_ref()
             .and_then(|cookie| cookie.supports_claude_1m);
 
-        let attempts: Vec<bool> = if is_sonnet {
+        let attempts: Vec<bool> = if supports_auto_1m_probe {
             match cookie_support {
                 Some(true) => vec![true],
                 Some(false) => vec![false],
@@ -145,13 +145,17 @@ impl ClaudeCodeState {
             match self.execute_claude_request(&access_token, &p, use_1m).await {
                 Ok(response) => {
                     return self
-                        .handle_success_response(response, is_sonnet && use_1m, model_family)
+                        .handle_success_response(
+                            response,
+                            supports_auto_1m_probe && use_1m,
+                            model_family,
+                        )
                         .await;
                 }
                 Err(err) => {
                     let is_last_attempt = idx + 1 == attempts.len();
                     let should_retry = use_1m
-                        && is_sonnet
+                        && supports_auto_1m_probe
                         && !is_last_attempt
                         && Self::is_context_1m_forbidden(&err);
 
@@ -353,13 +357,13 @@ impl ClaudeCodeState {
             None => (p.model.clone(), false),
         };
 
-        let is_sonnet = Self::is_sonnet4_model(&base_model);
+        let supports_auto_1m_probe = Self::is_auto_1m_probe_model(&base_model);
         let cookie_support = self
             .cookie
             .as_ref()
             .and_then(|cookie| cookie.supports_claude_1m);
 
-        let attempts: Vec<bool> = if is_sonnet {
+        let attempts: Vec<bool> = if supports_auto_1m_probe {
             match cookie_support {
                 Some(true) => vec![true],
                 Some(false) => vec![false],
@@ -381,7 +385,7 @@ impl ClaudeCodeState {
             {
                 Ok(response) => {
                     self.persist_count_tokens_allowed(true).await;
-                    if is_sonnet && use_1m {
+                    if supports_auto_1m_probe && use_1m {
                         self.persist_claude_1m_support(true).await;
                     }
                     let (resp, _) = Self::materialize_non_stream_response(response).await?;
@@ -397,7 +401,7 @@ impl ClaudeCodeState {
                     }
                     let is_last_attempt = idx + 1 == attempts.len();
                     let should_retry = use_1m
-                        && is_sonnet
+                        && supports_auto_1m_probe
                         && !is_last_attempt
                         && Self::is_context_1m_forbidden(&err);
 
@@ -594,11 +598,10 @@ impl ClaudeCodeState {
             .await
     }
 
-    fn is_sonnet4_model(model: &str) -> bool {
-        // Simplify detection: treat any model id containing
-        // "claude-sonnet-4" as Sonnet 4.x for 1M probing.
+    fn is_auto_1m_probe_model(model: &str) -> bool {
+        // Auto-probe 1M context for families known to have experimental support.
         let m = model.to_ascii_lowercase();
-        m.contains("claude-sonnet-4")
+        m.contains("claude-sonnet-4") || m.contains("claude-opus-4-6")
     }
 
     fn classify_model(model: &str) -> ModelFamily {
