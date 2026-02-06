@@ -418,10 +418,11 @@ impl FromStr for ClewdrCookie {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         static RE_FULL: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(r"sk-ant-sid\d{2}-[0-9A-Za-z_-]{86}-[0-9A-Za-z_-]{6}AA").unwrap()
+            Regex::new(r"sk-ant-sid\d{2}-[0-9A-Za-z_-]{86,120}-[0-9A-Za-z_-]{6}AA").unwrap()
         });
-        static RE_BASE: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r"^[0-9A-Za-z_-]{86}-[0-9A-Za-z_-]{6}AA$").unwrap());
+        static RE_BASE: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"^[0-9A-Za-z_-]{86,120}-[0-9A-Za-z_-]{6}AA$").unwrap()
+        });
 
         let cleaned = s
             .trim()
@@ -435,7 +436,7 @@ impl FromStr for ClewdrCookie {
             });
         }
 
-        if cleaned.len() == 95 && RE_BASE.is_match(&cleaned) {
+        if RE_BASE.is_match(&cleaned) {
             return Ok(Self { inner: cleaned });
         }
 
@@ -462,13 +463,13 @@ impl Debug for ClewdrCookie {
 mod tests {
     use super::*;
 
-    fn make_base_cookie() -> String {
-        format!("{}-{}AA", "a".repeat(86), "b".repeat(6))
+    fn make_base_cookie_with_len(prefix_len: usize) -> String {
+        format!("{}-{}AA", "a".repeat(prefix_len), "b".repeat(6))
     }
 
     #[test]
     fn test_sk_cookie_from_str() {
-        let base = make_base_cookie();
+        let base = make_base_cookie_with_len(86);
         let full = format!("sk-ant-sid01-{base}");
         let cookie = ClewdrCookie::from_str(&full).unwrap();
         assert_eq!(cookie.inner, full);
@@ -476,9 +477,17 @@ mod tests {
 
     #[test]
     fn test_cookie_from_str() {
-        let base = make_base_cookie();
+        let base = make_base_cookie_with_len(86);
         let cookie = ClewdrCookie::from_str(&base).unwrap();
         assert_eq!(cookie.inner, base);
+    }
+
+    #[test]
+    fn test_long_cookie_from_str() {
+        let base = make_base_cookie_with_len(109);
+        let full = format!("sk-ant-sid02-{base}");
+        let cookie = ClewdrCookie::from_str(&full).unwrap();
+        assert_eq!(cookie.inner, full);
     }
 
     #[test]
