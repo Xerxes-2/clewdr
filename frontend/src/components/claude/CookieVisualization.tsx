@@ -377,11 +377,10 @@ const CookieVisualization: React.FC = () => {
     cookieStatus.exhausted.length +
     cookieStatus.invalid.length;
 
-  const renderContextBadge = (flag: boolean | null | undefined) => {
-    if (flag === undefined) {
-      return null;
-    }
-
+  const renderContextBadge = (
+    laneLabel: string,
+    flag: boolean | null | undefined
+  ) => {
     const { label, classes } = (() => {
       if (flag === true) {
         return {
@@ -406,8 +405,22 @@ const CookieVisualization: React.FC = () => {
       <span
         className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${classes}`}
       >
-        {label}
+        {laneLabel}: {label}
       </span>
+    );
+  };
+
+  const renderContextBadges = (status: CookieItem) => {
+    const sonnetFlag = status.supports_claude_1m_sonnet;
+    const opusFlag = status.supports_claude_1m_opus;
+    if (sonnetFlag === undefined && opusFlag === undefined) {
+      return null;
+    }
+    return (
+      <>
+        {renderContextBadge(t("cookieStatus.context.sonnetLane"), sonnetFlag)}
+        {renderContextBadge(t("cookieStatus.context.opusLane"), opusFlag)}
+      </>
     );
   };
 
@@ -506,7 +519,7 @@ const CookieVisualization: React.FC = () => {
           cookies={cookieStatus.valid}
           color="green"
           renderStatus={(status, index) => {
-            const contextBadge = renderContextBadge(status.supports_claude_1m);
+            const contextBadge = renderContextBadges(status);
             const usageStats = renderUsageStats(status);
             const quotaStats = renderQuotaStats(status);
             const hasMeta = contextBadge || usageStats || quotaStats;
@@ -555,7 +568,7 @@ const CookieVisualization: React.FC = () => {
           cookies={cookieStatus.exhausted}
           color="yellow"
           renderStatus={(status, index) => {
-            const contextBadge = renderContextBadge(status.supports_claude_1m);
+            const contextBadge = renderContextBadges(status);
             const usageStats = renderUsageStats(status);
             const quotaStats = renderQuotaStats(status);
             const hasMeta = contextBadge || usageStats || quotaStats;

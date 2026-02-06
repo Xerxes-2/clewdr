@@ -12,7 +12,7 @@ use wreq::Method;
 
 use crate::{
     claude_code_state::{ClaudeCodeState, TokenStatus},
-    config::{CLEWDR_CONFIG, ModelFamily},
+    config::{CLEWDR_CONFIG, Claude1mChannel, ModelFamily},
     error::{CheckClaudeErr, ClewdrError, WreqSnafu},
     services::cookie_actor::CookieActorHandle,
     types::claude::{CountMessageTokensResponse, CreateMessageParams},
@@ -119,13 +119,12 @@ impl ClaudeCodeState {
             None => (p.model.clone(), false),
         };
 
-        let supports_auto_1m_probe = Self::is_auto_1m_probe_model(&base_model);
-        let cookie_support = self
-            .cookie
-            .as_ref()
-            .and_then(|cookie| cookie.supports_claude_1m);
+        let auto_1m_channel = Self::auto_1m_probe_channel(&base_model);
+        let cookie_support = self.cookie.as_ref().and_then(|cookie| {
+            auto_1m_channel.and_then(|channel| cookie.claude_1m_support(channel))
+        });
 
-        let attempts: Vec<bool> = if supports_auto_1m_probe {
+        let attempts: Vec<bool> = if auto_1m_channel.is_some() {
             match cookie_support {
                 Some(true) => vec![true],
                 Some(false) => vec![false],
@@ -144,18 +143,15 @@ impl ClaudeCodeState {
         for (idx, use_1m) in attempts.iter().copied().enumerate() {
             match self.execute_claude_request(&access_token, &p, use_1m).await {
                 Ok(response) => {
+                    let mark_support_true = if use_1m { auto_1m_channel } else { None };
                     return self
-                        .handle_success_response(
-                            response,
-                            supports_auto_1m_probe && use_1m,
-                            model_family,
-                        )
+                        .handle_success_response(response, mark_support_true, model_family)
                         .await;
                 }
                 Err(err) => {
                     let is_last_attempt = idx + 1 == attempts.len();
                     let should_retry = use_1m
-                        && supports_auto_1m_probe
+                        && auto_1m_channel.is_some()
                         && !is_last_attempt
                         && Self::is_context_1m_forbidden(&err);
 
@@ -163,7 +159,9 @@ impl ClaudeCodeState {
                         warn!(
                             "1M context not available for current cookie, disabling automatic 1M attempts"
                         );
-                        self.persist_claude_1m_support(false).await;
+                        if let Some(channel) = auto_1m_channel {
+                            self.persist_claude_1m_support(channel, false).await;
+                        }
                         last_err = Some(err);
                         continue;
                     }
@@ -202,12 +200,12 @@ impl ClaudeCodeState {
             .await
     }
 
-    async fn persist_claude_1m_support(&mut self, value: bool) {
+    async fn persist_claude_1m_support(&mut self, channel: Claude1mChannel, value: bool) {
         if let Some(cookie) = self.cookie.as_mut() {
-            if cookie.supports_claude_1m == Some(value) {
+            if cookie.claude_1m_support(channel) == Some(value) {
                 return;
             }
-            cookie.set_claude_1m_support(Some(value));
+            cookie.set_claude_1m_support(channel, Some(value));
             let cloned = cookie.clone();
             if let Err(err) = self.cookie_actor_handle.return_cookie(cloned, None).await {
                 warn!("Failed to persist Claude 1M support state: {}", err);
@@ -357,13 +355,12 @@ impl ClaudeCodeState {
             None => (p.model.clone(), false),
         };
 
-        let supports_auto_1m_probe = Self::is_auto_1m_probe_model(&base_model);
-        let cookie_support = self
-            .cookie
-            .as_ref()
-            .and_then(|cookie| cookie.supports_claude_1m);
+        let auto_1m_channel = Self::auto_1m_probe_channel(&base_model);
+        let cookie_support = self.cookie.as_ref().and_then(|cookie| {
+            auto_1m_channel.and_then(|channel| cookie.claude_1m_support(channel))
+        });
 
-        let attempts: Vec<bool> = if supports_auto_1m_probe {
+        let attempts: Vec<bool> = if auto_1m_channel.is_some() {
             match cookie_support {
                 Some(true) => vec![true],
                 Some(false) => vec![false],
@@ -385,8 +382,8 @@ impl ClaudeCodeState {
             {
                 Ok(response) => {
                     self.persist_count_tokens_allowed(true).await;
-                    if supports_auto_1m_probe && use_1m {
-                        self.persist_claude_1m_support(true).await;
+                    if let Some(channel) = auto_1m_channel.filter(|_| use_1m) {
+                        self.persist_claude_1m_support(channel, true).await;
                     }
                     let (resp, _) = Self::materialize_non_stream_response(response).await?;
                     return Ok(resp);
@@ -401,7 +398,7 @@ impl ClaudeCodeState {
                     }
                     let is_last_attempt = idx + 1 == attempts.len();
                     let should_retry = use_1m
-                        && supports_auto_1m_probe
+                        && auto_1m_channel.is_some()
                         && !is_last_attempt
                         && Self::is_context_1m_forbidden(&err);
 
@@ -409,7 +406,9 @@ impl ClaudeCodeState {
                         warn!(
                             "1M context not available for current cookie, disabling automatic 1M attempts"
                         );
-                        self.persist_claude_1m_support(false).await;
+                        if let Some(channel) = auto_1m_channel {
+                            self.persist_claude_1m_support(channel, false).await;
+                        }
                         last_err = Some(err);
                         continue;
                     }
@@ -424,20 +423,20 @@ impl ClaudeCodeState {
     async fn handle_success_response(
         &mut self,
         response: wreq::Response,
-        mark_support_true: bool,
+        mark_support_true: Option<Claude1mChannel>,
         model_family: ModelFamily,
     ) -> Result<axum::response::Response, ClewdrError> {
         if !self.stream {
             let (resp, usage_pair) = Self::materialize_non_stream_response(response).await?;
             let (input, output) = usage_pair.unwrap_or((self.usage.input_tokens as u64, 0));
             self.persist_usage_totals(input, output, model_family).await;
-            if mark_support_true {
-                self.persist_claude_1m_support(true).await;
+            if let Some(channel) = mark_support_true {
+                self.persist_claude_1m_support(channel, true).await;
             }
             Ok(resp)
         } else {
-            if mark_support_true {
-                self.persist_claude_1m_support(true).await;
+            if let Some(channel) = mark_support_true {
+                self.persist_claude_1m_support(channel, true).await;
             }
             // Stream pass-through while accumulating output token usage from message_delta events
             return self.forward_stream_with_usage(response, model_family).await;
@@ -598,10 +597,17 @@ impl ClaudeCodeState {
             .await
     }
 
-    fn is_auto_1m_probe_model(model: &str) -> bool {
-        // Auto-probe 1M context for families known to have experimental support.
+    fn auto_1m_probe_channel(model: &str) -> Option<Claude1mChannel> {
+        // Auto-probe 1M context only on model lanes that are currently known to expose it.
         let m = model.to_ascii_lowercase();
-        m.contains("claude-sonnet-4") || m.contains("claude-opus-4-6")
+        let cfg = CLEWDR_CONFIG.load();
+        if m.contains("claude-sonnet-4") && cfg.auto_probe_1m_sonnet {
+            Some(Claude1mChannel::Sonnet)
+        } else if m.contains("claude-opus-4-6") && cfg.auto_probe_1m_opus_46 {
+            Some(Claude1mChannel::Opus)
+        } else {
+            None
+        }
     }
 
     fn classify_model(model: &str) -> ModelFamily {

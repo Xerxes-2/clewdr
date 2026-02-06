@@ -118,7 +118,7 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ config, onChange }) => {
             label={t("config.sections.api.maxRetries")}
           />
         </div>
-        <div className="flex space-x-6">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3">
           <ConfigCheckbox
             name="preserve_chats"
             checked={config.preserve_chats}
@@ -145,6 +145,20 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ config, onChange }) => {
             checked={config.sanitize_messages}
             onChange={onChange}
             label={t("config.sections.api.sanitizeMessages")}
+          />
+
+          <ConfigCheckbox
+            name="auto_probe_1m_sonnet"
+            checked={config.auto_probe_1m_sonnet}
+            onChange={onChange}
+            label={t("config.sections.api.autoProbe1mSonnet")}
+          />
+
+          <ConfigCheckbox
+            name="auto_probe_1m_opus_46"
+            checked={config.auto_probe_1m_opus_46}
+            onChange={onChange}
+            label={t("config.sections.api.autoProbe1mOpus46")}
           />
         </div>
       </ConfigSection>

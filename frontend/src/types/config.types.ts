@@ -21,6 +21,8 @@ export interface ConfigData {
   web_search: boolean;
   enable_web_count_tokens: boolean;
   sanitize_messages: boolean;
+  auto_probe_1m_sonnet: boolean;
+  auto_probe_1m_opus_46: boolean;
 
   // Cookie settings
   skip_first_warning: boolean;

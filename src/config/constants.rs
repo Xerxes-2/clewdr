@@ -136,5 +136,15 @@ pub const fn default_skip_cool_down() -> bool {
     true
 }
 
+/// Default setting for auto probing 1M support on Sonnet lane
+pub const fn default_auto_probe_1m_sonnet() -> bool {
+    true
+}
+
+/// Default setting for auto probing 1M support on Opus 4.6 lane
+pub const fn default_auto_probe_1m_opus_46() -> bool {
+    true
+}
+
 /// Default cookie value for testing purposes
 pub const PLACEHOLDER_COOKIE: &str = "sk-ant-sidXX----------------------------SET_YOUR_COOKIE_HERE----------------------------------------AAAAAAAA";

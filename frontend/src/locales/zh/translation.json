@@ -84,6 +84,8 @@
     },
     "context": {
       "label": "1M 上下文",
+      "sonnetLane": "Sonnet",
+      "opusLane": "Opus 4.6",
       "enabled": "已启用 1M 上下文",
       "disabled": "未开通 1M 上下文",
       "unknown": "尚未探测 1M 上下文"
@@ -150,7 +152,9 @@
         "preserveChats": "保留聊天",
         "webSearch": "网页搜索",
         "webCountTokens": "允许 Web 渠道调用 count_tokens",
-        "sanitizeMessages": "消息清理（去除空白）"
+        "sanitizeMessages": "消息清理（去除空白）",
+        "autoProbe1mSonnet": "自动试探 Sonnet 1M",
+        "autoProbe1mOpus46": "自动试探 Opus 4.6 1M"
       },
       "cookie": {
         "title": "Cookie设置",
