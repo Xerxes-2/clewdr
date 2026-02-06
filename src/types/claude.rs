@@ -19,6 +19,8 @@ pub(super) fn default_max_tokens() -> u32 {
 pub struct OutputConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effort: Option<OutputEffort>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<OutputFormat>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -27,6 +29,7 @@ pub enum OutputEffort {
     Low,
     Medium,
     High,
+    Max
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
