@@ -62,17 +62,41 @@ pub struct ClaudeWebContext {
 /// This is a standard test message sent by clients like SillyTavern
 /// to verify connectivity. The system detects these messages and
 /// responds with a predefined test response to confirm service availability.
-static TEST_MESSAGE_CLAUDE: LazyLock<Message> = LazyLock::new(|| {
-    Message::new_blocks(
-        Role::User,
-        vec![ContentBlock::text("Hi")],
-    )
-});
+static TEST_MESSAGE_CLAUDE: LazyLock<Message> =
+    LazyLock::new(|| Message::new_blocks(Role::User, vec![ContentBlock::text("Hi")]));
 
 /// Predefined test message in OpenAI format for connection testing
 static TEST_MESSAGE_OAI: LazyLock<Message> = LazyLock::new(|| Message::new_text(Role::User, "Hi"));
 
 struct NormalizeRequest(CreateMessageParams, ClaudeApiFormat);
+
+fn strip_ephemeral_scope_from_system(system: &mut Value) {
+    let Some(items) = system.as_array_mut() else {
+        return;
+    };
+
+    for item in items {
+        let Some(obj) = item.as_object_mut() else {
+            continue;
+        };
+        let Some(cache_control) = obj.get_mut("cache_control") else {
+            continue;
+        };
+        let Some(cache_obj) = cache_control.as_object_mut() else {
+            continue;
+        };
+
+        if let Some(ephemeral) = cache_obj.get_mut("ephemeral")
+            && let Some(ephemeral_obj) = ephemeral.as_object_mut()
+        {
+            ephemeral_obj.remove("scope");
+        }
+
+        if matches!(cache_obj.get("type"), Some(Value::String(t)) if t == "ephemeral") {
+            cache_obj.remove("scope");
+        }
+    }
+}
 
 fn sanitize_messages(msgs: Vec<Message>) -> Vec<Message> {
     msgs.into_iter()
@@ -256,6 +280,10 @@ where
                     body.system = Some(json!([prelude_blk]));
                 }
             }
+        }
+
+        if let Some(system) = body.system.as_mut() {
+            strip_ephemeral_scope_from_system(system);
         }
 
         let cache_systems = body
