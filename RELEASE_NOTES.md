@@ -1,3 +1,4 @@
 # Release Notes
 
-- fix: update ClewdrCookie regex patterns for enhanced validation and add tests for longer cookies
+- feat: add optional format field to OutputConfig and extend OutputEffort enum with Max variant
+- feat: enhance cache handling by stripping ephemeral scope from system messages
