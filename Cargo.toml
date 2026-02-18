@@ -17,14 +17,14 @@ panic = "abort"
 
 [dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
-wreq = { version = "5", features = [
+wreq = { version = "6.0.0-rc.28", features = [
     "cookies",
     "json",
     "multipart",
     "socks",
     "stream",
 ] }
-wreq-util = "2"
+wreq-util = "3.0.0-rc.10"
 serde_json = "1"
 const_format = { version = "0.2", features = ["fmt"] }
 serde = { version = "1", features = ["derive"] }
@@ -44,11 +44,11 @@ clap = { version = "4", features = ["derive"] }
 base64 = "0.22"
 itertools = "0.14"
 async-trait = "0.1"
-toml = "0.9"
+toml = "1"
 eventsource-stream = "0.2"
 tracing-appender = "0.2"
 self-replace = { version = "1", optional = true }
-zip = { version = "6", optional = true, default-features = false, features = [
+zip = { version = "8", optional = true, default-features = false, features = [
     "deflate",
 ] }
 tempfile = { version = "3", optional = true }

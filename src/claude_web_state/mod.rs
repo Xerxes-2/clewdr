@@ -1,11 +1,14 @@
 use std::sync::LazyLock;
 
-use axum::http::HeaderValue;
+use axum::http::{
+    HeaderValue,
+    header::COOKIE,
+};
 use snafu::ResultExt;
 use tracing::{debug, error, warn};
 use url::Url;
 use wreq::{
-    Client, ClientBuilder, IntoUrl, Method, Proxy, RequestBuilder,
+    Client, Method, Proxy, RequestBuilder,
     header::{ORIGIN, REFERER},
 };
 use wreq_util::Emulation;
@@ -76,14 +79,15 @@ impl ClaudeWebState {
     }
 
     /// Build a request with the current cookie and proxy settings
-    pub fn build_request(&self, method: Method, url: impl IntoUrl) -> RequestBuilder {
+    pub fn build_request(&self, method: Method, url: impl ToString) -> RequestBuilder {
         // let r = SUPER_CLIENT.cloned();
-        self.client
-            .set_cookie(&self.endpoint, &self.cookie_header_value);
-        let req = self
+        let mut req = self
             .client
-            .request(method, url)
+            .request(method, url.to_string())
             .header(ORIGIN, CLAUDE_ENDPOINT);
+        if !self.cookie_header_value.as_bytes().is_empty() {
+            req = req.header(COOKIE, self.cookie_header_value.clone());
+        }
         if let Some(uuid) = self.conv_uuid.to_owned() {
             req.header(
                 REFERER,
@@ -122,7 +126,7 @@ impl ClaudeWebState {
         // Always pull latest proxy/endpoint before building the client
         self.proxy = CLEWDR_CONFIG.load().wreq_proxy.to_owned();
         self.endpoint = CLEWDR_CONFIG.load().endpoint();
-        let mut client = ClientBuilder::new()
+        let mut client = Client::builder()
             .cookie_store(true)
             .emulation(Emulation::Chrome136);
         if let Some(ref proxy) = self.proxy {

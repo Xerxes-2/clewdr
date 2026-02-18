@@ -222,7 +222,7 @@ async fn bearer_count_tokens(
         .expect("Url parse error");
     let resp = state
         .client
-        .post(url)
+        .post(url.to_string())
         .bearer_auth(access_token)
         .header("anthropic-version", "2023-06-01")
         .json(body)
@@ -243,11 +243,11 @@ impl ClaudeWebState {
         code.endpoint = self.endpoint.clone();
         code.proxy = self.proxy.clone();
         code.client = self.client.clone();
-        // populate cookie into client's jar for API domain
+        // populate cookie header for Claude code API requests
         if let Some(ref c) = self.cookie
             && let Ok(val) = http::HeaderValue::from_str(&c.cookie.to_string())
         {
-            code.client.set_cookie(&self.endpoint, &val);
+            code.set_cookie_header_value(val);
         }
 
         // OAuth exchange to get access token
@@ -282,7 +282,7 @@ async fn count_code_output_tokens_for_text(
     if let Some(ref c) = cookie
         && let Ok(val) = http::HeaderValue::from_str(&c.cookie.to_string())
     {
-        code.client.set_cookie(&code.endpoint, &val);
+        code.set_cookie_header_value(val);
     }
     let org = code.get_organization().await.ok()?;
     let exch = code.exchange_code(&org).await.ok()?;

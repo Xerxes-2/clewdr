@@ -1,5 +1,6 @@
 use std::{collections::HashMap, pin::Pin, str::FromStr};
 
+use http::header::{COOKIE, USER_AGENT};
 use oauth2::{
     AsyncHttpClient, AuthUrl, AuthorizationCode, Client, ClientId, CsrfToken, EndpointNotSet,
     EndpointSet, HttpClientError, HttpRequest, HttpResponse, PkceCodeChallenge, PkceCodeVerifier,
@@ -25,6 +26,8 @@ use crate::{
 
 use super::chat::{CLAUDE_API_VERSION, CLAUDE_BETA_BASE};
 
+const CLAUDE_CODE_USER_AGENT: &str = "claude-code/2.0.32";
+
 type ClaudeOauthClient = Client<
     BasicErrorResponse,
     BasicTokenResponse,
@@ -45,8 +48,7 @@ struct OauthClient {
 impl<'c> AsyncHttpClient<'c> for OauthClient {
     type Error = HttpClientError<wreq::Error>;
 
-    type Future =
-        Pin<Box<dyn Future<Output = Result<HttpResponse, Self::Error>> + Send + Sync + 'c>>;
+    type Future = Pin<Box<dyn Future<Output = Result<HttpResponse, Self::Error>> + Send + 'c>>;
 
     fn call(&'c self, mut request: HttpRequest) -> Self::Future {
         {
@@ -62,11 +64,12 @@ impl<'c> AsyncHttpClient<'c> for OauthClient {
         }
 
         Box::pin(async move {
-            let response = self
-                .client
-                .execute(request.try_into().map_err(Box::new)?)
-                .await
-                .map_err(Box::new)?;
+            let (parts, body) = request.into_parts();
+            let mut req = self.client.request(parts.method, parts.uri.to_string());
+            for (name, value) in &parts.headers {
+                req = req.header(name, value.clone());
+            }
+            let response = req.body(body).send().await.map_err(Box::new)?;
 
             let mut builder = http::Response::builder().status(response.status());
 
@@ -136,9 +139,14 @@ impl ClaudeCodeState {
         auth_url.set_query(None);
 
         let wreq_client = self.get_wreq_client();
-        let redirect_json = wreq_client
-            .post(auth_url)
-            .json(&query_params)
+        let mut authorize_req = wreq_client
+            .post(auth_url.to_string())
+            .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
+            .json(&query_params);
+        if let Some(cookie) = self.cookie.as_ref() {
+            authorize_req = authorize_req.header(COOKIE, cookie.cookie.to_string());
+        }
+        let redirect_json = authorize_req
             .send()
             .await
             .context(WreqSnafu {

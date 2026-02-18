@@ -16,7 +16,8 @@ use passwords::PasswordGenerator;
 use serde::{Deserialize, Serialize};
 use tokio::spawn;
 use tracing::error;
-use wreq::{Proxy, Url};
+use url::Url;
+use wreq::Proxy;
 
 use super::{CONFIG_PATH, ENDPOINT_URL};
 use crate::{

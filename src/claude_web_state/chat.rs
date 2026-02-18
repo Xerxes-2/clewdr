@@ -175,7 +175,7 @@ impl ClaudeWebState {
 
         self.build_request(Method::POST, endpoint)
             .json(&body)
-            .header_append(ACCEPT, "text/event-stream")
+            .header(ACCEPT, "text/event-stream")
             .send()
             .await
             .context(WreqSnafu {

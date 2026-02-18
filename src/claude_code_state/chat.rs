@@ -179,7 +179,12 @@ impl ClaudeCodeState {
             use_context_1m,
         );
         self.client
-            .post(self.endpoint.join("v1/messages").expect("Url parse error"))
+            .post(
+                self.endpoint
+                    .join("v1/messages")
+                    .expect("Url parse error")
+                    .to_string(),
+            )
             .bearer_auth(access_token)
             .header("anthropic-beta", beta_header)
             .header("anthropic-version", CLAUDE_API_VERSION)
@@ -569,7 +574,8 @@ impl ClaudeCodeState {
             .post(
                 self.endpoint
                     .join("v1/messages/count_tokens")
-                    .expect("Url parse error"),
+                    .expect("Url parse error")
+                    .to_string(),
             )
             .bearer_auth(access_token)
             .header("anthropic-beta", beta_header)
