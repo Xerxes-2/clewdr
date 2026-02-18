@@ -362,6 +362,20 @@ impl CheckClaudeErr for Response {
         let inner_error = err.error;
         // check if the error is a rate limit error
         if status == 429 {
+            // Long-context 1M gating also uses 429; keep it as HTTP error so upper
+            // retry logic can downgrade to non-1M without cooling down the cookie.
+            let msg_lower = inner_error
+                .message
+                .as_str()
+                .map(|s| s.to_ascii_lowercase())
+                .unwrap_or_else(|| inner_error.message.to_string().to_ascii_lowercase());
+            if msg_lower.contains("extra usage is required for long context requests") {
+                return Err(ClewdrError::ClaudeHttpError {
+                    code: status,
+                    inner: inner_error,
+                });
+            }
+
             // get the reset time from the error message
             let ts = inner_error.message["resetsAt"]
                 .as_i64()
