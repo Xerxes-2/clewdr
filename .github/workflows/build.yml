@@ -93,8 +93,6 @@ jobs:
         exclude:
           - os: android
             target_arch: x86_64
-          - os: musllinux
-            target_arch: aarch64
 
     runs-on: ${{ matrix.runner }}
     steps:
