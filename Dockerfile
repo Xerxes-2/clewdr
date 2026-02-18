@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y \
     libclang-dev \
     perl \
     pkg-config \
-    upx-ucl \
+    upx \
     && rm -rf /var/lib/apt/lists/*
 RUN rustup target add x86_64-unknown-linux-musl && \
     rustup target add aarch64-unknown-linux-musl
