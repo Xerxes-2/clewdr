@@ -21,9 +21,16 @@ use crate::{
 };
 
 pub(super) const CLAUDE_BETA_BASE: &str = "oauth-2025-04-20";
+const CLAUDE_BETA_CONTEXT_1M_TOKEN: &str = "context-1m-2025-08-07";
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const CLAUDE_CODE_USER_AGENT: &str = "claude-code/2.0.32";
 pub(super) const CLAUDE_API_VERSION: &str = "2023-06-01";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Claude1mLane {
+    Sonnet,
+    Opus,
+}
 
 impl ClaudeCodeState {
     /// Attempts to send a chat message to Claude API with retry mechanism
@@ -113,19 +120,64 @@ impl ClaudeCodeState {
     pub async fn send_chat(
         &mut self,
         access_token: String,
-        p: CreateMessageParams,
+        mut p: CreateMessageParams,
     ) -> Result<axum::response::Response, ClewdrError> {
+        let (base_model, requested_1m) = match p.model.strip_suffix("-1M") {
+            Some(stripped) => (stripped.to_string(), true),
+            None => (p.model.clone(), false),
+        };
+        p.model = base_model;
+
+        let lane = Self::claude_1m_lane(&p.model);
+        let lane_mode = lane.and_then(Self::configured_1m_mode);
+        let attempts: Vec<bool> = match lane_mode {
+            Some(false) => vec![false],
+            Some(true) | None => {
+                if lane.is_some() || requested_1m {
+                    vec![true, false]
+                } else {
+                    vec![false]
+                }
+            }
+        };
+
         let model_family = Self::classify_model(&p.model);
-        let response = self.execute_claude_request(&access_token, &p).await?;
-        self.handle_success_response(response, model_family).await
+        for (idx, use_context_1m) in attempts.iter().copied().enumerate() {
+            match self
+                .execute_claude_request(&access_token, &p, use_context_1m)
+                .await
+            {
+                Ok(response) => return self.handle_success_response(response, model_family).await,
+                Err(err) => {
+                    let is_last_attempt = idx + 1 == attempts.len();
+                    let should_fallback = use_context_1m
+                        && !is_last_attempt
+                        && lane.is_some()
+                        && Self::is_context_1m_forbidden(&err);
+                    if should_fallback {
+                        if let Some(lane) = lane {
+                            self.persist_1m_mode(lane, Some(false)).await;
+                        }
+                        warn!("1M probe failed, disabling lane and retrying without 1M header");
+                        continue;
+                    }
+                    return Err(err);
+                }
+            }
+        }
+        Err(ClewdrError::TooManyRetries)
     }
 
     async fn execute_claude_request(
         &mut self,
         access_token: &str,
         body: &CreateMessageParams,
+        use_context_1m: bool,
     ) -> Result<wreq::Response, ClewdrError> {
-        let beta_header = Self::merge_anthropic_beta_header(self.anthropic_beta_header.as_deref());
+        let beta_header = Self::merge_anthropic_beta_header(
+            self.anthropic_beta_header.as_deref(),
+            use_context_1m,
+        );
         self.client
             .post(self.endpoint.join("v1/messages").expect("Url parse error"))
             .bearer_auth(access_token)
@@ -139,6 +191,33 @@ impl ClaudeCodeState {
             })?
             .check_claude()
             .await
+    }
+
+    async fn persist_1m_mode(&self, lane: Claude1mLane, value: Option<bool>) {
+        let current = {
+            let cfg = CLEWDR_CONFIG.load();
+            match lane {
+                Claude1mLane::Sonnet => cfg.enable_1m_sonnet,
+                Claude1mLane::Opus => cfg.enable_1m_opus,
+            }
+        };
+
+        if current == value {
+            return;
+        }
+
+        CLEWDR_CONFIG.rcu(|old| {
+            let mut new_cfg = old.as_ref().clone();
+            match lane {
+                Claude1mLane::Sonnet => new_cfg.enable_1m_sonnet = value,
+                Claude1mLane::Opus => new_cfg.enable_1m_opus = value,
+            }
+            new_cfg
+        });
+
+        if let Err(err) = CLEWDR_CONFIG.load().save().await {
+            warn!("Failed to persist 1M mode update: {}", err);
+        }
     }
 
     async fn persist_count_tokens_allowed(&mut self, value: bool) {
@@ -278,22 +357,63 @@ impl ClaudeCodeState {
         allow_fallback: bool,
     ) -> Result<axum::response::Response, ClewdrError> {
         p.stream = Some(false);
-        match self.execute_claude_count_tokens_request(&access_token, &p).await {
-            Ok(response) => {
-                self.persist_count_tokens_allowed(true).await;
-                let (resp, _) = Self::materialize_non_stream_response(response).await?;
-                Ok(resp)
-            }
-            Err(err) => {
-                if Self::is_count_tokens_unauthorized(&err) {
-                    self.persist_count_tokens_allowed(false).await;
-                    if allow_fallback {
-                        return Ok(Self::local_count_tokens_response(&p));
-                    }
+        let (base_model, requested_1m) = match p.model.strip_suffix("-1M") {
+            Some(stripped) => (stripped.to_string(), true),
+            None => (p.model.clone(), false),
+        };
+        p.model = base_model;
+
+        let lane = Self::claude_1m_lane(&p.model);
+        let lane_mode = lane.and_then(Self::configured_1m_mode);
+        let attempts: Vec<bool> = match lane_mode {
+            Some(false) => vec![false],
+            Some(true) | None => {
+                if lane.is_some() || requested_1m {
+                    vec![true, false]
+                } else {
+                    vec![false]
                 }
-                Err(err)
+            }
+        };
+
+        for (idx, use_context_1m) in attempts.iter().copied().enumerate() {
+            match self
+                .execute_claude_count_tokens_request(&access_token, &p, use_context_1m)
+                .await
+            {
+                Ok(response) => {
+                    self.persist_count_tokens_allowed(true).await;
+                    let (resp, _) = Self::materialize_non_stream_response(response).await?;
+                    return Ok(resp);
+                }
+                Err(err) => {
+                    let is_last_attempt = idx + 1 == attempts.len();
+                    let should_fallback = use_context_1m
+                        && !is_last_attempt
+                        && lane.is_some()
+                        && Self::is_context_1m_forbidden(&err);
+                    if should_fallback {
+                        if let Some(lane) = lane {
+                            self.persist_1m_mode(lane, Some(false)).await;
+                        }
+                        warn!(
+                            "1M probe failed in count_tokens, disabling lane and retrying without 1M header"
+                        );
+                        continue;
+                    }
+
+                    if Self::is_count_tokens_unauthorized(&err) {
+                        self.persist_count_tokens_allowed(false).await;
+                        if allow_fallback {
+                            return Ok(Self::local_count_tokens_response(&p));
+                        }
+                    }
+                    return Err(err);
+                }
             }
         }
+
+        Err(ClewdrError::TooManyRetries)
     }
 
     async fn handle_success_response(
@@ -439,8 +559,12 @@ impl ClaudeCodeState {
         &mut self,
         access_token: &str,
         body: &CreateMessageParams,
+        use_context_1m: bool,
     ) -> Result<wreq::Response, ClewdrError> {
-        let beta_header = Self::merge_anthropic_beta_header(self.anthropic_beta_header.as_deref());
+        let beta_header = Self::merge_anthropic_beta_header(
+            self.anthropic_beta_header.as_deref(),
+            use_context_1m,
+        );
         self.client
             .post(
                 self.endpoint
@@ -460,7 +584,7 @@ impl ClaudeCodeState {
             .await
     }
 
-    fn merge_anthropic_beta_header(extra: Option<&str>) -> String {
+    fn merge_anthropic_beta_header(extra: Option<&str>, use_context_1m: bool) -> String {
         let mut seen = HashSet::new();
         let mut merged = Vec::new();
         let mut push = |token: &str| {
@@ -469,18 +593,53 @@ impl ClaudeCodeState {
                 return;
             }
             let key = trimmed.to_ascii_lowercase();
+            if !use_context_1m && key == CLAUDE_BETA_CONTEXT_1M_TOKEN {
+                return;
+            }
             if seen.insert(key) {
                 merged.push(trimmed.to_string());
             }
         };
 
         push(CLAUDE_BETA_BASE);
+        if use_context_1m {
+            push(CLAUDE_BETA_CONTEXT_1M_TOKEN);
+        }
         if let Some(extra) = extra {
             for token in extra.split(',') {
                 push(token);
             }
         }
         merged.join(",")
+    }
+
+    fn claude_1m_lane(model: &str) -> Option<Claude1mLane> {
+        let m = model.to_ascii_lowercase();
+        if Self::is_sonnet_1m_probe_model(&m) {
+            Some(Claude1mLane::Sonnet)
+        } else if Self::is_opus_1m_probe_model(&m) {
+            Some(Claude1mLane::Opus)
+        } else {
+            None
+        }
+    }
+
+    fn is_sonnet_1m_probe_model(model: &str) -> bool {
+        // Sonnet 4.x lanes (4 / 4.5 / 4.6 and dated variants) trigger 1M probing.
+        model.starts_with("claude-sonnet-4")
+    }
+
+    fn is_opus_1m_probe_model(model: &str) -> bool {
+        // Only Opus 4.6 lane should trigger 1M probing.
+        model.starts_with("claude-opus-4-6")
+    }
+
+    fn configured_1m_mode(lane: Claude1mLane) -> Option<bool> {
+        let cfg = CLEWDR_CONFIG.load();
+        match lane {
+            Claude1mLane::Sonnet => cfg.enable_1m_sonnet,
+            Claude1mLane::Opus => cfg.enable_1m_opus,
+        }
     }
 
     fn classify_model(model: &str) -> ModelFamily {
@@ -649,9 +808,33 @@ impl ClaudeCodeState {
         Json(estimate).into_response()
     }
 
+    fn is_context_1m_forbidden(error: &ClewdrError) -> bool {
+        if let ClewdrError::ClaudeHttpError { code, inner } = error
+            && matches!(code.as_u16(), 400 | 403 | 429)
+        {
+            let message = inner
+                .message
+                .as_str()
+                .map(|s| s.to_ascii_lowercase())
+                .unwrap_or_default();
+
+            return message
+                .contains("the long context beta is not yet available for this subscription")
+                || message.contains(
+                    "this authentication style is incompatible with the long context beta header",
+                )
+                || message.contains("extra usage is required for long context requests");
+        }
+        false
+    }
+
     fn is_count_tokens_unauthorized(error: &ClewdrError) -> bool {
         if let ClewdrError::ClaudeHttpError { code, .. } = error {
-            return matches!(code.as_u16(), 401 | 403 | 404);
+            return match code.as_u16() {
+                401 | 404 => true,
+                403 => !Self::is_context_1m_forbidden(error),
+                _ => false,
+            };
         }
         false
     }
