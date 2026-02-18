@@ -1,3 +1,3 @@
 # Release Notes
 
-- feat: strip `context-1m` beta token when `max_tokens <= 200000`
+- fix: stop stripping `context-1m` beta token at the `200000` max_tokens threshold
