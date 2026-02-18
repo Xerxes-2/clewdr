@@ -1,7 +1,6 @@
 # Release Notes
 
-- fix: stop stripping `context-1m` beta token at the `200000` max_tokens threshold
-- feat: add Sonnet/Opus 1M tri-state mode (`auto-probe` / `enabled` / `disabled`) with probe-fail auto fallback and auto-disable
-- feat: restore OpenAI `-1M` model aliases for Sonnet 4/4.5/4.6 and Opus 4.6
-- fix: limit 1M probing to Sonnet 4.x and Opus 4.6 lanes
-- fix: split `429` handling for 1M flow (long-context gate 429 falls back without cooling cookie; normal rate-limit 429 still cools cookie)
+- chore(deps): bump `wreq` to `6.0.0-rc.28` and `wreq-util` to `3.0.0-rc.10`
+- fix(code-auth): restore Claude Code OAuth authorize reliability by explicitly sending cookie + `claude-code` user-agent in code exchange
+- fix(code-auth): when upstream returns `permission_error: Invalid authorization`, clear cached token and retry OAuth flow automatically
+- fix(compat): adapt request/client usage for `wreq` v6 API changes
