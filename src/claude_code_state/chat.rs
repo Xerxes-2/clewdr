@@ -21,6 +21,8 @@ use crate::{
 };
 
 pub(super) const CLAUDE_BETA_BASE: &str = "oauth-2025-04-20";
+const CLAUDE_BETA_CONTEXT_1M_TOKEN: &str = "context-1m-2025-08-07";
+const MAX_TOKENS_1M_BETA_STRIP_THRESHOLD: u32 = 200_000;
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const CLAUDE_CODE_USER_AGENT: &str = "claude-code/2.0.32";
 pub(super) const CLAUDE_API_VERSION: &str = "2023-06-01";
@@ -125,7 +127,8 @@ impl ClaudeCodeState {
         access_token: &str,
         body: &CreateMessageParams,
     ) -> Result<wreq::Response, ClewdrError> {
-        let beta_header = Self::merge_anthropic_beta_header(self.anthropic_beta_header.as_deref());
+        let beta_header =
+            Self::merge_anthropic_beta_header(self.anthropic_beta_header.as_deref(), body.max_tokens);
         self.client
             .post(self.endpoint.join("v1/messages").expect("Url parse error"))
             .bearer_auth(access_token)
@@ -440,7 +443,8 @@ impl ClaudeCodeState {
         access_token: &str,
         body: &CreateMessageParams,
     ) -> Result<wreq::Response, ClewdrError> {
-        let beta_header = Self::merge_anthropic_beta_header(self.anthropic_beta_header.as_deref());
+        let beta_header =
+            Self::merge_anthropic_beta_header(self.anthropic_beta_header.as_deref(), body.max_tokens);
         self.client
             .post(
                 self.endpoint
@@ -460,7 +464,8 @@ impl ClaudeCodeState {
             .await
     }
 
-    fn merge_anthropic_beta_header(extra: Option<&str>) -> String {
+    fn merge_anthropic_beta_header(extra: Option<&str>, max_tokens: u32) -> String {
+        let should_strip_context_1m = max_tokens <= MAX_TOKENS_1M_BETA_STRIP_THRESHOLD;
         let mut seen = HashSet::new();
         let mut merged = Vec::new();
         let mut push = |token: &str| {
@@ -469,6 +474,9 @@ impl ClaudeCodeState {
                 return;
             }
             let key = trimmed.to_ascii_lowercase();
+            if should_strip_context_1m && key == CLAUDE_BETA_CONTEXT_1M_TOKEN {
+                return;
+            }
             if seen.insert(key) {
                 merged.push(trimmed.to_string());
             }
