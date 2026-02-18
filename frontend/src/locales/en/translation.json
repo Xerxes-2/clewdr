@@ -144,7 +144,12 @@
         "preserveChats": "Preserve Chats",
         "webSearch": "Web Search",
         "webCountTokens": "Enable web count_tokens",
-        "sanitizeMessages": "Sanitize messages (trim whitespace)"
+        "sanitizeMessages": "Sanitize messages (trim whitespace)",
+        "enable1mSonnet": "Sonnet 1M mode",
+        "enable1mOpus": "Opus 1M mode",
+        "modeAutoProbe": "Auto probe (default)",
+        "modeEnabled": "Enabled",
+        "modeDisabled": "Disabled"
       },
       "cookie": {
         "title": "Cookie Settings",

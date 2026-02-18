@@ -144,7 +144,12 @@
         "preserveChats": "保留聊天",
         "webSearch": "网页搜索",
         "webCountTokens": "允许 Web 渠道调用 count_tokens",
-        "sanitizeMessages": "消息清理（去除空白）"
+        "sanitizeMessages": "消息清理（去除空白）",
+        "enable1mSonnet": "Sonnet 1M 模式",
+        "enable1mOpus": "Opus 1M 模式",
+        "modeAutoProbe": "自动试探（默认）",
+        "modeEnabled": "开启",
+        "modeDisabled": "关闭"
       },
       "cookie": {
         "title": "Cookie设置",
