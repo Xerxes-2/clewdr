@@ -82,14 +82,6 @@
         "unknown": "Unknown"
       }
     },
-    "context": {
-      "label": "1M context",
-      "sonnetLane": "Sonnet",
-      "opusLane": "Opus 4.6",
-      "enabled": "1M context enabled",
-      "disabled": "1M context unavailable",
-      "unknown": "1M context not tested"
-    },
     "usage": {
       "currentInput": "Current input tokens",
       "currentOutput": "Current output tokens",
@@ -152,9 +144,7 @@
         "preserveChats": "Preserve Chats",
         "webSearch": "Web Search",
         "webCountTokens": "Enable web count_tokens",
-        "sanitizeMessages": "Sanitize messages (trim whitespace)",
-        "autoProbe1mSonnet": "Auto-probe 1M for Sonnet",
-        "autoProbe1mOpus46": "Auto-probe 1M for Opus 4.6"
+        "sanitizeMessages": "Sanitize messages (trim whitespace)"
       },
       "cookie": {
         "title": "Cookie Settings",

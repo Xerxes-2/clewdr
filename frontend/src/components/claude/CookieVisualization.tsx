@@ -377,53 +377,6 @@ const CookieVisualization: React.FC = () => {
     cookieStatus.exhausted.length +
     cookieStatus.invalid.length;
 
-  const renderContextBadge = (
-    laneLabel: string,
-    flag: boolean | null | undefined
-  ) => {
-    const { label, classes } = (() => {
-      if (flag === true) {
-        return {
-          label: t("cookieStatus.context.enabled"),
-          classes:
-            "bg-emerald-500/20 text-emerald-200 border border-emerald-400/60",
-        };
-      }
-      if (flag === false) {
-        return {
-          label: t("cookieStatus.context.disabled"),
-          classes: "bg-red-500/20 text-red-200 border border-red-500/60",
-        };
-      }
-      return {
-        label: t("cookieStatus.context.unknown"),
-        classes: "bg-gray-700 text-gray-300 border border-gray-600/80",
-      };
-    })();
-
-    return (
-      <span
-        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${classes}`}
-      >
-        {laneLabel}: {label}
-      </span>
-    );
-  };
-
-  const renderContextBadges = (status: CookieItem) => {
-    const sonnetFlag = status.supports_claude_1m_sonnet;
-    const opusFlag = status.supports_claude_1m_opus;
-    if (sonnetFlag === undefined && opusFlag === undefined) {
-      return null;
-    }
-    return (
-      <>
-        {renderContextBadge(t("cookieStatus.context.sonnetLane"), sonnetFlag)}
-        {renderContextBadge(t("cookieStatus.context.opusLane"), opusFlag)}
-      </>
-    );
-  };
-
   return (
     <div className="space-y-6 w-full">
       {/* Header */}
@@ -519,10 +472,9 @@ const CookieVisualization: React.FC = () => {
           cookies={cookieStatus.valid}
           color="green"
           renderStatus={(status, index) => {
-            const contextBadge = renderContextBadges(status);
             const usageStats = renderUsageStats(status);
             const quotaStats = renderQuotaStats(status);
-            const hasMeta = contextBadge || usageStats || quotaStats;
+            const hasMeta = usageStats || quotaStats;
             return (
               <div
                 key={index}
@@ -536,11 +488,6 @@ const CookieVisualization: React.FC = () => {
                         {t("cookieStatus.meta.summary")}
                       </summary>
                       <div className="mt-2 space-y-2">
-                        {contextBadge && (
-                          <div className="flex items-center gap-2 text-gray-300">
-                            {contextBadge}
-                          </div>
-                        )}
                         {usageStats}
                         {quotaStats}
                       </div>
@@ -568,10 +515,9 @@ const CookieVisualization: React.FC = () => {
           cookies={cookieStatus.exhausted}
           color="yellow"
           renderStatus={(status, index) => {
-            const contextBadge = renderContextBadges(status);
             const usageStats = renderUsageStats(status);
             const quotaStats = renderQuotaStats(status);
-            const hasMeta = contextBadge || usageStats || quotaStats;
+            const hasMeta = usageStats || quotaStats;
             return (
               <div
                 key={index}
@@ -585,11 +531,6 @@ const CookieVisualization: React.FC = () => {
                         {t("cookieStatus.meta.summary")}
                       </summary>
                       <div className="mt-2 space-y-2">
-                        {contextBadge && (
-                          <div className="flex items-center gap-2 text-gray-300">
-                            {contextBadge}
-                          </div>
-                        )}
                         {usageStats}
                         {quotaStats}
                       </div>

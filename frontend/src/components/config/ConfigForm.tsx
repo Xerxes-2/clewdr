@@ -146,20 +146,6 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ config, onChange }) => {
             onChange={onChange}
             label={t("config.sections.api.sanitizeMessages")}
           />
-
-          <ConfigCheckbox
-            name="auto_probe_1m_sonnet"
-            checked={config.auto_probe_1m_sonnet}
-            onChange={onChange}
-            label={t("config.sections.api.autoProbe1mSonnet")}
-          />
-
-          <ConfigCheckbox
-            name="auto_probe_1m_opus_46"
-            checked={config.auto_probe_1m_opus_46}
-            onChange={onChange}
-            label={t("config.sections.api.autoProbe1mOpus46")}
-          />
         </div>
       </ConfigSection>
 

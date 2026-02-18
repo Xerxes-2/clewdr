@@ -25,13 +25,6 @@ pub enum ModelFamily {
     Other,
 }
 
-/// Per-model 1M context probing channel
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Claude1mChannel {
-    Sonnet,
-    Opus,
-}
-
 /// Per-period usage breakdown by family
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct UsageBreakdown {
@@ -84,10 +77,6 @@ pub struct CookieStatus {
     pub token: Option<TokenInfo>,
     #[serde(default)]
     pub reset_time: Option<i64>,
-    #[serde(default)]
-    pub supports_claude_1m_sonnet: Option<bool>,
-    #[serde(default)]
-    pub supports_claude_1m_opus: Option<bool>,
     #[serde(default)]
     pub count_tokens_allowed: Option<bool>,
 
@@ -170,8 +159,6 @@ impl CookieStatus {
             cookie,
             token: None,
             reset_time,
-            supports_claude_1m_sonnet: None,
-            supports_claude_1m_opus: None,
             count_tokens_allowed: None,
 
             session_usage: UsageBreakdown::default(),
@@ -215,20 +202,6 @@ impl CookieStatus {
 
     pub fn add_token(&mut self, token: TokenInfo) {
         self.token = Some(token);
-    }
-
-    pub fn claude_1m_support(&self, channel: Claude1mChannel) -> Option<bool> {
-        match channel {
-            Claude1mChannel::Sonnet => self.supports_claude_1m_sonnet,
-            Claude1mChannel::Opus => self.supports_claude_1m_opus,
-        }
-    }
-
-    pub fn set_claude_1m_support(&mut self, channel: Claude1mChannel, value: Option<bool>) {
-        match channel {
-            Claude1mChannel::Sonnet => self.supports_claude_1m_sonnet = value,
-            Claude1mChannel::Opus => self.supports_claude_1m_opus = value,
-        }
     }
 
     pub fn set_count_tokens_allowed(&mut self, value: Option<bool>) {
@@ -420,9 +393,8 @@ impl FromStr for ClewdrCookie {
         static RE_FULL: LazyLock<Regex> = LazyLock::new(|| {
             Regex::new(r"sk-ant-sid\d{2}-[0-9A-Za-z_-]{86,120}-[0-9A-Za-z_-]{6}AA").unwrap()
         });
-        static RE_BASE: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(r"^[0-9A-Za-z_-]{86,120}-[0-9A-Za-z_-]{6}AA$").unwrap()
-        });
+        static RE_BASE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^[0-9A-Za-z_-]{86,120}-[0-9A-Za-z_-]{6}AA$").unwrap());
 
         let cleaned = s
             .trim()

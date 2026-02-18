@@ -12,14 +12,13 @@ use wreq::Method;
 
 use crate::{
     claude_code_state::{ClaudeCodeState, TokenStatus},
-    config::{CLEWDR_CONFIG, Claude1mChannel, ModelFamily},
+    config::{CLEWDR_CONFIG, ModelFamily},
     error::{CheckClaudeErr, ClewdrError, WreqSnafu},
     services::cookie_actor::CookieActorHandle,
     types::claude::{CountMessageTokensResponse, CreateMessageParams},
 };
 
 pub(super) const CLAUDE_BETA_BASE: &str = "oauth-2025-04-20";
-const CLAUDE_BETA_CONTEXT_1M: &str = "oauth-2025-04-20,context-1m-2025-08-07";
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const CLAUDE_CODE_USER_AGENT: &str = "claude-code/2.0.32";
 pub(super) const CLAUDE_API_VERSION: &str = "2023-06-01";
@@ -112,83 +111,22 @@ impl ClaudeCodeState {
     pub async fn send_chat(
         &mut self,
         access_token: String,
-        mut p: CreateMessageParams,
+        p: CreateMessageParams,
     ) -> Result<axum::response::Response, ClewdrError> {
-        let (base_model, requested_1m) = match p.model.strip_suffix("-1M") {
-            Some(stripped) => (stripped.to_string(), true),
-            None => (p.model.clone(), false),
-        };
-
-        let auto_1m_channel = Self::auto_1m_probe_channel(&base_model);
-        let cookie_support = self.cookie.as_ref().and_then(|cookie| {
-            auto_1m_channel.and_then(|channel| cookie.claude_1m_support(channel))
-        });
-
-        let attempts: Vec<bool> = if auto_1m_channel.is_some() {
-            match cookie_support {
-                Some(true) => vec![true],
-                Some(false) => vec![false],
-                None => vec![true, false],
-            }
-        } else if requested_1m {
-            vec![true, false]
-        } else {
-            vec![false]
-        };
-
-        p.model = base_model;
         let model_family = Self::classify_model(&p.model);
-
-        let mut last_err: Option<ClewdrError> = None;
-        for (idx, use_1m) in attempts.iter().copied().enumerate() {
-            match self.execute_claude_request(&access_token, &p, use_1m).await {
-                Ok(response) => {
-                    let mark_support_true = if use_1m { auto_1m_channel } else { None };
-                    return self
-                        .handle_success_response(response, mark_support_true, model_family)
-                        .await;
-                }
-                Err(err) => {
-                    let is_last_attempt = idx + 1 == attempts.len();
-                    let should_retry = use_1m
-                        && auto_1m_channel.is_some()
-                        && !is_last_attempt
-                        && Self::is_context_1m_forbidden(&err);
-
-                    if should_retry {
-                        warn!(
-                            "1M context not available for current cookie, disabling automatic 1M attempts"
-                        );
-                        if let Some(channel) = auto_1m_channel {
-                            self.persist_claude_1m_support(channel, false).await;
-                        }
-                        last_err = Some(err);
-                        continue;
-                    }
-                    return Err(err);
-                }
-            }
-        }
-
-        Err(last_err.unwrap_or_else(|| ClewdrError::TooManyRetries))
+        let response = self.execute_claude_request(&access_token, &p).await?;
+        self.handle_success_response(response, model_family).await
     }
 
     async fn execute_claude_request(
         &mut self,
         access_token: &str,
         body: &CreateMessageParams,
-        use_context_1m: bool,
     ) -> Result<wreq::Response, ClewdrError> {
-        let beta_header = if use_context_1m {
-            CLAUDE_BETA_CONTEXT_1M
-        } else {
-            CLAUDE_BETA_BASE
-        };
-
         self.client
             .post(self.endpoint.join("v1/messages").expect("Url parse error"))
             .bearer_auth(access_token)
-            .header("anthropic-beta", beta_header)
+            .header("anthropic-beta", CLAUDE_BETA_BASE)
             .header("anthropic-version", CLAUDE_API_VERSION)
             .json(body)
             .send()
@@ -198,19 +136,6 @@ impl ClaudeCodeState {
             })?
             .check_claude()
             .await
-    }
-
-    async fn persist_claude_1m_support(&mut self, channel: Claude1mChannel, value: bool) {
-        if let Some(cookie) = self.cookie.as_mut() {
-            if cookie.claude_1m_support(channel) == Some(value) {
-                return;
-            }
-            cookie.set_claude_1m_support(channel, Some(value));
-            let cloned = cookie.clone();
-            if let Err(err) = self.cookie_actor_handle.return_cookie(cloned, None).await {
-                warn!("Failed to persist Claude 1M support state: {}", err);
-            }
-        }
     }
 
     async fn persist_count_tokens_allowed(&mut self, value: bool) {
@@ -350,94 +275,35 @@ impl ClaudeCodeState {
         allow_fallback: bool,
     ) -> Result<axum::response::Response, ClewdrError> {
         p.stream = Some(false);
-        let (base_model, requested_1m) = match p.model.strip_suffix("-1M") {
-            Some(stripped) => (stripped.to_string(), true),
-            None => (p.model.clone(), false),
-        };
-
-        let auto_1m_channel = Self::auto_1m_probe_channel(&base_model);
-        let cookie_support = self.cookie.as_ref().and_then(|cookie| {
-            auto_1m_channel.and_then(|channel| cookie.claude_1m_support(channel))
-        });
-
-        let attempts: Vec<bool> = if auto_1m_channel.is_some() {
-            match cookie_support {
-                Some(true) => vec![true],
-                Some(false) => vec![false],
-                None => vec![true, false],
+        match self.execute_claude_count_tokens_request(&access_token, &p).await {
+            Ok(response) => {
+                self.persist_count_tokens_allowed(true).await;
+                let (resp, _) = Self::materialize_non_stream_response(response).await?;
+                Ok(resp)
             }
-        } else if requested_1m {
-            vec![true, false]
-        } else {
-            vec![false]
-        };
-
-        p.model = base_model;
-
-        let mut last_err: Option<ClewdrError> = None;
-        for (idx, use_1m) in attempts.iter().copied().enumerate() {
-            match self
-                .execute_claude_count_tokens_request(&access_token, &p, use_1m)
-                .await
-            {
-                Ok(response) => {
-                    self.persist_count_tokens_allowed(true).await;
-                    if let Some(channel) = auto_1m_channel.filter(|_| use_1m) {
-                        self.persist_claude_1m_support(channel, true).await;
+            Err(err) => {
+                if Self::is_count_tokens_unauthorized(&err) {
+                    self.persist_count_tokens_allowed(false).await;
+                    if allow_fallback {
+                        return Ok(Self::local_count_tokens_response(&p));
                     }
-                    let (resp, _) = Self::materialize_non_stream_response(response).await?;
-                    return Ok(resp);
                 }
-                Err(err) => {
-                    let unauthorized = Self::is_count_tokens_unauthorized(&err);
-                    if unauthorized {
-                        self.persist_count_tokens_allowed(false).await;
-                        if allow_fallback {
-                            return Ok(Self::local_count_tokens_response(&p));
-                        }
-                    }
-                    let is_last_attempt = idx + 1 == attempts.len();
-                    let should_retry = use_1m
-                        && auto_1m_channel.is_some()
-                        && !is_last_attempt
-                        && Self::is_context_1m_forbidden(&err);
-
-                    if should_retry {
-                        warn!(
-                            "1M context not available for current cookie, disabling automatic 1M attempts"
-                        );
-                        if let Some(channel) = auto_1m_channel {
-                            self.persist_claude_1m_support(channel, false).await;
-                        }
-                        last_err = Some(err);
-                        continue;
-                    }
-                    return Err(err);
-                }
+                Err(err)
             }
         }
-
-        Err(last_err.unwrap_or_else(|| ClewdrError::TooManyRetries))
     }
 
     async fn handle_success_response(
         &mut self,
         response: wreq::Response,
-        mark_support_true: Option<Claude1mChannel>,
         model_family: ModelFamily,
     ) -> Result<axum::response::Response, ClewdrError> {
         if !self.stream {
             let (resp, usage_pair) = Self::materialize_non_stream_response(response).await?;
             let (input, output) = usage_pair.unwrap_or((self.usage.input_tokens as u64, 0));
             self.persist_usage_totals(input, output, model_family).await;
-            if let Some(channel) = mark_support_true {
-                self.persist_claude_1m_support(channel, true).await;
-            }
             Ok(resp)
         } else {
-            if let Some(channel) = mark_support_true {
-                self.persist_claude_1m_support(channel, true).await;
-            }
             // Stream pass-through while accumulating output token usage from message_delta events
             return self.forward_stream_with_usage(response, model_family).await;
         }
@@ -570,14 +436,7 @@ impl ClaudeCodeState {
         &mut self,
         access_token: &str,
         body: &CreateMessageParams,
-        use_context_1m: bool,
     ) -> Result<wreq::Response, ClewdrError> {
-        let beta_header = if use_context_1m {
-            CLAUDE_BETA_CONTEXT_1M
-        } else {
-            CLAUDE_BETA_BASE
-        };
-
         self.client
             .post(
                 self.endpoint
@@ -585,7 +444,7 @@ impl ClaudeCodeState {
                     .expect("Url parse error"),
             )
             .bearer_auth(access_token)
-            .header("anthropic-beta", beta_header)
+            .header("anthropic-beta", CLAUDE_BETA_BASE)
             .header("anthropic-version", CLAUDE_API_VERSION)
             .json(body)
             .send()
@@ -595,19 +454,6 @@ impl ClaudeCodeState {
             })?
             .check_claude()
             .await
-    }
-
-    fn auto_1m_probe_channel(model: &str) -> Option<Claude1mChannel> {
-        // Auto-probe 1M context only on model lanes that are currently known to expose it.
-        let m = model.to_ascii_lowercase();
-        let cfg = CLEWDR_CONFIG.load();
-        if m.contains("claude-sonnet-4") && cfg.auto_probe_1m_sonnet {
-            Some(Claude1mChannel::Sonnet)
-        } else if m.contains("claude-opus-4-6") && cfg.auto_probe_1m_opus_46 {
-            Some(Claude1mChannel::Opus)
-        } else {
-            None
-        }
     }
 
     fn classify_model(model: &str) -> ModelFamily {
@@ -776,31 +622,10 @@ impl ClaudeCodeState {
         Json(estimate).into_response()
     }
 
-    fn is_context_1m_forbidden(error: &ClewdrError) -> bool {
-        if let ClewdrError::ClaudeHttpError { code, inner } = error
-            && (code.as_u16() == 403 || code.as_u16() == 400)
-        {
-            let message = inner
-                .message
-                .as_str()
-                .map(|s| s.to_ascii_lowercase())
-                .unwrap_or_default();
-            // Different account tiers (e.g., Pro vs Max) surface different error texts
-            // when 1M context is not permitted. Treat both as a signal to fallback.
-            return message
-                .contains("the long context beta is not yet available for this subscription.")
-                || message.contains(
-                    "this authentication style is incompatible with the long context beta header.",
-                );
-        }
-        false
-    }
-
     fn is_count_tokens_unauthorized(error: &ClewdrError) -> bool {
         if let ClewdrError::ClaudeHttpError { code, .. } = error {
             return match code.as_u16() {
-                401 | 404 => true,
-                403 => !Self::is_context_1m_forbidden(error),
+                401 | 403 | 404 => true,
                 _ => false,
             };
         }
