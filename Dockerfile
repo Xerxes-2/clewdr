@@ -35,39 +35,14 @@ set -e
 case ${TARGETPLATFORM} in \
     "linux/amd64") \
         RUST_TARGET="x86_64-unknown-linux-musl"
-        MUSL_TRIPLE="x86_64-linux-musl"
-        TARGET_ENV="x86_64_unknown_linux_musl"
+        export CXX="x86_64-linux-gnu-g++"
         ;; \
     "linux/arm64") \
         RUST_TARGET="aarch64-unknown-linux-musl"
-        MUSL_TRIPLE="aarch64-linux-musl"
-        TARGET_ENV="aarch64_unknown_linux_musl"
+        export CXX="aarch64-linux-gnu-g++"
         ;; \
     *) echo "Unsupported architecture: ${TARGETPLATFORM}" >&2; exit 1 ;; \
 esac
-
-if command -v "${MUSL_TRIPLE}-gcc" >/dev/null 2>&1; then
-    export CC="${MUSL_TRIPLE}-gcc"
-elif command -v musl-gcc >/dev/null 2>&1; then
-    export CC="musl-gcc"
-else
-    echo "No musl C compiler found for ${MUSL_TRIPLE}" >&2
-    exit 1
-fi
-
-if command -v "${MUSL_TRIPLE}-g++" >/dev/null 2>&1; then
-    export CXX="${MUSL_TRIPLE}-g++"
-elif command -v musl-g++ >/dev/null 2>&1; then
-    export CXX="musl-g++"
-else
-    # Most deps are C-only; fall back to CC when musl g++ wrapper is missing.
-    export CXX="${CC}"
-fi
-
-export "CC_${TARGET_ENV}=${CC}"
-export "CXX_${TARGET_ENV}=${CXX}"
-export "CARGO_TARGET_${TARGET_ENV}_LINKER=${CC}"
-
 mkdir -p ~/.cargo
 cargo chef cook --release --target ${RUST_TARGET} --no-default-features --features embed-resource,xdg --recipe-path recipe.json
 EOF
@@ -81,38 +56,14 @@ set -e
 case ${TARGETPLATFORM} in \
     "linux/amd64") \
         RUST_TARGET="x86_64-unknown-linux-musl"
-        MUSL_TRIPLE="x86_64-linux-musl"
-        TARGET_ENV="x86_64_unknown_linux_musl"
+        export CXX="x86_64-linux-gnu-g++"
         ;; \
     "linux/arm64") \
         RUST_TARGET="aarch64-unknown-linux-musl"
-        MUSL_TRIPLE="aarch64-linux-musl"
-        TARGET_ENV="aarch64_unknown_linux_musl"
+        export CXX="aarch64-linux-gnu-g++"
         ;; \
     *) echo "Unsupported architecture: ${TARGETPLATFORM}" >&2; exit 1 ;; \
 esac
-
-if command -v "${MUSL_TRIPLE}-gcc" >/dev/null 2>&1; then
-    export CC="${MUSL_TRIPLE}-gcc"
-elif command -v musl-gcc >/dev/null 2>&1; then
-    export CC="musl-gcc"
-else
-    echo "No musl C compiler found for ${MUSL_TRIPLE}" >&2
-    exit 1
-fi
-
-if command -v "${MUSL_TRIPLE}-g++" >/dev/null 2>&1; then
-    export CXX="${MUSL_TRIPLE}-g++"
-elif command -v musl-g++ >/dev/null 2>&1; then
-    export CXX="musl-g++"
-else
-    export CXX="${CC}"
-fi
-
-export "CC_${TARGET_ENV}=${CC}"
-export "CXX_${TARGET_ENV}=${CXX}"
-export "CARGO_TARGET_${TARGET_ENV}_LINKER=${CC}"
-
 cargo build --release --target ${RUST_TARGET}  --no-default-features --features embed-resource,xdg --bin clewdr
 upx --best --lzma ./target/${RUST_TARGET}/release/clewdr
 cp ./target/${RUST_TARGET}/release/clewdr /build/clewdr
