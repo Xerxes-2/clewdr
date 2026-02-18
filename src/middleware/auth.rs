@@ -4,7 +4,6 @@ use tracing::warn;
 
 use crate::{config::CLEWDR_CONFIG, error::ClewdrError};
 
-
 /// Middleware guard that ensures requests have valid admin authentication
 ///
 /// This extractor checks for a valid admin authorization token in the Bearer Auth header.
@@ -95,15 +94,16 @@ where
         _: &S,
     ) -> Result<Self, Self::Rejection> {
         // Try X-API-Key first
-        if let Some(key) = parts
-            .headers
-            .get("x-api-key")
-            .and_then(|v| v.to_str().ok()) && CLEWDR_CONFIG.load().user_auth(key) {
-                return Ok(Self);
-            }
+        if let Some(key) = parts.headers.get("x-api-key").and_then(|v| v.to_str().ok())
+            && CLEWDR_CONFIG.load().user_auth(key)
+        {
+            return Ok(Self);
+        }
 
         // Fall back to Bearer token
-        if let Ok(AuthBearer(key)) = AuthBearer::from_request_parts(parts, &()).await && CLEWDR_CONFIG.load().user_auth(&key) {
+        if let Ok(AuthBearer(key)) = AuthBearer::from_request_parts(parts, &()).await
+            && CLEWDR_CONFIG.load().user_auth(&key)
+        {
             return Ok(Self);
         }
 

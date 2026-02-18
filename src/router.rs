@@ -198,7 +198,6 @@ impl RouterBuilder {
     /// Returns the configured router
     /// Finalizes the router configuration for use with axum
     pub fn build(self) -> Router {
-        self.inner
-            .layer(DefaultBodyLimit::max(32 * 1024 * 1024))
+        self.inner.layer(DefaultBodyLimit::max(32 * 1024 * 1024))
     }
 }
