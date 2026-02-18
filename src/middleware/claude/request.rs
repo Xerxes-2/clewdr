@@ -238,6 +238,7 @@ where
         // Handle thinking mode by modifying the model name
         if (body.model.contains("opus-4-1")
             || body.model.contains("sonnet-4-5")
+            || body.model.contains("sonnet-4-6")
             || body.model.contains("opus-4-5")
             || body.model.contains("opus-4-6"))
             && body.temperature.is_some()

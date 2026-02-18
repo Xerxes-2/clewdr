@@ -238,13 +238,15 @@ pub async fn api_auth(AuthBearer(t): AuthBearer) -> StatusCode {
     StatusCode::OK
 }
 
-const MODEL_LIST: [&str; 16] = [
+const MODEL_LIST: [&str; 18] = [
     "claude-3-7-sonnet-20250219",
     "claude-3-7-sonnet-20250219-thinking",
     "claude-sonnet-4-20250514",
     "claude-sonnet-4-20250514-thinking",
     "claude-sonnet-4-5-20250929",
     "claude-sonnet-4-5-20250929-thinking",
+    "claude-sonnet-4-6",
+    "claude-sonnet-4-6-thinking",
     "claude-opus-4-20250514",
     "claude-opus-4-20250514-thinking",
     "claude-opus-4-1-20250805",
