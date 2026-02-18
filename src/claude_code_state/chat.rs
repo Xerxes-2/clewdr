@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use axum::{
     Json,
     response::{IntoResponse, Sse, sse::Event as SseEvent},
@@ -123,10 +125,11 @@ impl ClaudeCodeState {
         access_token: &str,
         body: &CreateMessageParams,
     ) -> Result<wreq::Response, ClewdrError> {
+        let beta_header = Self::merge_anthropic_beta_header(self.anthropic_beta_header.as_deref());
         self.client
             .post(self.endpoint.join("v1/messages").expect("Url parse error"))
             .bearer_auth(access_token)
-            .header("anthropic-beta", CLAUDE_BETA_BASE)
+            .header("anthropic-beta", beta_header)
             .header("anthropic-version", CLAUDE_API_VERSION)
             .json(body)
             .send()
@@ -437,6 +440,7 @@ impl ClaudeCodeState {
         access_token: &str,
         body: &CreateMessageParams,
     ) -> Result<wreq::Response, ClewdrError> {
+        let beta_header = Self::merge_anthropic_beta_header(self.anthropic_beta_header.as_deref());
         self.client
             .post(
                 self.endpoint
@@ -444,7 +448,7 @@ impl ClaudeCodeState {
                     .expect("Url parse error"),
             )
             .bearer_auth(access_token)
-            .header("anthropic-beta", CLAUDE_BETA_BASE)
+            .header("anthropic-beta", beta_header)
             .header("anthropic-version", CLAUDE_API_VERSION)
             .json(body)
             .send()
@@ -454,6 +458,29 @@ impl ClaudeCodeState {
             })?
             .check_claude()
             .await
+    }
+
+    fn merge_anthropic_beta_header(extra: Option<&str>) -> String {
+        let mut seen = HashSet::new();
+        let mut merged = Vec::new();
+        let mut push = |token: &str| {
+            let trimmed = token.trim();
+            if trimmed.is_empty() {
+                return;
+            }
+            let key = trimmed.to_ascii_lowercase();
+            if seen.insert(key) {
+                merged.push(trimmed.to_string());
+            }
+        };
+
+        push(CLAUDE_BETA_BASE);
+        if let Some(extra) = extra {
+            for token in extra.split(',') {
+                push(token);
+            }
+        }
+        merged.join(",")
     }
 
     fn classify_model(model: &str) -> ModelFamily {
@@ -624,10 +651,7 @@ impl ClaudeCodeState {
 
     fn is_count_tokens_unauthorized(error: &ClewdrError) -> bool {
         if let ClewdrError::ClaudeHttpError { code, .. } = error {
-            return match code.as_u16() {
-                401 | 403 | 404 => true,
-                _ => false,
-            };
+            return matches!(code.as_u16(), 401 | 403 | 404);
         }
         false
     }

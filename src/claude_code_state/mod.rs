@@ -30,6 +30,7 @@ pub struct ClaudeCodeState {
     pub api_format: ClaudeApiFormat,
     pub stream: bool,
     pub system_prompt_hash: Option<u64>,
+    pub anthropic_beta_header: Option<String>,
     pub usage: Usage,
 }
 
@@ -46,6 +47,7 @@ impl ClaudeCodeState {
             api_format: ClaudeApiFormat::Claude,
             stream: false,
             system_prompt_hash: None,
+            anthropic_beta_header: None,
             usage: Usage::default(),
         }
     }

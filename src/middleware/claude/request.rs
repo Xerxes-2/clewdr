@@ -9,7 +9,7 @@ use axum::{
     Json,
     extract::{FromRequest, Request},
 };
-use http::header::USER_AGENT;
+use http::{HeaderMap, header::USER_AGENT};
 use serde_json::{Value, json};
 
 use crate::{
@@ -95,6 +95,26 @@ fn strip_ephemeral_scope_from_system(system: &mut Value) {
         if matches!(cache_obj.get("type"), Some(Value::String(t)) if t == "ephemeral") {
             cache_obj.remove("scope");
         }
+    }
+}
+
+fn extract_anthropic_beta_header(headers: &HeaderMap) -> Option<String> {
+    let mut parts = Vec::new();
+    for value in headers.get_all("anthropic-beta") {
+        if let Ok(raw) = value.to_str() {
+            for token in raw.split(',') {
+                let token = token.trim();
+                if !token.is_empty() {
+                    parts.push(token.to_string());
+                }
+            }
+        }
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(","))
     }
 }
 
@@ -214,6 +234,8 @@ pub struct ClaudeCodeContext {
     pub(super) api_format: ClaudeApiFormat,
     /// The hash of the system messages for caching purposes
     pub(super) system_prompt_hash: Option<u64>,
+    /// Optional anthropic-beta header forwarded from client request
+    pub(super) anthropic_beta: Option<String>,
     // Usage information for the request
     pub(super) usage: Usage,
 }
@@ -227,6 +249,7 @@ where
     type Rejection = ClewdrError;
 
     async fn from_request(req: Request, _: &S) -> Result<Self, Self::Rejection> {
+        let anthropic_beta = extract_anthropic_beta_header(req.headers());
         let ua = req
             .headers()
             .get(USER_AGENT)
@@ -311,6 +334,7 @@ where
             stream,
             api_format: format,
             system_prompt_hash,
+            anthropic_beta,
             usage: Usage {
                 input_tokens,
                 output_tokens: 0, // Placeholder for output token count
