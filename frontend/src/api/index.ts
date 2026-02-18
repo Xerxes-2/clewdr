@@ -124,6 +124,30 @@ export async function deleteCookie(cookie: string) {
 }
 
 /**
+ * Updates per-cookie 1M support flags.
+ */
+export async function updateCookie1mSupport(
+  cookie: string,
+  supportsSonnet: boolean,
+  supportsOpus: boolean
+) {
+  const token = localStorage.getItem("authToken") || "";
+  const response = await fetch(`/api/cookie`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      cookie,
+      supports_claude_1m_sonnet: supportsSonnet,
+      supports_claude_1m_opus: supportsOpus,
+    }),
+  });
+  return response;
+}
+
+/**
  * Fetches the config data from the server
  */
 export async function getConfig() {

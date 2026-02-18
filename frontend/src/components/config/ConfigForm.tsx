@@ -147,48 +147,6 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ config, onChange }) => {
             label={t("config.sections.api.sanitizeMessages")}
           />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-          <label className="flex flex-col gap-1 text-sm text-slate-200">
-            {t("config.sections.api.enable1mSonnet")}
-            <select
-              name="enable_1m_sonnet"
-              value={
-                config.enable_1m_sonnet === null ||
-                config.enable_1m_sonnet === undefined
-                  ? ""
-                  : String(config.enable_1m_sonnet)
-              }
-              onChange={onChange}
-              className="rounded-md border border-white/15 bg-black/20 px-3 py-2 text-white outline-none focus:ring-2 focus:ring-cyan-400/60"
-            >
-              <option value="">{t("config.sections.api.modeAutoProbe")}</option>
-              <option value="true">{t("config.sections.api.modeEnabled")}</option>
-              <option value="false">
-                {t("config.sections.api.modeDisabled")}
-              </option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-200">
-            {t("config.sections.api.enable1mOpus")}
-            <select
-              name="enable_1m_opus"
-              value={
-                config.enable_1m_opus === null ||
-                config.enable_1m_opus === undefined
-                  ? ""
-                  : String(config.enable_1m_opus)
-              }
-              onChange={onChange}
-              className="rounded-md border border-white/15 bg-black/20 px-3 py-2 text-white outline-none focus:ring-2 focus:ring-cyan-400/60"
-            >
-              <option value="">{t("config.sections.api.modeAutoProbe")}</option>
-              <option value="true">{t("config.sections.api.modeEnabled")}</option>
-              <option value="false">
-                {t("config.sections.api.modeDisabled")}
-              </option>
-            </select>
-          </label>
-        </div>
       </ConfigSection>
 
       {/* Cookie Settings Section */}

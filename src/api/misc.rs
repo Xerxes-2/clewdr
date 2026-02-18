@@ -67,6 +67,12 @@ pub async fn api_post_cookie(
         return Err(ApiError::unauthorized());
     }
     c.reset_time = None;
+    if c.supports_claude_1m_sonnet.is_none() {
+        c.supports_claude_1m_sonnet = Some(true);
+    }
+    if c.supports_claude_1m_opus.is_none() {
+        c.supports_claude_1m_opus = Some(true);
+    }
     info!("Cookie accepted: {}", c.cookie);
     match s.submit(c).await {
         Ok(_) => {
@@ -80,6 +86,40 @@ pub async fn api_post_cookie(
             error!("Failed to submit cookie: {}", e);
             Err(ApiError::internal(format!(
                 "Failed to submit cookie: {}",
+                e
+            )))
+        }
+    }
+}
+
+/// API endpoint to update per-cookie 1M support settings
+/// Only updates supports_claude_1m_sonnet / supports_claude_1m_opus on existing cookies
+pub async fn api_put_cookie(
+    State(s): State<CookieActorHandle>,
+    AuthBearer(t): AuthBearer,
+    Json(mut c): Json<CookieStatus>,
+) -> Result<StatusCode, ApiError> {
+    if !CLEWDR_CONFIG.load().admin_auth(&t) {
+        return Err(ApiError::unauthorized());
+    }
+    if c.supports_claude_1m_sonnet.is_none() {
+        c.supports_claude_1m_sonnet = Some(true);
+    }
+    if c.supports_claude_1m_opus.is_none() {
+        c.supports_claude_1m_opus = Some(true);
+    }
+
+    match s.update_cookie_1m_support(c.clone()).await {
+        Ok(_) => {
+            info!("Cookie 1M flags updated: {}", c.cookie);
+            COOKIES_CACHE.invalidate(COOKIE_STATUS_CACHE_KEY);
+            info!("Cookie status cache invalidated after cookie update");
+            Ok(StatusCode::OK)
+        }
+        Err(e) => {
+            error!("Failed to update cookie 1M flags: {}", e);
+            Err(ApiError::bad_request(format!(
+                "Failed to update cookie 1M flags: {}",
                 e
             )))
         }

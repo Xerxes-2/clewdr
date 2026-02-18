@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { getCookieStatus, deleteCookie } from "../../api";
+import { getCookieStatus, deleteCookie, updateCookie1mSupport } from "../../api";
 import { formatTimestamp, formatIsoTimestamp } from "../../utils/formatters";
-import { CookieStatusInfo, CookieItem } from "../../types/cookie.types";
+import {
+  CookieStatusInfo,
+  CookieItem,
+  CookieStatus,
+} from "../../types/cookie.types";
 import Button from "../common/Button";
 import LoadingSpinner from "../common/LoadingSpinner";
 import StatusMessage from "../common/StatusMessage";
@@ -26,6 +30,9 @@ const CookieVisualization: React.FC = () => {
   const [refreshCounter, setRefreshCounter] = useState(0);
   const [deletingCookie, setDeletingCookie] = useState<string | null>(null);
   const [isForceRefreshing, setIsForceRefreshing] = useState(false);
+  const [updatingCookie, setUpdatingCookie] = useState<Record<string, boolean>>(
+    {}
+  );
 
   // Fetch cookie data
   const fetchCookieStatus = useCallback(async (forceRefresh = false) => {
@@ -312,6 +319,118 @@ const CookieVisualization: React.FC = () => {
     );
   };
 
+  const isEnabled = (value: boolean | null | undefined): boolean => value !== false;
+
+  const updateLocalCookie1mFlags = (
+    cookie: string,
+    sonnet: boolean,
+    opus: boolean
+  ) => {
+    const updateList = (items: CookieStatus[]) =>
+      items.map((item) =>
+        item.cookie === cookie
+          ? {
+              ...item,
+              supports_claude_1m_sonnet: sonnet,
+              supports_claude_1m_opus: opus,
+            }
+          : item
+      );
+
+    setCookieStatus((prev) => ({
+      ...prev,
+      valid: updateList(prev.valid),
+      exhausted: updateList(prev.exhausted),
+    }));
+  };
+
+  const handleUpdateCookie1m = async (
+    cookie: string,
+    sonnet: boolean,
+    opus: boolean
+  ) => {
+    setUpdatingCookie((prev) => ({ ...prev, [cookie]: true }));
+    setError(null);
+    try {
+      const response = await updateCookie1mSupport(cookie, sonnet, opus);
+      if (!response.ok) {
+        const message =
+          response.status === 401
+            ? t("cookieSubmit.error.auth")
+            : await response
+                .json()
+                .then(
+                  (data) =>
+                    data.error ||
+                    t("common.error", { message: response.status })
+                );
+        setError(message);
+        return;
+      }
+      updateLocalCookie1mFlags(cookie, sonnet, opus);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+    } finally {
+      setUpdatingCookie((prev) => ({ ...prev, [cookie]: false }));
+    }
+  };
+
+  const renderContextControls = (status: CookieItem) => {
+    const cookieKey = status.cookie;
+    const saving = !!updatingCookie[cookieKey];
+    const sonnetEnabled = isEnabled(status.supports_claude_1m_sonnet);
+    const opusEnabled = isEnabled(status.supports_claude_1m_opus);
+
+    const toggleClass = (enabled: boolean) =>
+      `inline-flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+        enabled
+          ? "border-emerald-400/70 bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30"
+          : "border-slate-500/70 bg-slate-500/20 text-slate-200 hover:bg-slate-500/30"
+      }`;
+
+    return (
+      <div className="grid gap-2 text-xs text-gray-300">
+        <div className="font-medium text-gray-400">{t("cookieStatus.context.title")}</div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={saving}
+            className={toggleClass(sonnetEnabled)}
+            onClick={() =>
+              handleUpdateCookie1m(cookieKey, !sonnetEnabled, opusEnabled)
+            }
+          >
+            <span>{t("cookieStatus.context.sonnetLane")}</span>
+            <span>
+              {sonnetEnabled
+                ? t("cookieStatus.context.modeEnabled")
+                : t("cookieStatus.context.modeDisabled")}
+            </span>
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            className={toggleClass(opusEnabled)}
+            onClick={() =>
+              handleUpdateCookie1m(cookieKey, sonnetEnabled, !opusEnabled)
+            }
+          >
+            <span>{t("cookieStatus.context.opusLane")}</span>
+            <span>
+              {opusEnabled
+                ? t("cookieStatus.context.modeEnabled")
+                : t("cookieStatus.context.modeDisabled")}
+            </span>
+          </button>
+          {saving && (
+            <span className="text-cyan-300">{t("cookieStatus.context.saving")}</span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const handleDeleteCookie = async (cookie: string) => {
     if (!window.confirm(t("cookieStatus.deleteConfirm"))) return;
 
@@ -472,9 +591,10 @@ const CookieVisualization: React.FC = () => {
           cookies={cookieStatus.valid}
           color="green"
           renderStatus={(status, index) => {
+            const contextControls = renderContextControls(status);
             const usageStats = renderUsageStats(status);
             const quotaStats = renderQuotaStats(status);
-            const hasMeta = usageStats || quotaStats;
+            const hasMeta = contextControls || usageStats || quotaStats;
             return (
               <div
                 key={index}
@@ -488,6 +608,7 @@ const CookieVisualization: React.FC = () => {
                         {t("cookieStatus.meta.summary")}
                       </summary>
                       <div className="mt-2 space-y-2">
+                        {contextControls}
                         {usageStats}
                         {quotaStats}
                       </div>
@@ -515,9 +636,10 @@ const CookieVisualization: React.FC = () => {
           cookies={cookieStatus.exhausted}
           color="yellow"
           renderStatus={(status, index) => {
+            const contextControls = renderContextControls(status);
             const usageStats = renderUsageStats(status);
             const quotaStats = renderQuotaStats(status);
-            const hasMeta = usageStats || quotaStats;
+            const hasMeta = contextControls || usageStats || quotaStats;
             return (
               <div
                 key={index}
@@ -531,6 +653,7 @@ const CookieVisualization: React.FC = () => {
                         {t("cookieStatus.meta.summary")}
                       </summary>
                       <div className="mt-2 space-y-2">
+                        {contextControls}
                         {usageStats}
                         {quotaStats}
                       </div>

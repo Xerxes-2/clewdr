@@ -39,6 +39,8 @@ enum CookieActorMessage {
     GetStatus(RpcReplyPort<CookieStatusInfo>),
     /// Delete a Cookie
     Delete(CookieStatus, RpcReplyPort<Result<(), ClewdrError>>),
+    /// Update 1M support flags on an existing cookie
+    Update1mSupport(CookieStatus, RpcReplyPort<Result<(), ClewdrError>>),
 }
 
 /// CookieActor state - manages collections of cookies
@@ -310,6 +312,41 @@ impl CookieActor {
             })
         }
     }
+
+    /// Updates 1M support flags for an existing cookie in valid/exhausted collections
+    fn update_1m_support(
+        state: &mut CookieActorState,
+        cookie: CookieStatus,
+    ) -> Result<(), ClewdrError> {
+        if let Some(existing) = state.valid.iter_mut().find(|c| **c == cookie) {
+            existing.supports_claude_1m_sonnet = cookie.supports_claude_1m_sonnet;
+            existing.supports_claude_1m_opus = cookie.supports_claude_1m_opus;
+            Self::save(state);
+            return Ok(());
+        }
+
+        if !state.exhausted.is_empty() {
+            let mut updated = false;
+            let mut new_exhausted = HashSet::with_capacity(state.exhausted.len());
+            for mut existing in state.exhausted.drain() {
+                if existing == cookie {
+                    existing.supports_claude_1m_sonnet = cookie.supports_claude_1m_sonnet;
+                    existing.supports_claude_1m_opus = cookie.supports_claude_1m_opus;
+                    updated = true;
+                }
+                new_exhausted.insert(existing);
+            }
+            state.exhausted = new_exhausted;
+            if updated {
+                Self::save(state);
+                return Ok(());
+            }
+        }
+
+        Err(ClewdrError::UnexpectedNone {
+            msg: "Update operation did not find the cookie",
+        })
+    }
 }
 
 impl Actor for CookieActor {
@@ -322,13 +359,24 @@ impl Actor for CookieActor {
         _myself: ActorRef<Self::Msg>,
         _arguments: Self::Arguments,
     ) -> Result<Self::State, ActorProcessingErr> {
+        let normalize_1m_defaults = |mut cookie: CookieStatus| {
+            if cookie.supports_claude_1m_sonnet.is_none() {
+                cookie.supports_claude_1m_sonnet = Some(true);
+            }
+            if cookie.supports_claude_1m_opus.is_none() {
+                cookie.supports_claude_1m_opus = Some(true);
+            }
+            cookie
+        };
+
         let valid = VecDeque::from_iter(
             CLEWDR_CONFIG
                 .load()
                 .cookie_array
                 .iter()
                 .filter(|c| c.reset_time.is_none())
-                .cloned(),
+                .cloned()
+                .map(normalize_1m_defaults),
         );
         let exhausted = HashSet::from_iter(
             CLEWDR_CONFIG
@@ -336,7 +384,8 @@ impl Actor for CookieActor {
                 .cookie_array
                 .iter()
                 .filter(|c| c.reset_time.is_some())
-                .cloned(),
+                .cloned()
+                .map(normalize_1m_defaults),
         );
         let invalid = HashSet::from_iter(CLEWDR_CONFIG.load().wasted_cookie.iter().cloned());
 
@@ -390,6 +439,10 @@ impl Actor for CookieActor {
             }
             CookieActorMessage::Delete(cookie, reply_port) => {
                 let result = Self::delete(state, cookie.clone());
+                reply_port.send(result)?;
+            }
+            CookieActorMessage::Update1mSupport(cookie, reply_port) => {
+                let result = Self::update_1m_support(state, cookie);
                 reply_port.send(result)?;
             }
         }
@@ -492,6 +545,16 @@ impl CookieActorHandle {
             ClewdrError::RactorError {
                 loc: Location::generate(),
                 msg: format!("Failed to communicate with CookieActor for delete operation: {e}"),
+            }
+        })?
+    }
+
+    /// Update 1M support flags on an existing cookie
+    pub async fn update_cookie_1m_support(&self, cookie: CookieStatus) -> Result<(), ClewdrError> {
+        ractor::call!(self.actor_ref, CookieActorMessage::Update1mSupport, cookie).map_err(|e| {
+            ClewdrError::RactorError {
+                loc: Location::generate(),
+                msg: format!("Failed to communicate with CookieActor for update operation: {e}"),
             }
         })?
     }

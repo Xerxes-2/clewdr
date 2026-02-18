@@ -131,14 +131,6 @@ const ConfigTab: React.FC = () => {
       return;
     }
 
-    if (["enable_1m_sonnet", "enable_1m_opus"].includes(name)) {
-      setConfig({
-        ...config,
-        [name]: value === "" ? null : value === "true",
-      });
-      return;
-    }
-
     // Handle regular text inputs
     setConfig({
       ...config,

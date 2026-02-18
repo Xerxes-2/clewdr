@@ -95,7 +95,12 @@ impl RouterBuilder {
     fn route_admin_endpoints(mut self) -> Self {
         let cookie_router = Router::new()
             .route("/cookies", get(api_get_cookies))
-            .route("/cookie", delete(api_delete_cookie).post(api_post_cookie))
+            .route(
+                "/cookie",
+                delete(api_delete_cookie)
+                    .post(api_post_cookie)
+                    .put(api_put_cookie),
+            )
             .with_state(self.cookie_actor_handle.to_owned());
         let admin_router = Router::new()
             .route("/auth", get(api_auth))
@@ -175,7 +180,7 @@ impl RouterBuilder {
 
         let cors = CorsLayer::new()
             .allow_origin(tower_http::cors::Any)
-            .allow_methods([Method::GET, Method::POST, Method::DELETE])
+            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
             .allow_headers([
                 AUTHORIZATION,
                 CONTENT_TYPE,

@@ -14,7 +14,7 @@ use wreq::Method;
 
 use crate::{
     claude_code_state::{ClaudeCodeState, TokenStatus},
-    config::{CLEWDR_CONFIG, ModelFamily},
+    config::{CLEWDR_CONFIG, Claude1mChannel, ModelFamily},
     error::{CheckClaudeErr, ClewdrError, WreqSnafu},
     services::cookie_actor::CookieActorHandle,
     types::claude::{CountMessageTokensResponse, CreateMessageParams},
@@ -25,12 +25,6 @@ const CLAUDE_BETA_CONTEXT_1M_TOKEN: &str = "context-1m-2025-08-07";
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const CLAUDE_CODE_USER_AGENT: &str = "claude-code/2.0.32";
 pub(super) const CLAUDE_API_VERSION: &str = "2023-06-01";
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Claude1mLane {
-    Sonnet,
-    Opus,
-}
 
 impl ClaudeCodeState {
     /// Attempts to send a chat message to Claude API with retry mechanism
@@ -128,17 +122,20 @@ impl ClaudeCodeState {
         };
         p.model = base_model;
 
-        let lane = Self::claude_1m_lane(&p.model);
-        let lane_mode = lane.and_then(Self::configured_1m_mode);
-        let attempts: Vec<bool> = match lane_mode {
-            Some(false) => vec![false],
-            Some(true) | None => {
-                if lane.is_some() || requested_1m {
-                    vec![true, false]
-                } else {
-                    vec![false]
-                }
+        let channel = Self::auto_1m_probe_channel(&p.model);
+        let cookie_support = self
+            .cookie
+            .as_ref()
+            .and_then(|cookie| channel.and_then(|ch| cookie.claude_1m_support(ch)));
+        let attempts: Vec<bool> = if channel.is_some() {
+            match cookie_support {
+                Some(false) => vec![false],
+                _ => vec![true, false],
             }
+        } else if requested_1m {
+            vec![true, false]
+        } else {
+            vec![false]
         };
 
         let model_family = Self::classify_model(&p.model);
@@ -147,16 +144,23 @@ impl ClaudeCodeState {
                 .execute_claude_request(&access_token, &p, use_context_1m)
                 .await
             {
-                Ok(response) => return self.handle_success_response(response, model_family).await,
+                Ok(response) => {
+                    if let Some(ch) = channel
+                        && use_context_1m
+                    {
+                        self.persist_claude_1m_support(ch, true).await;
+                    }
+                    return self.handle_success_response(response, model_family).await;
+                }
                 Err(err) => {
                     let is_last_attempt = idx + 1 == attempts.len();
                     let should_fallback = use_context_1m
                         && !is_last_attempt
-                        && lane.is_some()
+                        && channel.is_some()
                         && Self::is_context_1m_forbidden(&err);
                     if should_fallback {
-                        if let Some(lane) = lane {
-                            self.persist_1m_mode(lane, Some(false)).await;
+                        if let Some(ch) = channel {
+                            self.persist_claude_1m_support(ch, false).await;
                         }
                         warn!("1M probe failed, disabling lane and retrying without 1M header");
                         continue;
@@ -198,30 +202,16 @@ impl ClaudeCodeState {
             .await
     }
 
-    async fn persist_1m_mode(&self, lane: Claude1mLane, value: Option<bool>) {
-        let current = {
-            let cfg = CLEWDR_CONFIG.load();
-            match lane {
-                Claude1mLane::Sonnet => cfg.enable_1m_sonnet,
-                Claude1mLane::Opus => cfg.enable_1m_opus,
+    async fn persist_claude_1m_support(&mut self, channel: Claude1mChannel, value: bool) {
+        if let Some(cookie) = self.cookie.as_mut() {
+            if cookie.claude_1m_support(channel) == Some(value) {
+                return;
             }
-        };
-
-        if current == value {
-            return;
-        }
-
-        CLEWDR_CONFIG.rcu(|old| {
-            let mut new_cfg = old.as_ref().clone();
-            match lane {
-                Claude1mLane::Sonnet => new_cfg.enable_1m_sonnet = value,
-                Claude1mLane::Opus => new_cfg.enable_1m_opus = value,
+            cookie.set_claude_1m_support(channel, Some(value));
+            let cloned = cookie.clone();
+            if let Err(err) = self.cookie_actor_handle.return_cookie(cloned, None).await {
+                warn!("Failed to persist Claude 1M support state: {}", err);
             }
-            new_cfg
-        });
-
-        if let Err(err) = CLEWDR_CONFIG.load().save().await {
-            warn!("Failed to persist 1M mode update: {}", err);
         }
     }
 
@@ -368,17 +358,20 @@ impl ClaudeCodeState {
         };
         p.model = base_model;
 
-        let lane = Self::claude_1m_lane(&p.model);
-        let lane_mode = lane.and_then(Self::configured_1m_mode);
-        let attempts: Vec<bool> = match lane_mode {
-            Some(false) => vec![false],
-            Some(true) | None => {
-                if lane.is_some() || requested_1m {
-                    vec![true, false]
-                } else {
-                    vec![false]
-                }
+        let channel = Self::auto_1m_probe_channel(&p.model);
+        let cookie_support = self
+            .cookie
+            .as_ref()
+            .and_then(|cookie| channel.and_then(|ch| cookie.claude_1m_support(ch)));
+        let attempts: Vec<bool> = if channel.is_some() {
+            match cookie_support {
+                Some(false) => vec![false],
+                _ => vec![true, false],
             }
+        } else if requested_1m {
+            vec![true, false]
+        } else {
+            vec![false]
         };
 
         for (idx, use_context_1m) in attempts.iter().copied().enumerate() {
@@ -387,6 +380,11 @@ impl ClaudeCodeState {
                 .await
             {
                 Ok(response) => {
+                    if let Some(ch) = channel
+                        && use_context_1m
+                    {
+                        self.persist_claude_1m_support(ch, true).await;
+                    }
                     self.persist_count_tokens_allowed(true).await;
                     let (resp, _) = Self::materialize_non_stream_response(response).await?;
                     return Ok(resp);
@@ -395,11 +393,11 @@ impl ClaudeCodeState {
                     let is_last_attempt = idx + 1 == attempts.len();
                     let should_fallback = use_context_1m
                         && !is_last_attempt
-                        && lane.is_some()
+                        && channel.is_some()
                         && Self::is_context_1m_forbidden(&err);
                     if should_fallback {
-                        if let Some(lane) = lane {
-                            self.persist_1m_mode(lane, Some(false)).await;
+                        if let Some(ch) = channel {
+                            self.persist_claude_1m_support(ch, false).await;
                         }
                         warn!(
                             "1M probe failed in count_tokens, disabling lane and retrying without 1M header"
@@ -619,12 +617,12 @@ impl ClaudeCodeState {
         merged.join(",")
     }
 
-    fn claude_1m_lane(model: &str) -> Option<Claude1mLane> {
+    fn auto_1m_probe_channel(model: &str) -> Option<Claude1mChannel> {
         let m = model.to_ascii_lowercase();
         if Self::is_sonnet_1m_probe_model(&m) {
-            Some(Claude1mLane::Sonnet)
+            Some(Claude1mChannel::Sonnet)
         } else if Self::is_opus_1m_probe_model(&m) {
-            Some(Claude1mLane::Opus)
+            Some(Claude1mChannel::Opus)
         } else {
             None
         }
@@ -638,14 +636,6 @@ impl ClaudeCodeState {
     fn is_opus_1m_probe_model(model: &str) -> bool {
         // Only Opus 4.6 lane should trigger 1M probing.
         model.starts_with("claude-opus-4-6")
-    }
-
-    fn configured_1m_mode(lane: Claude1mLane) -> Option<bool> {
-        let cfg = CLEWDR_CONFIG.load();
-        match lane {
-            Claude1mLane::Sonnet => cfg.enable_1m_sonnet,
-            Claude1mLane::Opus => cfg.enable_1m_opus,
-        }
     }
 
     fn classify_model(model: &str) -> ModelFamily {

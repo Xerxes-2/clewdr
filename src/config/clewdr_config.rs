@@ -97,10 +97,6 @@ pub struct ClewdrConfig {
     pub enable_web_count_tokens: bool,
     #[serde(default)]
     pub sanitize_messages: bool,
-    #[serde(default)]
-    pub enable_1m_sonnet: Option<bool>,
-    #[serde(default)]
-    pub enable_1m_opus: Option<bool>,
 
     // Cookie settings, can hot reload
     #[serde(default)]
@@ -160,8 +156,6 @@ impl Default for ClewdrConfig {
             web_search: false,
             enable_web_count_tokens: false,
             sanitize_messages: false,
-            enable_1m_sonnet: None,
-            enable_1m_opus: None,
             skip_first_warning: false,
             skip_second_warning: false,
             skip_restricted: false,
@@ -231,13 +225,6 @@ impl Display for ClewdrConfig {
             "Web count_tokens: {}",
             enabled(self.enable_web_count_tokens)
         )?;
-        let mode = |value: Option<bool>| match value {
-            Some(true) => "enabled",
-            Some(false) => "disabled",
-            None => "auto-probe",
-        };
-        writeln!(f, "Sonnet 1M mode: {}", mode(self.enable_1m_sonnet))?;
-        writeln!(f, "Opus 1M mode: {}", mode(self.enable_1m_opus))?;
         Ok(())
     }
 }

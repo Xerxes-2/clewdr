@@ -103,6 +103,14 @@
     "meta": {
       "summary": "查看详情"
     },
+    "context": {
+      "title": "1M 开关",
+      "sonnetLane": "Sonnet 1M",
+      "opusLane": "Opus 1M",
+      "modeEnabled": "开启",
+      "modeDisabled": "关闭",
+      "saving": "保存中..."
+    },
     "noCookies": "没有{{type}}",
     "deleteConfirm": "您确定要删除此cookie吗？",
     "copy": "复制到剪贴板"
@@ -144,12 +152,7 @@
         "preserveChats": "保留聊天",
         "webSearch": "网页搜索",
         "webCountTokens": "允许 Web 渠道调用 count_tokens",
-        "sanitizeMessages": "消息清理（去除空白）",
-        "enable1mSonnet": "Sonnet 1M 模式",
-        "enable1mOpus": "Opus 1M 模式",
-        "modeAutoProbe": "自动试探（默认）",
-        "modeEnabled": "开启",
-        "modeDisabled": "关闭"
+        "sanitizeMessages": "消息清理（去除空白）"
       },
       "cookie": {
         "title": "Cookie设置",

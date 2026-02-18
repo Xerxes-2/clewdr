@@ -103,6 +103,14 @@
     "meta": {
       "summary": "Details"
     },
+    "context": {
+      "title": "1M switches",
+      "sonnetLane": "Sonnet 1M",
+      "opusLane": "Opus 1M",
+      "modeEnabled": "Enabled",
+      "modeDisabled": "Disabled",
+      "saving": "Saving..."
+    },
     "noCookies": "No {{type}}",
     "deleteConfirm": "Are you sure you want to delete this cookie?",
     "copy": "Copy to clipboard"
@@ -144,12 +152,7 @@
         "preserveChats": "Preserve Chats",
         "webSearch": "Web Search",
         "webCountTokens": "Enable web count_tokens",
-        "sanitizeMessages": "Sanitize messages (trim whitespace)",
-        "enable1mSonnet": "Sonnet 1M mode",
-        "enable1mOpus": "Opus 1M mode",
-        "modeAutoProbe": "Auto probe (default)",
-        "modeEnabled": "Enabled",
-        "modeDisabled": "Disabled"
+        "sanitizeMessages": "Sanitize messages (trim whitespace)"
       },
       "cookie": {
         "title": "Cookie Settings",
