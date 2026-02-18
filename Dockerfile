@@ -40,6 +40,10 @@ case ${TARGETPLATFORM} in \
     "linux/arm64") \
         RUST_TARGET="aarch64-unknown-linux-musl"
         export CXX="aarch64-linux-gnu-g++"
+        # Keep large-file symbols compatible with musl toolchain deps (boring/aws-lc).
+        export CFLAGS="-D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE"
+        export CXXFLAGS="${CFLAGS}"
+        export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,--allow-shlib-undefined"
         ;; \
     *) echo "Unsupported architecture: ${TARGETPLATFORM}" >&2; exit 1 ;; \
 esac
@@ -61,6 +65,10 @@ case ${TARGETPLATFORM} in \
     "linux/arm64") \
         RUST_TARGET="aarch64-unknown-linux-musl"
         export CXX="aarch64-linux-gnu-g++"
+        # Keep large-file symbols compatible with musl toolchain deps (boring/aws-lc).
+        export CFLAGS="-D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE"
+        export CXXFLAGS="${CFLAGS}"
+        export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,--allow-shlib-undefined"
         ;; \
     *) echo "Unsupported architecture: ${TARGETPLATFORM}" >&2; exit 1 ;; \
 esac
