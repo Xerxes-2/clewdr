@@ -259,8 +259,7 @@ where
         let is_from_cc = ua.contains("claude-code") || ua.contains("claude-cli");
         let NormalizeRequest(mut body, format) = NormalizeRequest::from_request(req, &()).await?;
         // Handle thinking mode by modifying the model name
-        if (body.model.starts_with("claude-sonnet-4") || body.model.starts_with("claude-opus-4-6"))
-            && body.temperature.is_some()
+        if  body.temperature.is_some()
         {
             body.top_p = None; // temperature and top_p cannot be used together in Opus-4.x
         }
