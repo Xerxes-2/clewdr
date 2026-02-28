@@ -10,7 +10,7 @@ use axum::{
     extract::{FromRequest, Request},
 };
 use http::HeaderMap;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::{
     config::CLEWDR_CONFIG,
@@ -268,6 +268,27 @@ where
 
         // Determine streaming status and API format
         let stream = body.stream.unwrap_or_default();
+
+        if let Some(custom_system) = CLEWDR_CONFIG
+            .load()
+            .custom_system
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+        {
+            let custom_system_block = ContentBlock::text(custom_system);
+            match body.system {
+                Some(Value::String(ref text)) => {
+                    let text_content = ContentBlock::text(text.to_owned());
+                    body.system = Some(json!([custom_system_block, text_content]));
+                }
+                Some(Value::Array(ref mut systems)) => {
+                    systems.insert(0, json!(custom_system_block));
+                }
+                _ => {
+                    body.system = Some(json!([custom_system_block]));
+                }
+            }
+        }
 
         if let Some(system) = body.system.as_mut() {
             strip_ephemeral_scope_from_system(system);
