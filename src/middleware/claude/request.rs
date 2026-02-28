@@ -9,8 +9,8 @@ use axum::{
     Json,
     extract::{FromRequest, Request},
 };
-use http::{HeaderMap, header::USER_AGENT};
-use serde_json::{Value, json};
+use http::HeaderMap;
+use serde_json::Value;
 
 use crate::{
     config::CLEWDR_CONFIG,
@@ -250,13 +250,6 @@ where
 
     async fn from_request(req: Request, _: &S) -> Result<Self, Self::Rejection> {
         let anthropic_beta = extract_anthropic_beta_header(req.headers());
-        let ua = req
-            .headers()
-            .get(USER_AGENT)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or_default()
-            .to_lowercase();
-        let is_from_cc = ua.contains("claude-code") || ua.contains("claude-cli");
         let NormalizeRequest(mut body, format) = NormalizeRequest::from_request(req, &()).await?;
         // Handle thinking mode by modifying the model name
         if  body.temperature.is_some()
@@ -275,31 +268,6 @@ where
 
         // Determine streaming status and API format
         let stream = body.stream.unwrap_or_default();
-
-        // If the request is not from Claude Code, add a prelude to the system messages
-        if !is_from_cc {
-            // Add a prelude text block to the system messages
-            const PRELUDE_TEXT: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
-            let prelude_blk = ContentBlock::text(
-                CLEWDR_CONFIG
-                    .load()
-                    .custom_system
-                    .clone()
-                    .unwrap_or_else(|| PRELUDE_TEXT.to_string()),
-            );
-            match body.system {
-                Some(Value::String(ref text)) => {
-                    let text_content = ContentBlock::text(text.to_owned());
-                    body.system = Some(json!([prelude_blk, text_content]));
-                }
-                Some(Value::Array(ref mut a)) => {
-                    a.insert(0, json!(prelude_blk));
-                }
-                _ => {
-                    body.system = Some(json!([prelude_blk]));
-                }
-            }
-        }
 
         if let Some(system) = body.system.as_mut() {
             strip_ephemeral_scope_from_system(system);
