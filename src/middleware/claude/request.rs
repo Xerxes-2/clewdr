@@ -70,6 +70,31 @@ static TEST_MESSAGE_OAI: LazyLock<Message> = LazyLock::new(|| Message::new_text(
 
 struct NormalizeRequest(CreateMessageParams, ClaudeApiFormat);
 
+fn drop_empty_system(body: &mut CreateMessageParams) {
+    let Some(system) = body.system.take() else {
+        return;
+    };
+
+    let is_empty = match &system {
+        Value::Null => true,
+        Value::String(text) => text.trim().is_empty(),
+        Value::Array(systems) => systems.is_empty()
+            || systems.iter().all(|entry| match entry {
+                Value::Null => true,
+                Value::String(text) => text.trim().is_empty(),
+                Value::Object(obj) if matches!(obj.get("type"), Some(Value::String(t)) if t == "text") => {
+                    obj.get("text")
+                        .and_then(Value::as_str)
+                        .is_none_or(|text| text.trim().is_empty())
+                }
+                _ => false,
+            }),
+        _ => false,
+    };
+
+    body.system = (!is_empty).then_some(system);
+}
+
 fn strip_ephemeral_scope_from_system(system: &mut Value) {
     let Some(items) = system.as_array_mut() else {
         return;
@@ -186,6 +211,7 @@ where
             body.model = body.model.trim_end_matches("-thinking").to_string();
             body.thinking.get_or_insert(Thinking::new(4096));
         }
+        drop_empty_system(&mut body);
         Ok(Self(body, format))
     }
 }
@@ -297,16 +323,14 @@ where
         let cache_systems = body
             .system
             .as_ref()
-            .ok_or(ClewdrError::BadRequest {
-                msg: "Empty system prompt",
-            })?
-            .as_array()
-            .ok_or(ClewdrError::BadRequest {
-                msg: "System prompt is not an array",
-            })?
-            .iter()
-            .filter(|s| s["cache_control"].as_object().is_some())
-            .collect::<Vec<_>>();
+            .and_then(Value::as_array)
+            .map(|systems| {
+                systems
+                    .iter()
+                    .filter(|s| s["cache_control"].as_object().is_some())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         let system_prompt_hash = (!cache_systems.is_empty()).then(|| {
             let mut hasher = DefaultHasher::new();
             cache_systems.hash(&mut hasher);
