@@ -168,7 +168,10 @@
         "realRoles": "使用真实角色",
         "customH": "自定义 Human（可选）",
         "customA": "自定义 Assistant（可选）",
-        "customPrompt": "自定义提示词"
+        "customPrompt": "Claude Web 自定义提示词",
+        "customPromptPlaceholder": "仅用于 Claude Web 请求体里的 prompt 字段",
+        "customSystem": "前置系统提示词（Claude Code/API）",
+        "customSystemPlaceholder": "会 prepend 到上游 system 前面；留空则关闭"
       }
     }
   },

@@ -226,8 +226,20 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ config, onChange }) => {
           value={config.custom_prompt}
           onChange={onChange}
           label={t("config.sections.prompt.customPrompt")}
+          placeholder={t("config.sections.prompt.customPromptPlaceholder")}
           isTextarea={true}
           rows={3}
+        />
+
+        <FormInput
+          id="custom_system"
+          name="custom_system"
+          value={config.custom_system || ""}
+          onChange={onChange}
+          label={t("config.sections.prompt.customSystem")}
+          placeholder={t("config.sections.prompt.customSystemPlaceholder")}
+          isTextarea={true}
+          rows={4}
         />
       </ConfigSection>
     </div>

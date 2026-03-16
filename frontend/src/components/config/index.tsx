@@ -124,7 +124,9 @@ const ConfigTab: React.FC = () => {
 
     // Handle empty strings for nullable fields
     if (
-      ["proxy", "rproxy", "custom_h", "custom_a"].includes(name) &&
+      ["proxy", "rproxy", "custom_h", "custom_a", "custom_system"].includes(
+        name
+      ) &&
       value === ""
     ) {
       setConfig({ ...config, [name]: null });

@@ -168,7 +168,10 @@
         "realRoles": "Use Real Roles",
         "customH": "Custom Human (optional)",
         "customA": "Custom Assistant (optional)",
-        "customPrompt": "Custom Prompt"
+        "customPrompt": "Claude Web Custom Prompt",
+        "customPromptPlaceholder": "Used only for the Claude Web request prompt field",
+        "customSystem": "Prepended System Prompt (Claude Code/API)",
+        "customSystemPlaceholder": "Prepended before the upstream system content; leave blank to disable"
       }
     }
   },
