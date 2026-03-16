@@ -14,7 +14,7 @@ use wreq::Method;
 
 use crate::{
     claude_code_state::{ClaudeCodeState, TokenStatus},
-    config::{CLEWDR_CONFIG, Claude1mChannel, ModelFamily},
+    config::{CLAUDE_CODE_USER_AGENT, CLEWDR_CONFIG, Claude1mChannel, ModelFamily},
     error::{CheckClaudeErr, ClewdrError, WreqSnafu},
     services::cookie_actor::CookieActorHandle,
     types::claude::{CountMessageTokensResponse, CreateMessageParams},
@@ -23,7 +23,6 @@ use crate::{
 pub(super) const CLAUDE_BETA_BASE: &str = "oauth-2025-04-20";
 const CLAUDE_BETA_CONTEXT_1M_TOKEN: &str = "context-1m-2025-08-07";
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
-const CLAUDE_CODE_USER_AGENT: &str = "claude-code/2.0.32";
 pub(super) const CLAUDE_API_VERSION: &str = "2023-06-01";
 
 impl ClaudeCodeState {
@@ -190,6 +189,7 @@ impl ClaudeCodeState {
                     .to_string(),
             )
             .bearer_auth(access_token)
+            .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
             .header("anthropic-beta", beta_header)
             .header("anthropic-version", CLAUDE_API_VERSION)
             .json(body)
@@ -576,6 +576,7 @@ impl ClaudeCodeState {
                     .to_string(),
             )
             .bearer_auth(access_token)
+            .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
             .header("anthropic-beta", beta_header)
             .header("anthropic-version", CLAUDE_API_VERSION)
             .json(body)

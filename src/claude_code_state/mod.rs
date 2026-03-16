@@ -3,7 +3,7 @@ mod exchange;
 mod organization;
 use http::{
     HeaderValue, Method,
-    header::{COOKIE, ORIGIN, REFERER},
+    header::{COOKIE, ORIGIN, REFERER, USER_AGENT},
 };
 use snafu::ResultExt;
 use tracing::error;
@@ -12,7 +12,7 @@ use wreq_util::Emulation;
 
 use crate::{
     claude_web_state::SUPER_CLIENT,
-    config::{CLAUDE_ENDPOINT, CLEWDR_CONFIG, CookieStatus, Reason},
+    config::{CLAUDE_CODE_USER_AGENT, CLAUDE_ENDPOINT, CLEWDR_CONFIG, CookieStatus, Reason},
     error::{ClewdrError, WreqSnafu},
     middleware::claude::ClaudeApiFormat,
     services::cookie_actor::CookieActorHandle,
@@ -102,7 +102,8 @@ impl ClaudeCodeState {
             .client
             .request(method, url.to_string())
             .header(ORIGIN, CLAUDE_ENDPOINT)
-            .header(REFERER, format!("{CLAUDE_ENDPOINT}new"));
+            .header(REFERER, format!("{CLAUDE_ENDPOINT}new"))
+            .header(USER_AGENT, CLAUDE_CODE_USER_AGENT);
         if !self.cookie_header_value.as_bytes().is_empty() {
             req = req.header(COOKIE, self.cookie_header_value.clone());
         }

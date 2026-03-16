@@ -1,4 +1,5 @@
 use std::{
+    env,
     hash::{DefaultHasher, Hash, Hasher},
     mem,
     sync::LazyLock,
@@ -11,9 +12,10 @@ use axum::{
 };
 use http::HeaderMap;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::{
-    config::CLEWDR_CONFIG,
+    config::{CLAUDE_CODE_BILLING_SALT, CLAUDE_CODE_VERSION, CLEWDR_CONFIG},
     error::ClewdrError,
     middleware::claude::{ClaudeApiFormat, ClaudeContext},
     types::{
@@ -69,6 +71,73 @@ static TEST_MESSAGE_CLAUDE: LazyLock<Message> =
 static TEST_MESSAGE_OAI: LazyLock<Message> = LazyLock::new(|| Message::new_text(Role::User, "Hi"));
 
 struct NormalizeRequest(CreateMessageParams, ClaudeApiFormat);
+
+const CLAUDE_CODE_ENTRYPOINT_ENV: &str = "CLAUDE_CODE_ENTRYPOINT";
+
+fn prepend_system_blocks(body: &mut CreateMessageParams, blocks: Vec<ContentBlock>) {
+    if blocks.is_empty() {
+        return;
+    }
+
+    let mut prefixed = blocks
+        .into_iter()
+        .map(|block| json!(block))
+        .collect::<Vec<_>>();
+    match body.system.take() {
+        Some(Value::String(text)) if !text.trim().is_empty() => {
+            prefixed.push(json!(ContentBlock::text(text)));
+        }
+        Some(Value::Array(mut systems)) => {
+            prefixed.append(&mut systems);
+        }
+        Some(Value::Null) | None => {}
+        Some(other) => prefixed.push(other),
+    }
+    body.system = Some(Value::Array(prefixed));
+}
+
+fn first_user_message_text(messages: &[Message]) -> &str {
+    messages
+        .iter()
+        .find(|message| message.role == Role::User)
+        .and_then(|message| match &message.content {
+            MessageContent::Text { content } => Some(content.as_str()),
+            MessageContent::Blocks { content } => content.iter().find_map(|block| match block {
+                ContentBlock::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            }),
+        })
+        .unwrap_or_default()
+}
+
+fn sample_js_code_unit(text: &str, idx: usize) -> String {
+    text.encode_utf16()
+        .nth(idx)
+        .map(|unit| String::from_utf16_lossy(&[unit]))
+        .unwrap_or_else(|| "0".to_string())
+}
+
+fn claude_code_billing_header(messages: &[Message]) -> String {
+    let sampled = [4, 7, 20]
+        .into_iter()
+        .map(|idx| sample_js_code_unit(first_user_message_text(messages), idx))
+        .collect::<String>();
+    let version_hash = format!(
+        "{:x}",
+        Sha256::digest(format!(
+            "{CLAUDE_CODE_BILLING_SALT}{sampled}{CLAUDE_CODE_VERSION}"
+        ))
+    );
+    let entrypoint = env::var(CLAUDE_CODE_ENTRYPOINT_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "cli".to_string());
+
+    format!(
+        "x-anthropic-billing-header: cc_version={CLAUDE_CODE_VERSION}.{}; cc_entrypoint={entrypoint}; cch=00000;",
+        &version_hash[..3]
+    )
+}
 
 fn drop_empty_system(body: &mut CreateMessageParams) {
     let Some(system) = body.system.take() else {
@@ -278,8 +347,7 @@ where
         let anthropic_beta = extract_anthropic_beta_header(req.headers());
         let NormalizeRequest(mut body, format) = NormalizeRequest::from_request(req, &()).await?;
         // Handle thinking mode by modifying the model name
-        if  body.temperature.is_some()
-        {
+        if body.temperature.is_some() {
             body.top_p = None; // temperature and top_p cannot be used together in Opus-4.x
         }
 
@@ -295,26 +363,18 @@ where
         // Determine streaming status and API format
         let stream = body.stream.unwrap_or_default();
 
+        let mut system_prefixes = vec![ContentBlock::text(claude_code_billing_header(
+            &body.messages,
+        ))];
         if let Some(custom_system) = CLEWDR_CONFIG
             .load()
             .custom_system
             .clone()
             .filter(|s| !s.trim().is_empty())
         {
-            let custom_system_block = ContentBlock::text(custom_system);
-            match body.system {
-                Some(Value::String(ref text)) => {
-                    let text_content = ContentBlock::text(text.to_owned());
-                    body.system = Some(json!([custom_system_block, text_content]));
-                }
-                Some(Value::Array(ref mut systems)) => {
-                    systems.insert(0, json!(custom_system_block));
-                }
-                _ => {
-                    body.system = Some(json!([custom_system_block]));
-                }
-            }
+            system_prefixes.push(ContentBlock::text(custom_system));
         }
+        prepend_system_blocks(&mut body, system_prefixes);
 
         if let Some(system) = body.system.as_mut() {
             strip_ephemeral_scope_from_system(system);
@@ -351,5 +411,70 @@ where
         };
 
         Ok(Self(body, ClaudeContext::Code(info)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn claude_code_billing_header_matches_2176_rule() {
+        let messages = vec![Message::new_text(Role::User, "hey")];
+
+        assert_eq!(
+            claude_code_billing_header(&messages),
+            "x-anthropic-billing-header: cc_version=2.1.76.4dc; cc_entrypoint=cli; cch=00000;"
+        );
+    }
+
+    #[test]
+    fn claude_code_billing_header_uses_first_text_block_of_first_user_message() {
+        let messages = vec![
+            Message::new_blocks(
+                Role::User,
+                vec![
+                    ContentBlock::Image {
+                        source: crate::types::claude::ImageSource::Url {
+                            url: "https://example.com/a.png".to_string(),
+                        },
+                        cache_control: None,
+                    },
+                    ContentBlock::text("abcdefg"),
+                    ContentBlock::text("ignored"),
+                ],
+            ),
+            Message::new_text(Role::User, "later"),
+        ];
+
+        assert_eq!(
+            claude_code_billing_header(&messages),
+            "x-anthropic-billing-header: cc_version=2.1.76.540; cc_entrypoint=cli; cch=00000;"
+        );
+    }
+
+    #[test]
+    fn prepend_system_blocks_keeps_billing_before_custom_system() {
+        let mut body = CreateMessageParams {
+            messages: vec![Message::new_text(Role::User, "hey")],
+            model: "claude-sonnet-4-5".to_string(),
+            system: Some(json!("original system")),
+            ..Default::default()
+        };
+
+        prepend_system_blocks(
+            &mut body,
+            vec![
+                ContentBlock::text("billing"),
+                ContentBlock::text("custom system"),
+            ],
+        );
+
+        let systems = body.system.unwrap().as_array().cloned().unwrap();
+        let texts = systems
+            .iter()
+            .map(|value| value["text"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(texts, vec!["billing", "custom system", "original system"]);
     }
 }

@@ -20,13 +20,14 @@ use url::Url;
 
 use crate::{
     claude_code_state::ClaudeCodeState,
-    config::{CC_REDIRECT_URI, CC_TOKEN_URL, CLEWDR_CONFIG, CookieStatus, TokenInfo},
+    config::{
+        CC_REDIRECT_URI, CC_TOKEN_URL, CLAUDE_CODE_USER_AGENT, CLEWDR_CONFIG, CookieStatus,
+        TokenInfo,
+    },
     error::{CheckClaudeErr, ClewdrError, UnexpectedNoneSnafu, UrlSnafu, WreqSnafu},
 };
 
 use super::chat::{CLAUDE_API_VERSION, CLAUDE_BETA_BASE};
-
-const CLAUDE_CODE_USER_AGENT: &str = "claude-code/2.0.32";
 
 type ClaudeOauthClient = Client<
     BasicErrorResponse,

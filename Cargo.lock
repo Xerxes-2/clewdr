@@ -599,6 +599,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "sha2",
  "snafu",
  "struct_iterable",
  "strum 0.27.2",

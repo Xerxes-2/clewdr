@@ -18,6 +18,9 @@ pub const GEMINI_ENDPOINT: &str = "https://generativelanguage.googleapis.com/";
 pub const CC_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 pub const CC_TOKEN_URL: &str = "https://api.anthropic.com/v1/oauth/token";
 pub const CC_REDIRECT_URI: &str = "https://console.anthropic.com/oauth/code/callback";
+pub const CLAUDE_CODE_VERSION: &str = "2.1.76";
+pub const CLAUDE_CODE_USER_AGENT: &str = "claude-code/2.1.76";
+pub const CLAUDE_CODE_BILLING_SALT: &str = "59cf53e54c78";
 
 pub static ENDPOINT_URL: LazyLock<Url> = LazyLock::new(|| {
     Url::parse(CLAUDE_ENDPOINT).unwrap_or_else(|_| {
