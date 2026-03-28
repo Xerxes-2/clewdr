@@ -127,6 +127,8 @@ pub struct ClewdrConfig {
     pub claude_code_client_id: Option<String>,
     #[serde(default)]
     pub custom_system: Option<String>,
+    #[serde(default)]
+    pub auto_trigger_cd: bool,
 
     // Skip field, can hot reload
     #[serde(skip)]
@@ -164,6 +166,7 @@ impl Default for ClewdrConfig {
             skip_normal_pro: false,
             claude_code_client_id: None,
             custom_system: None,
+            auto_trigger_cd: false,
             no_fs: false,
             log_to_file: false,
         }
@@ -225,6 +228,7 @@ impl Display for ClewdrConfig {
             "Web count_tokens: {}",
             enabled(self.enable_web_count_tokens)
         )?;
+        writeln!(f, "Auto trigger CD: {}", enabled(self.auto_trigger_cd))?;
         Ok(())
     }
 }
