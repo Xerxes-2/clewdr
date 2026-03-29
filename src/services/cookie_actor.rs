@@ -424,6 +424,9 @@ impl Actor for CookieActor {
             }
             CookieActorMessage::Submit(cookie) => {
                 Self::accept(state, cookie);
+                if CLEWDR_CONFIG.load().auto_trigger_cd {
+                    ractor::cast!(myself, CookieActorMessage::CheckReset).ok();
+                }
             }
             CookieActorMessage::CheckReset => {
                 let (changed, window_reset_cookies) = Self::refresh_usage_windows(state);
@@ -432,20 +435,39 @@ impl Actor for CookieActor {
                 }
                 let rate_limit_reset_cookies = Self::reset(state);
                 if CLEWDR_CONFIG.load().auto_trigger_cd {
+                    // Also detect valid cookies that have never had CD triggered
+                    // (session_resets_at is None, meaning no session window is active)
+                    let now = Utc::now().timestamp();
+                    let mut fresh_cookies = Vec::new();
+                    for cookie in state.valid.iter_mut() {
+                        if cookie.session_resets_at.is_none() {
+                            // Set optimistic session_resets_at to prevent re-triggering
+                            cookie.session_resets_at = Some(now + SESSION_WINDOW_SECS);
+                            fresh_cookies.push(cookie.clone());
+                        }
+                    }
                     let trigger_cookies: Vec<_> = window_reset_cookies
                         .into_iter()
                         .chain(rate_limit_reset_cookies)
+                        .chain(fresh_cookies)
                         .collect();
                     if !trigger_cookies.is_empty() {
+                        info!("Auto CD: found {} cookie(s) to trigger", trigger_cookies.len());
+                        Self::save(state);
                         let handle = CookieActorHandle::from_actor_ref(myself.clone());
                         for cookie in trigger_cookies {
                             let h = handle.clone();
                             tokio::spawn(async move {
                                 use crate::claude_code_state::ClaudeCodeState;
-                                if let Ok(mut s) = ClaudeCodeState::from_cookie(h, cookie) {
-                                    if let Err(e) = s.trigger_cd().await {
-                                        warn!("CD trigger failed: {}", e);
+                                match ClaudeCodeState::from_cookie(h, cookie) {
+                                    Ok(mut s) => {
+                                        info!("Auto CD: sending trigger message...");
+                                        match s.trigger_cd().await {
+                                            Ok(_) => info!("Auto CD: trigger sent successfully"),
+                                            Err(e) => warn!("Auto CD: trigger failed: {}", e),
+                                        }
                                     }
+                                    Err(e) => warn!("Auto CD: failed to create state: {}", e),
                                 }
                             });
                         }
