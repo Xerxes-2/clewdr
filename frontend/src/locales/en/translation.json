@@ -152,7 +152,8 @@
         "preserveChats": "Preserve Chats",
         "webSearch": "Web Search",
         "webCountTokens": "Enable web count_tokens",
-        "sanitizeMessages": "Sanitize messages (trim whitespace)"
+        "sanitizeMessages": "Sanitize messages (trim whitespace)",
+        "autoTriggerCd": "Auto trigger cooldown on quota reset"
       },
       "cookie": {
         "title": "Cookie Settings",

@@ -90,8 +90,9 @@ impl CookieActor {
         );
     }
 
-    /// Checks and resets cookies that have passed their reset time
-    fn reset(state: &mut CookieActorState) {
+    /// Checks and resets cookies that have passed their reset time.
+    /// Returns the list of cookies that were moved from exhausted to valid.
+    fn reset(state: &mut CookieActorState) -> Vec<CookieStatus> {
         let mut reset_cookies = Vec::new();
         state.exhausted.retain(|cookie| {
             let reset_cookie = cookie.clone().reset();
@@ -103,18 +104,20 @@ impl CookieActor {
             }
         });
         if reset_cookies.is_empty() {
-            return;
+            return Vec::new();
         }
         // 将重置的 cookies 放回 valid，并进行增量 upsert
-        for c in reset_cookies.into_iter() {
+        for c in reset_cookies.iter() {
             state.valid.push_back(c.clone());
         }
         Self::log(state);
+        reset_cookies
     }
 
     /// Reset in-memory usage buckets when local reset boundaries have elapsed.
-    /// This avoids stale counters when cooldown windows expire between requests.
-    fn refresh_usage_windows(state: &mut CookieActorState) -> bool {
+    /// Returns (changed, cd_trigger_cookies) where cd_trigger_cookies are valid cookies
+    /// whose quota window just reset (candidates for the CD pre-trigger).
+    fn refresh_usage_windows(state: &mut CookieActorState) -> (bool, Vec<CookieStatus>) {
         fn reset_if_due(
             has_reset: Option<bool>,
             resets_at: &mut Option<i64>,
@@ -165,8 +168,12 @@ impl CookieActor {
             cookie_changed
         };
 
+        let mut cd_trigger_cookies = Vec::new();
         for cookie in state.valid.iter_mut() {
-            changed |= apply_resets(cookie);
+            if apply_resets(cookie) {
+                changed = true;
+                cd_trigger_cookies.push(cookie.clone());
+            }
         }
 
         if !state.exhausted.is_empty() {
@@ -178,7 +185,7 @@ impl CookieActor {
             state.exhausted = new_exhausted;
         }
 
-        changed
+        (changed, cd_trigger_cookies)
     }
 
     /// Dispatches a cookie for use
@@ -407,7 +414,7 @@ impl Actor for CookieActor {
 
     async fn handle(
         &self,
-        _myself: ActorRef<Self::Msg>,
+        myself: ActorRef<Self::Msg>,
         message: Self::Msg,
         state: &mut Self::State,
     ) -> Result<(), ActorProcessingErr> {
@@ -417,20 +424,62 @@ impl Actor for CookieActor {
             }
             CookieActorMessage::Submit(cookie) => {
                 Self::accept(state, cookie);
+                if CLEWDR_CONFIG.load().auto_trigger_cd {
+                    ractor::cast!(myself, CookieActorMessage::CheckReset).ok();
+                }
             }
             CookieActorMessage::CheckReset => {
-                let changed = Self::refresh_usage_windows(state);
+                let (changed, window_reset_cookies) = Self::refresh_usage_windows(state);
                 if changed {
                     Self::save(state);
                 }
-                Self::reset(state);
+                let rate_limit_reset_cookies = Self::reset(state);
+                if CLEWDR_CONFIG.load().auto_trigger_cd {
+                    // Also detect valid cookies that have never had CD triggered
+                    // (session_resets_at is None, meaning no session window is active)
+                    let now = Utc::now().timestamp();
+                    let mut fresh_cookies = Vec::new();
+                    for cookie in state.valid.iter_mut() {
+                        if cookie.session_resets_at.is_none() {
+                            // Set optimistic session_resets_at to prevent re-triggering
+                            cookie.session_resets_at = Some(now + SESSION_WINDOW_SECS);
+                            fresh_cookies.push(cookie.clone());
+                        }
+                    }
+                    let trigger_cookies: Vec<_> = window_reset_cookies
+                        .into_iter()
+                        .chain(rate_limit_reset_cookies)
+                        .chain(fresh_cookies)
+                        .collect();
+                    if !trigger_cookies.is_empty() {
+                        info!("Auto CD: found {} cookie(s) to trigger", trigger_cookies.len());
+                        Self::save(state);
+                        let handle = CookieActorHandle::from_actor_ref(myself.clone());
+                        for cookie in trigger_cookies {
+                            let h = handle.clone();
+                            tokio::spawn(async move {
+                                use crate::claude_code_state::ClaudeCodeState;
+                                match ClaudeCodeState::from_cookie(h, cookie) {
+                                    Ok(mut s) => {
+                                        info!("Auto CD: sending trigger message...");
+                                        match s.trigger_cd().await {
+                                            Ok(_) => info!("Auto CD: trigger sent successfully"),
+                                            Err(e) => warn!("Auto CD: trigger failed: {}", e),
+                                        }
+                                    }
+                                    Err(e) => warn!("Auto CD: failed to create state: {}", e),
+                                }
+                            });
+                        }
+                    }
+                }
             }
             CookieActorMessage::Request(cache_hash, reply_port) => {
                 let result = self.dispatch(state, cache_hash);
                 reply_port.send(result)?;
             }
             CookieActorMessage::GetStatus(reply_port) => {
-                let changed = Self::refresh_usage_windows(state);
+                let (changed, _) = Self::refresh_usage_windows(state);
                 if changed {
                     Self::save(state);
                 }
@@ -466,6 +515,10 @@ pub struct CookieActorHandle {
 }
 
 impl CookieActorHandle {
+    fn from_actor_ref(actor_ref: ActorRef<CookieActorMessage>) -> Self {
+        Self { actor_ref }
+    }
+
     /// Create a new CookieActor and return a handle to it
     pub async fn start() -> Result<Self, ractor::SpawnErr> {
         let (actor_ref, _join_handle) = Actor::spawn(None, CookieActor, ()).await?;

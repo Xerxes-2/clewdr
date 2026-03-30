@@ -228,6 +228,46 @@ impl ClaudeCodeState {
         }
     }
 
+    pub async fn trigger_cd(&mut self) -> Result<(), ClewdrError> {
+        match self.check_token() {
+            TokenStatus::None => {
+                let org = self.get_organization().await?;
+                let code = self.exchange_code(&org).await?;
+                self.exchange_token(code).await?;
+            }
+            TokenStatus::Expired => {
+                self.refresh_token().await?;
+            }
+            TokenStatus::Valid => {}
+        }
+        let access_token = self
+            .cookie
+            .as_ref()
+            .and_then(|c| c.token.as_ref())
+            .ok_or(ClewdrError::UnexpectedNone {
+                msg: "No token for CD trigger",
+            })?
+            .access_token
+            .to_owned();
+        let p = crate::types::claude::CreateMessageParams {
+            model: "claude-haiku-4-5-20251001".to_string(),
+            max_tokens: 1,
+            messages: vec![crate::types::claude::Message {
+                role: crate::types::claude::Role::User,
+                content: crate::types::claude::MessageContent::Text {
+                    content: "Hi".to_string(),
+                },
+            }],
+            stream: Some(false),
+            ..Default::default()
+        };
+        let result = self.execute_claude_request(&access_token, &p, false).await;
+        if let Err(ClewdrError::InvalidCookie { reason }) = &result {
+            self.return_cookie(Some(reason.clone())).await;
+        }
+        result.map(|_| ())
+    }
+
     pub async fn fetch_usage_metrics(&mut self) -> Result<serde_json::Value, ClewdrError> {
         match self.check_token() {
             TokenStatus::None => {
