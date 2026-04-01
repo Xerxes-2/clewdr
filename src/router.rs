@@ -35,6 +35,7 @@ impl RouterBuilder {
         let cookie_handle = CookieActorHandle::start()
             .await
             .expect("Failed to start CookieActor");
+        crate::services::cd_scheduler::CdScheduler::spawn(cookie_handle.clone());
         let claude_providers = crate::providers::claude::build_providers(cookie_handle.clone());
         RouterBuilder {
             claude_providers,

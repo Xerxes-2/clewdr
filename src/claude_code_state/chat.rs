@@ -228,6 +228,64 @@ impl ClaudeCodeState {
         }
     }
 
+    pub async fn trigger_cd(&mut self) -> Result<(), ClewdrError> {
+        match self.check_token() {
+            TokenStatus::None => {
+                let org = self.get_organization().await?;
+                let code = self.exchange_code(&org).await?;
+                self.exchange_token(code).await?;
+            }
+            TokenStatus::Expired => {
+                self.refresh_token().await?;
+            }
+            TokenStatus::Valid => {}
+        }
+
+        let access_token = self
+            .cookie
+            .as_ref()
+            .and_then(|c| c.token.as_ref())
+            .ok_or(ClewdrError::UnexpectedNone {
+                msg: "No access token available",
+            })?
+            .access_token
+            .to_owned();
+
+        let body = crate::types::claude::CreateMessageParams {
+            max_tokens: 1,
+            messages: vec![crate::types::claude::Message {
+                role: crate::types::claude::Role::User,
+                content: crate::types::claude::MessageContent::Text {
+                    content: "Hi".to_string(),
+                },
+            }],
+            model: "claude-haiku-4-5-20251001".to_string(),
+            stream: Some(false),
+            container: None,
+            context_management: None,
+            mcp_servers: None,
+            system: None,
+            temperature: None,
+            stop_sequences: None,
+            thinking: None,
+            top_k: None,
+            top_p: None,
+            tools: None,
+            tool_choice: None,
+            metadata: None,
+            output_config: None,
+            output_format: None,
+            service_tier: None,
+            n: None,
+        };
+
+        let resp = self.execute_claude_request(&access_token, &body, false).await;
+        match resp {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
     pub async fn fetch_usage_metrics(&mut self) -> Result<serde_json::Value, ClewdrError> {
         match self.check_token() {
             TokenStatus::None => {
