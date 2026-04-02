@@ -122,12 +122,9 @@ fn claude_code_billing_header(messages: &[Message]) -> String {
         .into_iter()
         .map(|idx| sample_js_code_unit(first_user_message_text(messages), idx))
         .collect::<String>();
-    let version_hash = format!(
-        "{:x}",
-        Sha256::digest(format!(
-            "{CLAUDE_CODE_BILLING_SALT}{sampled}{CLAUDE_CODE_VERSION}"
-        ))
-    );
+    let version_hash = hex::encode(Sha256::digest(format!(
+        "{CLAUDE_CODE_BILLING_SALT}{sampled}{CLAUDE_CODE_VERSION}"
+    )));
     let entrypoint = env::var(CLAUDE_CODE_ENTRYPOINT_ENV)
         .ok()
         .filter(|value| !value.trim().is_empty())
