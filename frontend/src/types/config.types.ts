@@ -21,6 +21,7 @@ export interface ConfigData {
   web_search: boolean;
   enable_web_count_tokens: boolean;
   sanitize_messages: boolean;
+  auto_trigger_cd: boolean;
 
   // Cookie settings
   skip_first_warning: boolean;

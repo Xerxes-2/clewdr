@@ -146,6 +146,13 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ config, onChange }) => {
             onChange={onChange}
             label={t("config.sections.api.sanitizeMessages")}
           />
+
+          <ConfigCheckbox
+            name="auto_trigger_cd"
+            checked={!!config.auto_trigger_cd}
+            onChange={onChange}
+            label={t("config.sections.api.autoTriggerCd")}
+          />
         </div>
       </ConfigSection>
 

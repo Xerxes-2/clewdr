@@ -97,6 +97,8 @@ pub struct ClewdrConfig {
     pub enable_web_count_tokens: bool,
     #[serde(default)]
     pub sanitize_messages: bool,
+    #[serde(default)]
+    pub auto_trigger_cd: bool,
 
     // Cookie settings, can hot reload
     #[serde(default)]
@@ -156,6 +158,7 @@ impl Default for ClewdrConfig {
             web_search: false,
             enable_web_count_tokens: false,
             sanitize_messages: false,
+            auto_trigger_cd: false,
             skip_first_warning: false,
             skip_second_warning: false,
             skip_restricted: false,
