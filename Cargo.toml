@@ -57,7 +57,7 @@ tower-http = { version = "0.6", features = [
 tower-serve-static = { version = "0.1", optional = true }
 tracing = "0.1"
 tracing-appender = "0.2"
-tracing-subscriber = { version = "=0.3.19", features = [
+tracing-subscriber = { version = "0.3", features = [
   "chrono",
   "env-filter",
 ] }

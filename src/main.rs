@@ -83,6 +83,7 @@ async fn main() -> Result<(), ClewdrError> {
             .with_writer(std::io::stdout)
             .with_timer(timer.to_owned())
             .with_ansi(stdout_is_tty)
+            .with_ansi_sanitization(false)
             .with_filter(env_filter),
     );
     let _guard = if !CLEWDR_CONFIG.load().no_fs && CLEWDR_CONFIG.load().log_to_file {
