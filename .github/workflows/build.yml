@@ -142,7 +142,7 @@ jobs:
       - name: Prepare build env
         shell: bash
         run: |
-          echo "FEATURE_ARGS=--no-default-features --features embed-resource,portable,mimalloc" >> $GITHUB_ENV
+          echo "FEATURE_ARGS=--no-default-features --features embed-resource,portable" >> $GITHUB_ENV
 
       - name: Download static files
         uses: actions/download-artifact@v4

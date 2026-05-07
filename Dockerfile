@@ -28,9 +28,9 @@ RUN apt-get update && apt-get install -y \
 
 # Determine musl target from Docker platform
 RUN case "$TARGETARCH" in \
-      amd64) echo "x86_64-unknown-linux-musl" > /tmp/rust-target ;; \
-      arm64) echo "aarch64-unknown-linux-musl" > /tmp/rust-target ;; \
-      *) echo "Unsupported arch: $TARGETARCH" && exit 1 ;; \
+    amd64) echo "x86_64-unknown-linux-musl" > /tmp/rust-target ;; \
+    arm64) echo "aarch64-unknown-linux-musl" > /tmp/rust-target ;; \
+    *) echo "Unsupported arch: $TARGETARCH" && exit 1 ;; \
     esac && \
     rustup target add "$(cat /tmp/rust-target)"
 
@@ -40,7 +40,7 @@ COPY --from=planner /build/recipe.json recipe.json
 RUN RUST_TARGET=$(cat /tmp/rust-target) && \
     CC=musl-gcc CXX=clang++ \
     cargo chef cook --release --target "$RUST_TARGET" \
-    --no-default-features --features embed-resource,xdg,mimalloc \
+    --no-default-features --features embed-resource,xdg \
     --recipe-path recipe.json
 
 # Build application

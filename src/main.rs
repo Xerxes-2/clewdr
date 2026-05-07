@@ -5,7 +5,6 @@ use clewdr::{
     version_info_colored,
 };
 use colored::Colorize;
-#[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
 use std::io::IsTerminal;
 use tracing::Subscriber;
@@ -16,12 +15,8 @@ use tracing_subscriber::{
     registry::LookupSpan,
 };
 
-#[cfg(feature = "mimalloc")]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
-#[cfg(feature = "dhat-heap")]
-#[global_allocator]
-static ALLOC: dhat::Alloc = dhat::Alloc;
 
 fn setup_subscriber<S>(subscriber: S)
 where

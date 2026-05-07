@@ -8,101 +8,97 @@ license = "AGPL-3.0"
 [lib]
 path = "src/lib.rs"
 
-[profile.release]
-strip = true
-opt-level = "z"
-lto = true
-codegen-units = 1
-panic = "abort"
-
 [dependencies]
+arc-swap = "1"
+async-stream = "0.3"
+async-trait = "0.1"
+axum = { version = "0.8", features = ["macros"] }
+axum-auth = "0.8"
+base64 = "0.22"
+bytes = "1"
+chrono = "0.4"
+clap = { version = "4", features = ["derive"] }
+colored = "3"
+console-subscriber = { version = "0.5", optional = true }
+const_format = { version = "0.2", features = ["fmt"] }
+etcetera = { version = "0", optional = true }
+eventsource-stream = "0.2"
+figment = { version = "0.10", features = ["env", "toml"] }
+futures = "0.3"
+hex = "0.4"
+http = "1"
+include_dir = { version = "0.7", optional = true }
+itertools = "0.14"
+mimalloc = { version = "0.1" }
+moka = { version = "0.12", features = ["sync"] }
+oauth2 = { version = "5", default-features = false }
+passwords = "3"
+ractor = "0.15"
+regex = "1"
+self-replace = { version = "1", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_with = { version = "3", features = ["chrono_0_4"] }
+sha2 = "0.11"
+snafu = { version = "0.9", features = ["futures", "rust_1_81"] }
+struct_iterable = "0.1"
+strum = { version = "0.28", features = ["derive"] }
+tempfile = { version = "3", optional = true }
+thiserror = "2"
+tiktoken-rs = "0.9"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+toml = "1"
+tower = "0.5"
+tower-http = { version = "0.6", features = [
+  "compression-zstd",
+  "cors",
+  "trace",
+] }
+tower-serve-static = { version = "0.1", optional = true }
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "=0.3.19", features = [
+  "chrono",
+  "env-filter",
+] }
+trie-rs = "0.4"
+url = { version = "2", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
 wreq = { version = "6.0.0-rc.28", features = [
-    "cookies",
-    "json",
-    "multipart",
-    "socks",
-    "stream",
+  "cookies",
+  "json",
+  "multipart",
+  "socks",
+  "stream",
 ] }
 wreq-util = "3.0.0-rc.10"
-serde_json = "1"
-const_format = { version = "0.2", features = ["fmt"] }
-serde = { version = "1", features = ["derive"] }
-colored = "3"
-axum = { version = "0.8", features = ["macros"] }
-regex = "1"
-tracing = "0.1"
-tracing-subscriber = { version = "=0.3.19", features = [
-    "chrono",
-    "env-filter",
-] }
-chrono = "0.4"
-futures = "0.3"
-thiserror = "2"
-uuid = { version = "1", features = ["v4"] }
-clap = { version = "4", features = ["derive"] }
-base64 = "0.22"
-itertools = "0.14"
-async-trait = "0.1"
-toml = "1"
-eventsource-stream = "0.2"
-tracing-appender = "0.2"
-self-replace = { version = "1", optional = true }
-zip = { version = "8", optional = true, default-features = false, features = [
-    "deflate",
-] }
-tempfile = { version = "3", optional = true }
-axum-auth = "0.8"
-tiktoken-rs = "0.9"
-passwords = "3"
-tower-http = { version = "0.6", features = [
-    "compression-zstd",
-    "cors",
-    "trace",
-] }
-include_dir = { version = "0.7", optional = true }
-tower-serve-static = { version = "0.1", optional = true }
-figment = { version = "0.10", features = ["env", "toml"] }
-arc-swap = "1"
-url = { version = "2", features = ["serde"] }
-strum = { version = "0.28", features = ["derive"] }
-moka = { version = "0.12", features = ["sync"] }
-tower = "0.5"
-bytes = "1"
-trie-rs = "0.4"
-async-stream = "0.3"
-struct_iterable = "0.1"
-console-subscriber = { version = "0.5", optional = true }
-http = "1"
-snafu = { version = "0.9", features = ["futures", "rust_1_81"] }
-serde_with = { version = "3", features = ["chrono_0_4"] }
-oauth2 = { version = "5", default-features = false }
-ractor = "0.15"
-sha2 = "0.11"
-mimalloc = { version = "0.1", optional = true, features = ["v3"] }
-dhat = { version = "0", optional = true }
-etcetera = { version = "0", optional = true }
-hex = "0.4"
-
-[target.'cfg(windows)'.dependencies]
-enable-ansi-support = "0.3"
-
-[target.'cfg(target_os = "android")'.dependencies]
-rustls = { version = "0.23", default-features = false, features = ["ring"] }
+zip = { version = "8", default-features = false, features = [
+  "deflate",
+], optional = true }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 aws-lc-rs = "1"
 rustls = { version = "0.23", default-features = false, features = [
-    "aws_lc_rs",
+  "aws_lc_rs",
 ] }
 
+[target.'cfg(target_os = "android")'.dependencies]
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+
+[target.'cfg(windows)'.dependencies]
+enable-ansi-support = "0.3"
 
 [features]
-default = ["portable", "external-resource", "mimalloc"]
-tokio-console = ["dep:console-subscriber", "tokio/tracing"]
-portable = ["dep:zip", "dep:self-replace", "dep:tempfile"]
-xdg = ["dep:etcetera"]
-embed-resource = ["dep:tower-serve-static", "dep:include_dir"]
+default = ["external-resource", "portable"]
+embed-resource = ["dep:include_dir", "dep:tower-serve-static"]
 external-resource = ["tower-http/fs"]
-mimalloc = ["dep:mimalloc"]
-dhat-heap = ["dep:dhat"]
+portable = ["dep:self-replace", "dep:tempfile", "dep:zip"]
+tokio-console = ["dep:console-subscriber", "tokio/tracing"]
+xdg = ["dep:etcetera"]
+
+[profile.release]
+opt-level = "z"
+strip = true
+lto = true
+panic = "abort"
+codegen-units = 1
