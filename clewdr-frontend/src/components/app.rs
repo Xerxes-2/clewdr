@@ -45,12 +45,13 @@ pub fn App() -> impl IntoView {
 
     spawn_local(async move {
         if let Some(token) = storage::get("authToken")
-            && !token.is_empty() {
-                match api::validate_auth(&token).await {
-                    Ok(true) => is_authenticated.set(true),
-                    _ => storage::remove("authToken"),
-                }
+            && !token.is_empty()
+        {
+            match api::validate_auth(&token).await {
+                Ok(true) => is_authenticated.set(true),
+                _ => storage::remove("authToken"),
             }
+        }
     });
 
     // Init theme from localStorage

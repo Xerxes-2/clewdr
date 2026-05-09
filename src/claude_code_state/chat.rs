@@ -130,7 +130,10 @@ impl ClaudeCodeState {
             .post(
                 self.endpoint
                     .join("v1/messages")
-                    .expect("Url parse error")
+                    .map_err(|e| ClewdrError::Whatever {
+                        message: format!("Parse URL error: {e}"),
+                        source: Some(Box::new(e)),
+                    })?
                     .to_string(),
             )
             .bearer_auth(access_token)
@@ -288,7 +291,10 @@ impl ClaudeCodeState {
             p.model = stripped.to_string();
         }
 
-        match self.execute_claude_count_tokens_request(&access_token, &p).await {
+        match self
+            .execute_claude_count_tokens_request(&access_token, &p)
+            .await
+        {
             Ok(response) => {
                 self.persist_count_tokens_allowed(true).await;
                 let (resp, _) = Self::materialize_non_stream_response(response).await?;
@@ -455,7 +461,10 @@ impl ClaudeCodeState {
             .post(
                 self.endpoint
                     .join("v1/messages/count_tokens")
-                    .expect("Url parse error")
+                    .map_err(|e| ClewdrError::Whatever {
+                        message: format!("Parse URL error: {e}"),
+                        source: Some(Box::new(e)),
+                    })?
                     .to_string(),
             )
             .bearer_auth(access_token)

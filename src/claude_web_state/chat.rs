@@ -106,7 +106,10 @@ impl ClaudeWebState {
                 "api/organizations/{}/chat_conversations",
                 org_uuid
             ))
-            .expect("Url parse error");
+            .map_err(|e| ClewdrError::Whatever {
+                message: format!("Parse URL error: {e}"),
+                source: Some(Box::new(e)),
+            })?;
         let is_temporary = !CLEWDR_CONFIG.load().preserve_chats;
         let body = json!({
             "uuid": new_uuid,
@@ -155,7 +158,10 @@ impl ClaudeWebState {
                 "api/organizations/{}/chat_conversations/{}",
                 org_uuid, new_uuid
             ))
-            .expect("Url parse error");
+            .map_err(|e| ClewdrError::Whatever {
+                message: format!("Parse URL error: {e}"),
+                source: Some(Box::new(e)),
+            })?;
         let _ = self
             .build_request(Method::PUT, endpoint)
             .json(&body)

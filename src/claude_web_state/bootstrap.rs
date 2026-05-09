@@ -28,7 +28,10 @@ impl ClaudeWebState {
         let end_point = self
             .endpoint
             .join("api/bootstrap")
-            .expect("Url parse error");
+            .map_err(|e| ClewdrError::Whatever {
+                message: format!("Parse URL error: {e}"),
+                source: Some(Box::new(e)),
+            })?;
         let res = self
             .build_request(Method::GET, end_point)
             .send()

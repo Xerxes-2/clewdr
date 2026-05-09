@@ -303,7 +303,6 @@ impl CookieActor {
             })
         }
     }
-
 }
 
 impl Actor for CookieActor {

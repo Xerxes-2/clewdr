@@ -160,9 +160,13 @@ impl ClaudeCodeState {
                 msg: "Failed to parse authorization response",
             })?;
 
-        let redirect_uri = redirect_json["redirect_uri"]
-            .as_str()
-            .expect("Expected redirect_uri in response");
+        let redirect_uri =
+            redirect_json["redirect_uri"]
+                .as_str()
+                .ok_or_else(|| ClewdrError::Whatever {
+                    message: format!("No reditect_uri found"),
+                    source: None,
+                })?;
         let redirect_url = Url::from_str(redirect_uri).context(UrlSnafu {
             url: redirect_uri.to_string(),
         })?;

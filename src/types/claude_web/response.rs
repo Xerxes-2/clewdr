@@ -216,10 +216,7 @@ async fn bearer_count_tokens(
     access_token: &str,
     body: &CreateMessageParams,
 ) -> Option<u32> {
-    let url = state
-        .endpoint
-        .join("v1/messages/count_tokens")
-        .expect("Url parse error");
+    let url = state.endpoint.join("v1/messages/count_tokens").ok()?;
     let resp = state
         .client
         .post(url.to_string())
