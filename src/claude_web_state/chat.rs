@@ -45,7 +45,10 @@ impl ClaudeWebState {
 
             let cookie = state.request_cookie().await?;
             // check if request is successful
-            let web_res = async { state.bootstrap().await.and(state.send_chat(p).await) };
+            let web_res = async {
+                state.bootstrap().await?;
+                state.send_chat(p).await
+            };
             let transform_res = web_res
                 .and_then(async |r| self.transform_response(r).await)
                 .instrument(info_span!("claude_web", "cookie" = cookie.cookie.ellipse()));
