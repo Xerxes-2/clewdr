@@ -222,7 +222,7 @@ fn sanitize_messages(msgs: Vec<Message>) -> Vec<Message> {
                     MessageContent::Text { content: trimmed }
                 }
                 MessageContent::Blocks { content } => {
-                    let mut new_blocks: Vec<ContentBlock> = content
+                    let new_blocks: Vec<ContentBlock> = content
                         .into_iter()
                         .filter_map(|b| match b {
                             ContentBlock::Text { text, .. } => {
@@ -240,7 +240,7 @@ fn sanitize_messages(msgs: Vec<Message>) -> Vec<Message> {
                         return None;
                     }
                     MessageContent::Blocks {
-                        content: mem::take(&mut new_blocks),
+                        content: new_blocks,
                     }
                 }
             };
