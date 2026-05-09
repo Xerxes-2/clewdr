@@ -51,7 +51,7 @@ impl ClaudeWebState {
             };
             let transform_res = web_res
                 .and_then(async |r| self.transform_response(r).await)
-                .instrument(info_span!("claude_web", "cookie" = cookie.cookie.ellipse()));
+                .instrument(info_span!("claude_web", "cookie" = cookie.cookie.mask()));
 
             match transform_res.await {
                 Ok(b) => {

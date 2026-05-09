@@ -84,7 +84,7 @@ impl ClaudeWebState {
         writeln!(
             w,
             "[{}]\nemail: {}\ncapabilities: {}",
-            self.cookie.as_ref().unwrap().cookie.ellipse().green(),
+            self.cookie.as_ref().unwrap().cookie.mask().green(),
             email.blue(),
             self.capabilities.join(", ").blue()
         )?;

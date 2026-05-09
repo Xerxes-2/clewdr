@@ -83,7 +83,7 @@ impl ClaudeCodeState {
             }
             .instrument(tracing::info_span!(
                 "claude_code",
-                "cookie" = cookie.cookie.ellipse()
+                "cookie" = cookie.cookie.mask()
             ));
             match retry.await {
                 Ok(res) => {
@@ -92,7 +92,7 @@ impl ClaudeCodeState {
                 Err(e) => {
                     error!(
                         "[{}] {}",
-                        state.cookie.as_ref().unwrap().cookie.ellipse().green(),
+                        state.cookie.as_ref().unwrap().cookie.mask().green(),
                         e
                     );
                     // 429 error
@@ -257,7 +257,7 @@ impl ClaudeCodeState {
             }
             .instrument(tracing::info_span!(
                 "claude_code_tokens",
-                "cookie" = cookie.cookie.ellipse()
+                "cookie" = cookie.cookie.mask()
             ));
             match retry.await {
                 Ok(res) => {
@@ -266,7 +266,7 @@ impl ClaudeCodeState {
                 Err(e) => {
                     error!(
                         "[{}][TOKENS] {}",
-                        state.cookie.as_ref().unwrap().cookie.ellipse().green(),
+                        state.cookie.as_ref().unwrap().cookie.mask().green(),
                         e
                     );
                     if let ClewdrError::InvalidCookie { reason } = e {

@@ -358,7 +358,7 @@ impl Default for ClewdrCookie {
 }
 
 impl ClewdrCookie {
-    pub fn ellipse(&self) -> String {
+    pub fn mask(&self) -> String {
         let len = self.inner.len();
         if len > 20 {
             format!("{}...", &self.inner[..20])
