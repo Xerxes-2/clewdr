@@ -152,22 +152,9 @@ impl RouterBuilder {
         {
             use include_dir::{Dir, include_dir};
             const INCLUDE_STATIC: Dir = include_dir!("$CARGO_MANIFEST_DIR/static");
-            let serve = ServiceBuilder::new()
-                .map_request(|mut req: http::Request<_>| {
-                    let uri = req.uri();
-                    if uri.authority().is_some() && uri.scheme().is_none() {
-                        let pq = uri
-                            .path_and_query()
-                            .cloned()
-                            .unwrap_or_else(|| "/".parse().unwrap());
-                        let mut parts = http::uri::Parts::default();
-                        parts.path_and_query = Some(pq);
-                        *req.uri_mut() = http::Uri::from_parts(parts).unwrap();
-                    }
-                    req
-                })
-                .service(tower_serve_static::ServeDir::new(&INCLUDE_STATIC));
-            self.inner = self.inner.fallback_service(serve);
+            self.inner = self
+                .inner
+                .fallback_service(tower_serve_static::ServeDir::new(&INCLUDE_STATIC));
         }
         #[cfg(feature = "external-resource")]
         {
