@@ -148,9 +148,7 @@ fn merge_messages(msgs: Vec<Message>, system: String) -> Option<Merged> {
     let user_real_roles = CLEWDR_CONFIG.load().use_real_roles;
     let line_breaks = if user_real_roles { "\n\n\x08" } else { "\n\n" };
     let system = system.trim().to_string();
-    let size = size_of_val(&msgs);
-    // preallocate string to avoid reallocations
-    let mut w = String::with_capacity(size);
+    let mut w = String::new();
 
     let mut imgs: Vec<ImageSource> = vec![];
 
