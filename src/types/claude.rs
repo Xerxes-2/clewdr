@@ -156,7 +156,10 @@ impl CreateMessageParams {
 pub enum Thinking {
     Enabled { budget_tokens: u64 },
     Disabled,
-    Adaptive,
+    Adaptive {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        display: Option<String>,
+    },
 }
 
 impl Thinking {
