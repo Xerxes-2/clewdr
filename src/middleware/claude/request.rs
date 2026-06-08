@@ -1,7 +1,6 @@
 use std::{
     env,
     hash::{DefaultHasher, Hash, Hasher},
-    mem,
     sync::LazyLock,
     vec,
 };
