@@ -110,11 +110,8 @@ impl ClaudeCodeState {
     pub async fn send_chat(
         &mut self,
         access_token: String,
-        mut p: CreateMessageParams,
+        p: CreateMessageParams,
     ) -> Result<axum::response::Response, ClewdrError> {
-        if let Some(stripped) = p.model.strip_suffix("-1M") {
-            p.model = stripped.to_string();
-        }
         let model_family = Self::classify_model(&p.model);
         let response = self.execute_claude_request(&access_token, &p).await?;
         self.handle_success_response(response, model_family).await
@@ -125,7 +122,6 @@ impl ClaudeCodeState {
         access_token: &str,
         body: &CreateMessageParams,
     ) -> Result<wreq::Response, ClewdrError> {
-        let beta_header = Self::build_beta_header(self.anthropic_beta_header.as_deref());
         self.client
             .post(
                 self.endpoint
@@ -138,7 +134,7 @@ impl ClaudeCodeState {
             )
             .bearer_auth(access_token)
             .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
-            .header("anthropic-beta", beta_header)
+            .header("anthropic-beta", CLAUDE_BETA_BASE)
             .header("anthropic-version", CLAUDE_API_VERSION)
             .json(body)
             .send()
@@ -287,9 +283,6 @@ impl ClaudeCodeState {
         allow_fallback: bool,
     ) -> Result<axum::response::Response, ClewdrError> {
         p.stream = Some(false);
-        if let Some(stripped) = p.model.strip_suffix("-1M") {
-            p.model = stripped.to_string();
-        }
 
         match self
             .execute_claude_count_tokens_request(&access_token, &p)
@@ -456,7 +449,6 @@ impl ClaudeCodeState {
         access_token: &str,
         body: &CreateMessageParams,
     ) -> Result<wreq::Response, ClewdrError> {
-        let beta_header = Self::build_beta_header(self.anthropic_beta_header.as_deref());
         self.client
             .post(
                 self.endpoint
@@ -469,7 +461,7 @@ impl ClaudeCodeState {
             )
             .bearer_auth(access_token)
             .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
-            .header("anthropic-beta", beta_header)
+            .header("anthropic-beta", CLAUDE_BETA_BASE)
             .header("anthropic-version", CLAUDE_API_VERSION)
             .json(body)
             .send()
@@ -479,19 +471,6 @@ impl ClaudeCodeState {
             })?
             .check_claude()
             .await
-    }
-
-    fn build_beta_header(extra: Option<&str>) -> String {
-        let mut parts = vec![CLAUDE_BETA_BASE.to_string()];
-        if let Some(extra) = extra {
-            for token in extra.split(',') {
-                let t = token.trim();
-                if !t.is_empty() {
-                    parts.push(t.to_string());
-                }
-            }
-        }
-        parts.join(",")
     }
 
     fn classify_model(model: &str) -> ModelFamily {

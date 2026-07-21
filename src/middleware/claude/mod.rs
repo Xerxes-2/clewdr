@@ -73,11 +73,4 @@ impl ClaudeContext {
             ClaudeContext::Code(ctx) => &ctx.usage,
         }
     }
-
-    pub fn anthropic_beta(&self) -> Option<&str> {
-        match self {
-            ClaudeContext::Web(_) => None,
-            ClaudeContext::Code(ctx) => ctx.anthropic_beta.as_deref(),
-        }
-    }
 }
