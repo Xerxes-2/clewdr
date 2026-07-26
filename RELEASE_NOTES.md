@@ -1,5 +1,9 @@
 # Release Notes
 
+## Fixes in 0.13.1
+
+- Fixed the Docker image, which failed to build for 0.13.0 and was therefore never published for that version. Everything below shipped in 0.13.0 and reaches Docker users for the first time here; the 0.13.0 binaries were unaffected.
+
 ## Models
 
 - Added Claude Fable 5, Opus 5, Opus 4.8, Opus 4.7, Sonnet 5 and Haiku 4.5 to the model list.
