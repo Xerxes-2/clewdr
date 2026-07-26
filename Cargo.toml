@@ -78,7 +78,6 @@ tracing-subscriber = { version = "0.3", features = [
   "chrono",
   "env-filter",
 ] }
-trie-rs = "0.4"
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 # Held at rc.29's predecessor: rc.29 swapped the TLS backend from boring2 to
