@@ -1,52 +1,29 @@
 # Release Notes
 
-## Fixes in 0.13.1
-
-- Fixed the Docker image, which failed to build for 0.13.0 and was therefore never published for that version. Everything below shipped in 0.13.0 and reaches Docker users for the first time here; the 0.13.0 binaries were unaffected.
-
-## Models
-
-- Added Claude Fable 5, Opus 5, Opus 4.8, Opus 4.7, Sonnet 5 and Haiku 4.5 to the model list.
-- Removed models Anthropic has retired: Claude 3.7 Sonnet, Sonnet 4 and Opus 4. Requests to these fail upstream, so listing them only misled clients.
-- Removed Opus 4.1, which Anthropic retires on 2026-08-05.
-- Every model is still offered in a `-thinking` variant.
-
-## Request handling
-
-ClewdR now adjusts requests to match what the target model accepts, instead of forwarding parameters that are rejected with a 400.
-
-- `temperature`, `top_p` and `top_k` are dropped on Claude 4.7 and later, which no longer accept them, and on any model where thinking is active.
-- `temperature` and `top_p` are no longer sent together, which Claude 4.1 and later reject.
-- Thinking is converted rather than dropped: a token budget becomes adaptive thinking on models that only support adaptive, and adaptive becomes a budget on models that only support the older form.
-- `output_config.effort` is stepped down to the nearest level the model implements, and `xhigh` is only sent to Claude 4.7 and later.
-- Thinking budgets are held within the range the API accepts, rather than being passed through as given.
-
 ## Fixes
 
-- OpenAI-compatible requests using `reasoning_effort` failed with a 400. The value was being sent as a thinking budget, and `low` mapped to 256 tokens, below the API minimum of 1024. Effort levels are now mapped properly, including `xhigh` and `max`.
-- The `-thinking` suffix now also requests the reasoning text on Claude 5 models, which otherwise think without returning it.
+- The cookie status page failed to load, showing `invalid type: integer ... expected a string` and a total of 0 cookies. Reset boundaries are held as timestamps internally, and were sent that way whenever the live usage lookup did not answer, where the interface expects the written-out form. The page reads the whole listing as one piece, so a single cookie the lookup could not reach hid every other cookie with it. Boundaries that are already known are now shown even when the lookup fails, instead of the field going blank.
 
-## Frontend
+- A non-ASCII admin password left the web interface blank. The saved token is shortened for display by keeping a few characters at each end, but the length it was checked against was measured in bytes, so a password of four Chinese characters looked long enough to shorten and the cut landed inside a character. The page went down as it loaded, and because the token is read back from browser storage, reloading did not help. Shortening now counts characters throughout.
 
-- Increased the interface font size. The root size was below the browser default and the smallest labels rendered at about 10px, or under 10px on mobile. Nothing is now smaller than 12px, and the interface follows the browser's own font size setting.
+- The configuration file could be truncated when two saves overlapped. It was rewritten in place, so anything reading it — including ClewdR's own startup — could catch it after it had been emptied and before it was filled again. Saves now write a temporary file and rename it into place, which cannot be observed half-finished, and the file is created with owner-only permissions rather than having them applied after the contents are already on disk.
 
-## Also shipped in 0.12.26
+- A cookie whose cooldown had expired was returned to rotation without being recorded, so restarting in that window listed it as exhausted until the next request moved it back.
 
-These were released in 0.12.26, but its release notes did not mention them:
+## Docker
 
-- The web interface was rewritten in Leptos and WebAssembly, replacing the React frontend (#149).
-- `thinking.display` is preserved when forwarding requests upstream (#151).
-- Improved light theme contrast.
-- Removed the 7-day Opus quota tracking.
+- The image builds against wreq 6.0.0-rc.29 again. 0.13.1 had to hold it at rc.28, because rc.29 changed its TLS backend to one that carries BoringSSL as C++ and the image had no C++ compiler for musl. What was wanted then was a musl toolchain that CI could reach; it turned out to already exist as a published image, so the build now starts from one that carries a complete musl GCC.
+
+- Image builds reuse cached layers between runs. Caching had been switched off, so every build recompiled all dependencies, BoringSSL included.
+
+- Pull requests build the image for both architectures but no longer publish it. Builds from forks failed at the registry login, which cannot succeed for a fork, and every other pull request was pushing an image nobody asked for.
 
 ## Development
 
-- Added `cargo xtask` for building, running and linting: `cargo xtask dev` runs the backend and the frontend with hot reload, and `cargo xtask ci` runs everything CI runs.
-- Enabled `clippy::pedantic` across the workspace, and CI now checks formatting and lints.
-- Rewrote both READMEs. Several documented details, including the download command and parts of the web interface description, did not match the software.
+- Replaced the cookie actor with a mutex-guarded pool, removing the `ractor` dependency. None of the actor's handlers ever awaited, so the framework was supplying serialized access to shared state and nothing more.
 
-## Compatibility
+- The pool now owns the cookies outright. They used to be copied back into the global configuration on every change, which is why saving settings had to carry them across by hand to avoid wiping them.
 
-- Clients pinned to Claude 3.7 Sonnet, Sonnet 4, Opus 4 or Opus 4.1 must move to a current model. `/v1/models` lists what is accepted.
-- Sampling parameters sent to Claude 4.7 and later are now dropped rather than forwarded. Previously these requests failed; they now succeed without those parameters.
-- Building from source now requires the frontend to be built first. Use `cargo xtask build`.
+- Dropped `struct_iterable`, `rustls` and `aws-lc-rs`, none of which were used. The latter two were left behind by the removal of Gemini support; HTTP goes through wreq, which brings its own TLS.
+
+- Pull requests no longer cross-compile the full release matrix. Nine binaries were built, uploaded and discarded a day later on every pull request. A single host build now covers the release profile and the embedded frontend, and the matrix runs on tags, where the artifacts are actually used.
