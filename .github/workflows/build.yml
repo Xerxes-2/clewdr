@@ -28,19 +28,25 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # Order matters. Each of these sets the toolchain it installs as the
+      # default, and xtask reaches nightly explicitly via `rustup run nightly`
+      # for formatting only. Installing nightly last would leave it the
+      # default for everything else, and `cargo clippy` would then resolve to
+      # a toolchain with no clippy component.
+
       # rustfmt comes from nightly because .rustfmt.toml uses nightly-only
       # options; stable silently ignores them, so a stable-only check would
       # pass while leaving imports unformatted.
+      - name: Install nightly rustfmt
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
           components: clippy
-
-      - name: Install nightly rustfmt
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt
 
       - name: Install system packages
         run: |
