@@ -10,11 +10,12 @@ It runs as one static executable on Linux, macOS, Windows and Android, with a Do
 
 ## Quick Start
 
-1. Download the latest release for your platform from GitHub.
-   Linux/macOS example:
+1. Download the latest release for your platform from GitHub. Assets are named
+   `clewdr-<os>-<arch>.zip`, where `<os>` is one of `linux`, `musllinux`,
+   `macos`, `windows` or `android`, and `<arch>` is `x86_64` or `aarch64`.
    ```bash
-   curl -L -o clewdr.tar.gz https://github.com/Xerxes-2/clewdr/releases/latest/download/clewdr-linux-x64.tar.gz
-   tar -xzf clewdr.tar.gz && cd clewdr-linux-x64
+   curl -L -O https://github.com/Xerxes-2/clewdr/releases/latest/download/clewdr-linux-x86_64.zip
+   unzip clewdr-linux-x86_64.zip
    chmod +x clewdr
    ```
 2. Run the binary:
@@ -28,10 +29,10 @@ It runs as one static executable on Linux, macOS, Windows and Android, with a Do
 ClewdR needs at least one Claude.ai cookie before it can serve requests.
 
 1. Export your Claude.ai cookies (e.g. via browser devtools).
-2. Paste them into the `Claude` tab as `cookie: value` pairs and save. ClewdR tracks their status automatically.
-3. Optionally set an outbound proxy or fingerprint overrides if Claude blocks your region.
+2. Paste them into `Claude` → `Submit Cookie`, one cookie per line, and submit.
+3. `Claude` → `Cookie Status` then shows each cookie's state and remaining quota.
 
-The remaining tabs cover everything else. `Dashboard` shows health, connected clients, and rate-limit status; `Settings` rotates the admin password, sets upstream proxies, and reloads config without restarting.
+The `Config` tab covers everything else: the API and admin passwords, an outbound proxy, retry limits, and rules for skipping cookies. Server settings such as IP and port need a restart to take effect; the rest apply on save.
 
 If you forget the password, delete `clewdr.toml` and start the binary again. Docker users can mount a persistent folder for that file.
 
@@ -54,9 +55,11 @@ SillyTavern:
 {
   "api_url": "http://127.0.0.1:8484/v1/chat/completions",
   "api_key": "password-from-console",
-  "model": "claude-3-sonnet-20240229"
+  "model": "claude-sonnet-4-6"
 }
 ```
+
+The model-list endpoint above returns the ids ClewdR currently accepts, including a `-thinking` variant of each.
 
 Any other OpenAI-compatible client — Continue, Cursor and the rest — works the same way: point its API base at `http://127.0.0.1:8484/v1/` and use the API password as the key.
 

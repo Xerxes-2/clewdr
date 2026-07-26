@@ -10,11 +10,12 @@ ClewdR 是面向 Claude（Claude.ai 与 Claude Code）的 Rust 代理，用单�
 
 ## 快速开始
 
-1. 从 GitHub Releases 下载对应平台的最新版。
-   Linux/macOS 示例：
+1. 从 GitHub Releases 下载对应平台的最新版。文件名格式为
+   `clewdr-<os>-<arch>.zip`，`<os>` 可为 `linux`、`musllinux`、`macos`、
+   `windows`、`android`，`<arch>` 可为 `x86_64` 或 `aarch64`。
    ```bash
-   curl -L -o clewdr.tar.gz https://github.com/Xerxes-2/clewdr/releases/latest/download/clewdr-linux-x64.tar.gz
-   tar -xzf clewdr.tar.gz && cd clewdr-linux-x64
+   curl -L -O https://github.com/Xerxes-2/clewdr/releases/latest/download/clewdr-linux-x86_64.zip
+   unzip clewdr-linux-x86_64.zip
    chmod +x clewdr
    ```
 2. 运行二进制：
@@ -28,10 +29,10 @@ ClewdR 是面向 Claude（Claude.ai 与 Claude Code）的 Rust 代理，用单�
 ClewdR 需要至少一个 Claude.ai Cookie 才能转发请求。
 
 1. 在浏览器开发者工具中导出 Claude.ai Cookie。
-2. 以 `cookie: value` 的形式粘贴到 `Claude` 页签并保存，ClewdR 会自动检测有效性。
-3. 如需自定义网络出口，可设置上游代理或指纹选项。
+2. 在 `Claude` → `提交Cookie` 中粘贴，一行一个，然后提交。
+3. `Claude` → `Cookie状态` 可查看每个 Cookie 的状态和剩余额度。
 
-其余页签负责其他配置。`Dashboard` 查看健康状态、连接数和限流命中；`Settings` 修改管理员密码、上游代理，并支持不重启热重载配置。
+`配置` 页签负责其余设置：API 密码与管理员密码、出站代理、重试次数、Cookie 跳过规则等。其中 IP 和端口属于服务器设置，需重启生效，其余保存后立即生效。
 
 如忘记密码，删除 `clewdr.toml` 再启动即可。Docker 建议挂载该文件所在目录以持久化。
 
@@ -54,9 +55,11 @@ SillyTavern：
 {
   "api_url": "http://127.0.0.1:8484/v1/chat/completions",
   "api_key": "控制台显示的密码",
-  "model": "claude-3-sonnet-20240229"
+  "model": "claude-sonnet-4-6"
 }
 ```
+
+上面的模型列表端点会返回 ClewdR 当前接受的所有模型 ID，每个模型还带一个 `-thinking` 变体。
 
 其他 OpenAI 兼容客户端（Continue、Cursor 等）配置方式相同：把 API base 指向 `http://127.0.0.1:8484/v1/`，密钥填 API 密码即可。
 
