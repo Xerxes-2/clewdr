@@ -13,6 +13,9 @@
 //!   deprecated on 4.6 and rejected from 4.7 onwards; adaptive thinking
 //!   (`thinking.type: "adaptive"`) is rejected on 4.5 and earlier.
 //! * Fable/Mythos always think and reject both `enabled` and `disabled`.
+//! * Thinking is off by default on every 4.x model, and on by default on the
+//!   5 series -- where `display` then defaults to `omitted`, so the reasoning
+//!   is billed but never sent to the client.
 //! * `output_config.effort` only exists from Opus 4.5 onwards, and the `xhigh`
 //!   rung only from 4.7 onwards.
 //! * Claude Opus 5 and later reject `thinking.type: "disabled"` at `xhigh` or
@@ -132,9 +135,17 @@ impl ModelTraits {
 
     /// Thinking configuration meant by the `-thinking` model-name suffix.
     ///
-    /// On models that already think by default this still resolves to an
-    /// explicit `adaptive` config, because it flips `display` to `summarized`
-    /// so the client actually receives the reasoning text.
+    /// The suffix exists for clients that can only pick a model string. It
+    /// does two different jobs depending on the target:
+    ///
+    /// * On the 4.x models thinking is off until asked for, so this turns it
+    ///   on -- as `adaptive` from 4.6, as a token budget below that.
+    /// * On the 5 series thinking is already on, but `display` defaults to
+    ///   `omitted`, so the reasoning is billed and then discarded. Here the
+    ///   suffix only makes it visible.
+    ///
+    /// Both cases emit the same `adaptive` + `summarized` config, which is why
+    /// they share an arm; only the reason differs.
     #[must_use]
     pub fn thinking_for_suffix(&self) -> Thinking {
         match self.thinking {
@@ -366,6 +377,15 @@ mod tests {
                 "{model}"
             );
         }
+        // Opus 5 already thinks; the suffix is what reveals the text.
+        let already_thinking = ModelTraits::of("claude-opus-5")
+            .unwrap()
+            .thinking_for_suffix();
+        assert!(matches!(
+            already_thinking,
+            Thinking::Adaptive { display: Some(_) }
+        ));
+
         let legacy = ModelTraits::of("claude-sonnet-4-5-20250929")
             .unwrap()
             .thinking_for_suffix();
