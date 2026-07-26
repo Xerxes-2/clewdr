@@ -1,3 +1,6 @@
+# Declared before the first FROM so it can select the builder image tag below.
+ARG TARGETARCH
+
 FROM docker.io/lukemathwalker/cargo-chef:latest-rust-trixie AS frontend-builder
 WORKDIR /build
 RUN rustup target add wasm32-unknown-unknown && \
@@ -21,46 +24,38 @@ FROM chef AS planner
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
-FROM chef AS backend-builder
-ARG TARGETARCH
+# wreq links BoringSSL, which is partly C++, so cross-compiling it needs a musl
+# C++ compiler and a musl libstdc++.a. Debian's musl-tools has neither: it ships
+# musl-gcc (a shell wrapper around the host gcc) and nothing else, so the C++
+# probe CMake runs fails and reports it as "Could NOT find Threads".
+#
+# These images carry a full GCC cross toolchain built with musl-cross-make
+# (--enable-languages=c,c++), and preset CARGO_BUILD_TARGET, TARGET_CC and
+# TARGET_CXX, so no compiler variables need to be passed here. The tag alias
+# matches Docker's TARGETARCH, so the arch mapping is the tag itself.
+FROM ghcr.io/rust-cross/rust-musl-cross:${TARGETARCH}-musl AS backend-builder
+WORKDIR /build
 
-# Install build dependencies + musl toolchain
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    clang \
-    libclang-dev \
-    perl \
-    pkg-config \
-    musl-tools \
-    upx-ucl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Determine musl target from Docker platform
-RUN case "$TARGETARCH" in \
-    amd64) echo "x86_64-unknown-linux-musl" > /tmp/rust-target ;; \
-    arm64) echo "aarch64-unknown-linux-musl" > /tmp/rust-target ;; \
-    *) echo "Unsupported arch: $TARGETARCH" && exit 1 ;; \
-    esac && \
-    rustup target add "$(cat /tmp/rust-target)"
+# upx is not in the image; cargo-chef is only needed for `cook` below.
+RUN apt-get update && apt-get install -y --no-install-recommends upx-ucl \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -L --proto '=https' --tlsv1.2 -sSf \
+       https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash \
+    && cargo binstall cargo-chef --no-confirm
 
 COPY --from=planner /build/recipe.json recipe.json
 
 # Build dependencies - this is the caching Docker layer.
-RUN RUST_TARGET=$(cat /tmp/rust-target) && \
-    CC=musl-gcc CXX=clang++ \
-    cargo chef cook --release --target "$RUST_TARGET" \
+RUN cargo chef cook --release \
     --no-default-features --features embed-resource,xdg \
     --recipe-path recipe.json
 
 # Build application
 COPY . .
 COPY --from=frontend-builder /build/static/ ./static
-RUN RUST_TARGET=$(cat /tmp/rust-target) && \
-    CC=musl-gcc CXX=clang++ \
-    cargo build --release --target "$RUST_TARGET" \
+RUN cargo build --release \
     --no-default-features --features embed-resource,xdg --bin clewdr \
-    && cp ./target/"$RUST_TARGET"/release/clewdr /build/clewdr \
+    && cp "./target/${RUST_MUSL_CROSS_TARGET}/release/clewdr" /build/clewdr \
     && upx --best --lzma /build/clewdr \
     && mkdir -p /etc/clewdr/log \
     && touch /etc/clewdr/clewdr.toml
