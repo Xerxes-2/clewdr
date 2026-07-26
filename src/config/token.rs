@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 use crate::claude_code_state::oauth::TokenResponse;
-use tracing::debug;
 
 /// A [`Duration`] as whole seconds.
 ///
