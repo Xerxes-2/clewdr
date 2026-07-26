@@ -7,6 +7,9 @@ RUN mkdir -p src && echo "fn main() {}" > src/main.rs
 COPY Cargo.toml Cargo.lock ./
 COPY clewdr-types/ clewdr-types/
 COPY clewdr-frontend/ clewdr-frontend/
+# Not used by this stage, but cargo refuses to read the workspace while any
+# member manifest is missing.
+COPY xtask/ xtask/
 COPY .cargo/ .cargo/
 RUN cargo binstall trunk --no-confirm && \
     cd clewdr-frontend && trunk build --release
