@@ -2,6 +2,7 @@ target/
 **/target/
 **/node_modules/
 .git/
+.jj/
 Dockerfile
 .dockerignore
 **/.DS_Store

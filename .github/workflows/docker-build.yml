@@ -64,10 +64,16 @@ jobs:
           context: .
           file: Dockerfile
           push: true
-          no-cache: true
           platforms: linux/${{ matrix.arch }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # mode=max is required, not a tuning knob: the default only exports
+          # layers present in the final image, and the final image is distroless
+          # with a single binary copied in, so the dependency build would never
+          # be stored. The two arches build on separate runners and share no
+          # layers, so they get separate scopes to avoid evicting each other.
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
   manifest:
     name: Create multi-arch manifests
