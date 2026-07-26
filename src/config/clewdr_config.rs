@@ -2,6 +2,8 @@ use std::{
     collections::HashSet,
     fmt::{Debug, Display},
     net::{IpAddr, SocketAddr},
+    path::Path,
+    sync::LazyLock,
 };
 
 use axum::http::{Uri, uri::Scheme};
@@ -14,12 +16,45 @@ use figment::{
 use http::uri::Authority;
 use passwords::PasswordGenerator;
 use serde::{Deserialize, Serialize};
-use tokio::spawn;
+use tokio::{io::AsyncWriteExt, spawn};
 use tracing::error;
 use url::Url;
 use wreq::Proxy;
 
 use super::{CONFIG_PATH, ENDPOINT_URL};
+
+/// Serializes writers to [`CONFIG_PATH`]. Held across the whole
+/// write-flush-rename sequence, so two concurrent savers cannot interleave and
+/// the file always reflects one of them in full.
+static SAVE_LOCK: LazyLock<tokio::sync::Mutex<()>> =
+    LazyLock::new(|| tokio::sync::Mutex::new(()));
+
+/// Writes `data` to `tmp`, flushes it to disk, then renames it over `dst`.
+///
+/// The flush has to happen before the rename: without it a crash can leave the
+/// rename durable but the contents not, which is exactly the truncated-config
+/// case the temp file is meant to prevent.
+async fn write_then_rename(tmp: &Path, dst: &Path, data: &[u8]) -> Result<(), ClewdrError> {
+    let mut file = create_private(tmp).await?;
+    file.write_all(data).await?;
+    file.sync_all().await?;
+    drop(file);
+    tokio::fs::rename(tmp, dst).await?;
+    Ok(())
+}
+
+/// Creates `path` truncated and owner-only where the platform supports it.
+///
+/// The mode is set at creation rather than chmod-ed afterwards so the config,
+/// which holds the admin password and cookies, is never briefly world-readable.
+/// The mode carries through the rename onto the real config file.
+async fn create_private(path: &Path) -> std::io::Result<tokio::fs::File> {
+    let mut opts = tokio::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    opts.mode(0o600);
+    opts.open(path).await
+}
 use crate::{
     Args,
     config::{
@@ -398,30 +433,41 @@ impl ClewdrConfig {
 
     /// Save the configuration to a file
     ///
+    /// The new contents go to a sibling temporary file which is flushed and
+    /// then renamed over the target, so a concurrent reader or an interrupted
+    /// run sees either the previous config or the new one, never a partial
+    /// write. Concurrent savers are serialized by [`SAVE_LOCK`].
+    ///
     /// A no-op when running with `no_fs`.
     ///
     /// # Errors
     /// If the config directory cannot be created, the config cannot be
-    /// serialized, or the file cannot be written.
+    /// serialized, or the file cannot be written or renamed.
     pub async fn save(&self) -> Result<(), ClewdrError> {
         if self.no_fs {
             return Ok(());
         }
-        if let Some(parent) = CONFIG_PATH.parent()
+        let data = toml::ser::to_string_pretty(self)?;
+        let path = CONFIG_PATH.as_path();
+
+        let _guard = SAVE_LOCK.lock().await;
+
+        if let Some(parent) = path.parent()
             && !parent.exists()
         {
             tokio::fs::create_dir_all(parent).await?;
         }
-        let path = CONFIG_PATH.as_path();
-        let data = toml::ser::to_string_pretty(self)?;
-        tokio::fs::write(path, data).await?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::Permissions::from_mode(0o600);
-            tokio::fs::set_permissions(path, perms).await?;
+        // Sibling of the target, so the rename stays on one filesystem. The
+        // pid keeps two clewdr processes sharing a config dir off each other's
+        // temporary file; SAVE_LOCK covers savers within this process.
+        let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+        let result = write_then_rename(&tmp, path, data.as_bytes()).await;
+        if result.is_err() {
+            // Best effort: a leftover temp file would otherwise linger next to
+            // the config forever.
+            drop(tokio::fs::remove_file(&tmp).await);
         }
-        Ok(())
+        result
     }
 
     /// Validate the configuration
@@ -464,5 +510,120 @@ mod tests {
         let rendered = config.to_string();
         assert!(rendered.contains("Web Admin Endpoint"));
         assert!(rendered.contains("Claude Code"));
+    }
+
+    /// Unique scratch directory, removed on drop.
+    struct TempDir(std::path::PathBuf);
+
+    impl TempDir {
+        fn new(tag: &str) -> Self {
+            use std::sync::atomic::{AtomicU32, Ordering};
+            static COUNTER: AtomicU32 = AtomicU32::new(0);
+            let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let dir =
+                std::env::temp_dir().join(format!("clewdr-test-{tag}-{}-{n}", std::process::id()));
+            std::fs::create_dir_all(&dir).expect("create temp dir");
+            Self(dir)
+        }
+
+        fn join(&self, name: &str) -> std::path::PathBuf {
+            self.0.join(name)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            drop(std::fs::remove_dir_all(&self.0));
+        }
+    }
+
+    /// Overwriting in place can leave the tail of a longer previous file
+    /// behind. Going through a fresh temp file plus rename must not.
+    #[tokio::test]
+    async fn write_then_rename_replaces_content_wholesale() {
+        let dir = TempDir::new("replace");
+        let dst = dir.join("clewdr.toml");
+        let tmp = dir.join("clewdr.tmp");
+
+        write_then_rename(&tmp, &dst, &b"x".repeat(4096))
+            .await
+            .expect("first write");
+        write_then_rename(&tmp, &dst, b"short")
+            .await
+            .expect("second write");
+
+        assert_eq!(std::fs::read(&dst).expect("read back"), b"short");
+        assert!(!tmp.exists(), "temp file should have been renamed away");
+    }
+
+    /// A reader must never observe a partially written config, no matter how
+    /// many savers are racing.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_writes_are_never_torn() {
+        const WRITERS: usize = 8;
+        // Large enough that a non-atomic write would be caught mid-flight.
+        const LEN: usize = 512 * 1024;
+
+        let dir = TempDir::new("torn");
+        let dst = dir.join("clewdr.toml");
+        write_then_rename(&dir.join("seed.tmp"), &dst, &vec![b'a'; LEN])
+            .await
+            .expect("seed");
+
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let reader = tokio::spawn({
+            let dst = dst.clone();
+            let stop = stop.clone();
+            async move {
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    let seen = std::fs::read(&dst).expect("read during writes");
+                    // Every writer writes one repeated byte, so any mixture of
+                    // two payloads (or a truncated one) fails these checks.
+                    assert_eq!(seen.len(), LEN, "observed a partially written file");
+                    let first = seen[0];
+                    assert!(
+                        seen.iter().all(|b| *b == first),
+                        "observed a mix of two payloads"
+                    );
+                    tokio::task::yield_now().await;
+                }
+            }
+        });
+
+        let writers = (0..WRITERS).map(|i| {
+            let tmp = dir.join(&format!("w{i}.tmp"));
+            let dst = dst.clone();
+            tokio::spawn(async move {
+                let byte = b'a' + u8::try_from(i).expect("writer index fits");
+                for _ in 0..10 {
+                    write_then_rename(&tmp, &dst, &vec![byte; LEN])
+                        .await
+                        .expect("concurrent write");
+                }
+            })
+        });
+        for w in writers {
+            w.await.expect("writer task");
+        }
+
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        reader.await.expect("reader task");
+    }
+
+    /// The config holds the admin password and cookies, so it must never be
+    /// readable by other users -- not even briefly between create and chmod.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn written_config_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new("perms");
+        let dst = dir.join("clewdr.toml");
+        write_then_rename(&dir.join("clewdr.tmp"), &dst, b"secret")
+            .await
+            .expect("write");
+
+        let mode = std::fs::metadata(&dst).expect("stat").permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "config should be owner read/write only");
     }
 }
