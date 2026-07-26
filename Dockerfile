@@ -23,8 +23,12 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS backend-builder
 ARG TARGETARCH
+# Overridable so a mirror can be used if musl.cc is unreachable.
+ARG MUSL_TOOLCHAIN_BASE=https://musl.cc
 
-# Install build dependencies + musl toolchain
+# clang/libclang stay for bindgen, which loads libclang at runtime. That is
+# also why this stage keeps a glibc host: on a musl host the build scripts are
+# statically linked and cannot dlopen at all.
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
@@ -32,23 +36,45 @@ RUN apt-get update && apt-get install -y \
     libclang-dev \
     perl \
     pkg-config \
-    musl-tools \
+    git \
     upx-ucl \
     && rm -rf /var/lib/apt/lists/*
 
-# Determine musl target from Docker platform
+# Determine musl target from Docker platform, and fetch a musl toolchain that
+# can compile C++.
+#
+# Debian's musl-tools only provides musl-gcc, with no C++ counterpart, but
+# btls-sys vendors BoringSSL, which is C++. Pairing musl-gcc with the system
+# g++ compiles but cannot link: glibc's libstdc++.a pulls in __isoc23_strtoul
+# and __libc_single_threaded, which musl does not define. Pairing it with
+# clang++ does not even configure, because BoringSSL infers the compiler
+# family from CXX and then feeds clang-only flags to a GCC CC.
+#
+# The -native tarballs are musl-hosted and statically linked, so they run on
+# this glibc image, and each arch fetches the toolchain for its own host --
+# these images are built natively per architecture, not cross-compiled.
 RUN case "$TARGETARCH" in \
-    amd64) echo "x86_64-unknown-linux-musl" > /tmp/rust-target ;; \
-    arm64) echo "aarch64-unknown-linux-musl" > /tmp/rust-target ;; \
+    amd64) RUST_TARGET=x86_64-unknown-linux-musl; MUSL=x86_64-linux-musl-native ;; \
+    arm64) RUST_TARGET=aarch64-unknown-linux-musl; MUSL=aarch64-linux-musl-native ;; \
     *) echo "Unsupported arch: $TARGETARCH" && exit 1 ;; \
     esac && \
-    rustup target add "$(cat /tmp/rust-target)"
+    echo "$RUST_TARGET" > /tmp/rust-target && \
+    echo "$MUSL" > /tmp/musl-toolchain && \
+    rustup target add "$RUST_TARGET" && \
+    curl -fsSL --retry 3 --retry-delay 5 "$MUSL_TOOLCHAIN_BASE/$MUSL.tgz" \
+    | tar xz -C /opt && \
+    "/opt/$MUSL/bin/g++" --version | head -1
 
 COPY --from=planner /build/recipe.json recipe.json
 
+# RUSTFLAGS only reaches target units while --target is set, so build scripts
+# keep using the host compiler and bindgen keeps working. It must match the
+# application build below exactly, or that build cannot reuse this layer.
+
 # Build dependencies - this is the caching Docker layer.
-RUN RUST_TARGET=$(cat /tmp/rust-target) && \
-    CC=musl-gcc CXX=clang++ \
+RUN RUST_TARGET=$(cat /tmp/rust-target) && MUSL=$(cat /tmp/musl-toolchain) && \
+    CC="/opt/$MUSL/bin/gcc" CXX="/opt/$MUSL/bin/g++" \
+    RUSTFLAGS="-C linker=/opt/$MUSL/bin/gcc" \
     cargo chef cook --release --target "$RUST_TARGET" \
     --no-default-features --features embed-resource,xdg \
     --recipe-path recipe.json
@@ -56,8 +82,9 @@ RUN RUST_TARGET=$(cat /tmp/rust-target) && \
 # Build application
 COPY . .
 COPY --from=frontend-builder /build/static/ ./static
-RUN RUST_TARGET=$(cat /tmp/rust-target) && \
-    CC=musl-gcc CXX=clang++ \
+RUN RUST_TARGET=$(cat /tmp/rust-target) && MUSL=$(cat /tmp/musl-toolchain) && \
+    CC="/opt/$MUSL/bin/gcc" CXX="/opt/$MUSL/bin/g++" \
+    RUSTFLAGS="-C linker=/opt/$MUSL/bin/gcc" \
     cargo build --release --target "$RUST_TARGET" \
     --no-default-features --features embed-resource,xdg --bin clewdr \
     && cp ./target/"$RUST_TARGET"/release/clewdr /build/clewdr \
