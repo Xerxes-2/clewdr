@@ -6,6 +6,12 @@ use crate::{
     utils::format_iso,
 };
 
+// Leptos props are owned by the generated props struct; borrowing here would
+// force a lifetime the component macro cannot express.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Leptos component props must be owned"
+)]
 #[component]
 pub fn UsageDetails(cookie: CookieStatus) -> impl IntoView {
     let i = use_i18n();

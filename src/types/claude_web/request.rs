@@ -19,6 +19,7 @@ impl Attachment {
     ///
     /// # Returns
     /// A new Attachment instance configured as a text file
+    #[must_use]
     pub fn new(content: String) -> Self {
         Attachment {
             file_size: content.len() as u64,
@@ -53,6 +54,7 @@ pub struct Tool {
 }
 
 impl Tool {
+    #[must_use]
     pub fn web_search() -> Self {
         Tool {
             name: "web_search".to_string(),

@@ -24,6 +24,14 @@ impl ClaudeWebState {
     ///
     /// # Returns
     /// * `Result<(), ClewdrError>` - Success or an error with details about cookie validity
+    ///
+    /// # Errors
+    /// Upstream HTTP failures, or a bootstrap response showing the account is
+    /// banned, restricted or otherwise unusable.
+    ///
+    /// # Panics
+    /// If the configured endpoint cannot be joined with the bootstrap path,
+    /// which would mean the endpoint itself is malformed.
     pub async fn bootstrap(&mut self) -> Result<(), ClewdrError> {
         let end_point = self
             .endpoint
@@ -33,7 +41,7 @@ impl ClaudeWebState {
                 source: Some(Box::new(e)),
             })?;
         let res = self
-            .build_request(Method::GET, end_point)
+            .build_request(Method::GET, &end_point)
             .send()
             .await
             .context(WreqSnafu {
@@ -89,13 +97,29 @@ impl ClaudeWebState {
             self.capabilities.join(", ").blue()
         )?;
 
-        // Bootstrap complete
+        self.resolve_organization(w).await
+    }
+
+    /// Second half of the bootstrap: pick the organization to use and record
+    /// its UUID.
+    ///
+    /// `w` carries the account summary accumulated so far, which
+    /// [`Self::check_flags`] logs alongside any account warnings.
+    ///
+    /// # Errors
+    /// Upstream HTTP failures, no chat-capable organization in the response, or
+    /// an account flagged as unusable.
+    ///
+    /// # Panics
+    /// If the configured endpoint cannot be joined with the organizations path,
+    /// which would mean the endpoint itself is malformed.
+    async fn resolve_organization(&mut self, w: String) -> Result<(), ClewdrError> {
         let end_point = self
             .endpoint
             .join("api/organizations")
             .expect("Url parse error");
         let res = self
-            .build_request(Method::GET, end_point)
+            .build_request(Method::GET, &end_point)
             .send()
             .await
             .context(WreqSnafu {
@@ -127,7 +151,7 @@ impl ClaudeWebState {
                 msg: "Failed to find a valid organization in response",
             })?;
 
-        self.check_flags(acc_info, w)?;
+        Self::check_flags(acc_info, w)?;
 
         let u =
             acc_info
@@ -152,7 +176,7 @@ impl ClaudeWebState {
     ///
     /// # Returns
     /// * `Result<(), ClewdrError>` - Ok if the account can be used, or error with reason
-    fn check_flags(&self, acc_info: &Value, mut w: String) -> Result<(), ClewdrError> {
+    fn check_flags(acc_info: &Value, mut w: String) -> Result<(), ClewdrError> {
         let Some(active_flags) = acc_info.get("active_flags").and_then(|a| a.as_array()) else {
             return Ok(());
         };

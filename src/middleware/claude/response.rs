@@ -60,17 +60,25 @@ pub async fn to_oai(resp: Response) -> impl IntoResponse {
     }
     if !cx.is_stream() {
         match parse_response::<CreateMessageResponse>(resp).await {
-            Ok(response) => return Json(transforms_json(response)).into_response(),
+            Ok(response) => return Json(transforms_json(&response)).into_response(),
             Err(resp) => return resp,
         }
     }
     let stream = resp.into_body().into_data_stream().eventsource();
     let stream = transform_stream(stream);
     Sse::new(stream)
-        .keep_alive(Default::default())
+        .keep_alive(axum::response::sse::KeepAlive::default())
         .into_response()
 }
 
+/// Attach the recorded token usage to an outgoing response.
+///
+/// Responses carrying no [`ClaudeContext`] are passed through untouched.
+///
+/// # Panics
+/// If a rewritten stream event fails to serialize back to JSON. The events
+/// were just deserialized from the same shape, so this cannot happen in
+/// practice.
 pub async fn add_usage_info(resp: Response) -> impl IntoResponse {
     let Some(cx) = resp.extensions().get::<ClaudeContext>() else {
         return resp;
@@ -123,7 +131,7 @@ pub async fn add_usage_info(resp: Response) -> impl IntoResponse {
         });
 
     Sse::new(stream)
-        .keep_alive(Default::default())
+        .keep_alive(axum::response::sse::KeepAlive::default())
         .into_response()
 }
 

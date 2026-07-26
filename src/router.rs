@@ -9,7 +9,11 @@ use tower::ServiceBuilder;
 use tower_http::{compression::CompressionLayer, cors::CorsLayer};
 
 use crate::{
-    api::*,
+    api::{
+        api_auth, api_claude_code, api_claude_code_count_tokens, api_claude_web, api_delete_cookie,
+        api_get_config, api_get_cookies, api_get_models, api_post_config, api_post_cookie,
+        api_version,
+    },
     middleware::{
         RequireAdminAuth, RequireBearerAuth, RequireFlexibleAuth,
         claude::{add_usage_info, apply_stop_sequences, check_overloaded, to_oai},
@@ -31,6 +35,10 @@ impl RouterBuilder {
     ///
     /// # Arguments
     /// * `state` - The application state containing client information
+    ///
+    /// # Panics
+    /// If the cookie actor cannot be started. This happens during startup and
+    /// leaves the proxy with no way to serve requests, so it is fatal.
     pub async fn new() -> Self {
         let cookie_handle = CookieActorHandle::start()
             .await
@@ -45,6 +53,7 @@ impl RouterBuilder {
 
     /// Creates a new `RouterBuilder` instance
     /// Sets up routes for API endpoints and static file serving
+    #[must_use]
     pub fn with_default_setup(self) -> Self {
         self.route_claude_code_endpoints()
             .route_claude_web_endpoints()

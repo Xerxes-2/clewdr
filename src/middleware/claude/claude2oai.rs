@@ -3,7 +3,7 @@ use futures::{Stream, TryStreamExt};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::types::claude::{ContentBlockDelta, CreateMessageResponse, StreamEvent};
+use crate::types::claude::{ContentBlockDelta, CreateMessageResponse, StopReason, StreamEvent};
 
 /// Represents the data structure for streaming events in OpenAI API format
 /// Contains a choices array with deltas of content
@@ -96,7 +96,7 @@ where
     })
 }
 
-pub fn transforms_json(input: CreateMessageResponse) -> Value {
+pub fn transforms_json(input: &CreateMessageResponse) -> Value {
     let content = input
         .content
         .iter()
@@ -115,14 +115,12 @@ pub fn transforms_json(input: CreateMessageResponse) -> Value {
     });
 
     let finish_reason = match input.stop_reason {
-        Some(crate::types::claude::StopReason::EndTurn) => "stop",
-        Some(crate::types::claude::StopReason::MaxTokens) => "length",
-        Some(crate::types::claude::StopReason::StopSequence) => "stop",
-        Some(crate::types::claude::StopReason::ToolUse) => "tool_calls",
-        Some(crate::types::claude::StopReason::PauseTurn) => "stop",
-        Some(crate::types::claude::StopReason::Refusal) => "content_filter",
-        Some(crate::types::claude::StopReason::ModelContextWindowExceeded) => "length",
-        None => "stop",
+        Some(StopReason::MaxTokens | StopReason::ModelContextWindowExceeded) => "length",
+        Some(StopReason::ToolUse) => "tool_calls",
+        Some(StopReason::Refusal) => "content_filter",
+        Some(StopReason::EndTurn | StopReason::StopSequence | StopReason::PauseTurn) | None => {
+            "stop"
+        }
     };
 
     serde_json::json!({

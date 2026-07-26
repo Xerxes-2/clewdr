@@ -44,6 +44,9 @@ impl ClewdrUpdater {
     ///
     /// # Returns
     /// * `Result<Self, ClewdrError>` - A new updater instance or an error
+    ///
+    /// # Errors
+    /// If the HTTP client cannot be built for the configured proxy.
     pub fn new() -> Result<Self, ClewdrError> {
         let authors = option_env!("CARGO_PKG_AUTHORS").unwrap_or_default();
         let repo_owner = authors
@@ -82,6 +85,10 @@ impl ClewdrUpdater {
     ///
     /// # Returns
     /// * `Result<bool, ClewdrError>` - True if update available, false otherwise
+    ///
+    /// # Errors
+    /// If the release feed cannot be fetched or parsed, or the version string
+    /// it reports is not valid semver.
     pub async fn check_for_updates(&self) -> Result<bool, ClewdrError> {
         if CLEWDR_CONFIG.load().no_fs {
             // If no_fs feature is enabled, skip update check
@@ -122,7 +129,7 @@ impl ClewdrUpdater {
         let latest_version = release.tag_name.trim_start_matches('v');
         let current_version = env!("CARGO_PKG_VERSION");
 
-        let update_available = self.compare_versions(current_version, latest_version)?;
+        let update_available = Self::compare_versions(current_version, latest_version)?;
 
         if !update_available {
             info!("Already at the latest version {}", current_version.green());
@@ -153,7 +160,7 @@ impl ClewdrUpdater {
         let latest_version = release.tag_name.trim_start_matches('v');
 
         // Find appropriate asset for this platform
-        let asset = self.find_appropriate_asset(release)?;
+        let asset = Self::find_appropriate_asset(release)?;
 
         info!("Downloading update from {}", asset.browser_download_url);
 
@@ -250,10 +257,7 @@ impl ClewdrUpdater {
     ///
     /// # Returns
     /// * `Result<&'a GitHubAsset, ClewdrError>` - Appropriate asset or error if none found
-    fn find_appropriate_asset<'a>(
-        &self,
-        release: &'a GitHubRelease,
-    ) -> Result<&'a GitHubAsset, ClewdrError> {
+    fn find_appropriate_asset(release: &GitHubRelease) -> Result<&GitHubAsset, ClewdrError> {
         // Determine platform and architecture
         let os = env::consts::OS;
         let arch = env::consts::ARCH;
@@ -287,7 +291,12 @@ impl ClewdrUpdater {
         release
             .assets
             .iter()
-            .find(|asset| asset.name.contains(target) && asset.name.ends_with(".zip"))
+            .find(|asset| {
+                asset.name.contains(target)
+                    && std::path::Path::new(&asset.name)
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
+            })
             .ok_or(ClewdrError::AssetError {
                 msg: format!("No suitable asset found for platform: {target}"),
             })
@@ -302,7 +311,7 @@ impl ClewdrUpdater {
     ///
     /// # Returns
     /// * `Result<bool, ClewdrError>` - True if latest is newer than current, false otherwise
-    fn compare_versions(&self, current: &str, latest: &str) -> Result<bool, ClewdrError> {
+    fn compare_versions(current: &str, latest: &str) -> Result<bool, ClewdrError> {
         let parse_version = |v: &str| -> Result<(u32, u32, u32), ClewdrError> {
             let vec = v.split('.').collect::<Vec<_>>();
             let [major, minor, patch, ..] = vec.as_slice() else {

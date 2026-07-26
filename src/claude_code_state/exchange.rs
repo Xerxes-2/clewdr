@@ -111,6 +111,15 @@ fn setup_client(cc_client_id: String) -> Result<ClaudeOauthClient, ClewdrError> 
 }
 
 impl ClaudeCodeState {
+    /// Run the OAuth authorization step and return the code to exchange.
+    ///
+    /// # Errors
+    /// Upstream HTTP failures, a response that carries no `redirect_uri`, or a
+    /// redirect URL with no `code` parameter.
+    ///
+    /// # Panics
+    /// If the configured endpoint cannot be joined with the authorize path,
+    /// which would mean the endpoint itself is malformed.
     pub async fn exchange_code(&self, org_uuid: &str) -> Result<ExchangeResult, ClewdrError> {
         // Build OAuth authorization URL using Url::join for proper URL construction
         let authorize_url = CLEWDR_CONFIG
@@ -167,11 +176,11 @@ impl ClaudeCodeState {
                     message: "No reditect_uri found".to_string(),
                     source: None,
                 })?;
-        let redirect_url = Url::from_str(redirect_uri).context(UrlSnafu {
+        let parsed = Url::from_str(redirect_uri).context(UrlSnafu {
             url: redirect_uri.to_string(),
         })?;
 
-        let query = redirect_url.query_pairs().collect::<HashMap<_, _>>();
+        let query = parsed.query_pairs().collect::<HashMap<_, _>>();
         let code = query.get("code").context(UnexpectedNoneSnafu {
             msg: "No code found in redirect URL",
         })?;
@@ -185,6 +194,10 @@ impl ClaudeCodeState {
         })
     }
 
+    /// Trade an authorization code for an access token and store it.
+    ///
+    /// # Errors
+    /// Upstream HTTP failures, or a token response that cannot be parsed.
     pub async fn exchange_token(&mut self, code_res: ExchangeResult) -> Result<(), ClewdrError> {
         let cc_client_id = CLEWDR_CONFIG.load().cc_client_id();
 
@@ -206,7 +219,7 @@ impl ClaudeCodeState {
         let token = token_request.request_async(&my_client).await?;
 
         if let Some(cookie) = self.cookie.as_mut() {
-            cookie.token = Some(TokenInfo::new(token, code_res.org_uuid.clone()));
+            cookie.token = Some(TokenInfo::new(&token, code_res.org_uuid.clone()));
         } else {
             return Err(ClewdrError::UnexpectedNone {
                 msg: "No cookie found to update with token info",
@@ -215,6 +228,10 @@ impl ClaudeCodeState {
         Ok(())
     }
 
+    /// Refresh an expired access token using the stored refresh token.
+    ///
+    /// # Errors
+    /// Upstream HTTP failures, or a token response that cannot be parsed.
     pub async fn refresh_token(&mut self) -> Result<(), ClewdrError> {
         let wreq_client = self.get_wreq_client();
         let Some(CookieStatus {
@@ -252,7 +269,7 @@ impl ClaudeCodeState {
 
         match refresh_result {
             Ok(new_token) => {
-                *token = TokenInfo::new(new_token, org_uuid);
+                *token = TokenInfo::new(&new_token, org_uuid);
                 Ok(())
             }
             Err(e) => {
@@ -278,7 +295,7 @@ impl ClaudeCodeState {
 
                 // Cookie is valid and account has Pro+ permissions, proceed with re-authorization
                 let code_res = self.exchange_code(&org_uuid).await.inspect_err(|e| {
-                    tracing::error!("Failed to exchange code during re-authorization: {}", e)
+                    tracing::error!("Failed to exchange code during re-authorization: {}", e);
                 })?;
                 match self.exchange_token(code_res).await {
                     Ok(()) => {

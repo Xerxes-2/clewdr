@@ -21,6 +21,10 @@ use crate::{
 ///
 /// # Returns
 /// * `Response` - Stream or JSON response from Claude
+///
+/// # Errors
+/// Propagates any [`ClewdrError`] from the provider: no cookie available,
+/// an upstream HTTP failure, or exhausted retries.
 pub async fn api_claude_web(
     State(provider): State<Arc<ClaudeWebProvider>>,
     ClaudeWebPreprocess(params, context): ClaudeWebPreprocess,

@@ -1,5 +1,11 @@
 use serde::{Deserialize, Serialize};
 
+// The bool fields are a flat wire format shared with the frontend. Grouping
+// them into sub-structs, as the lint suggests, would change the JSON schema.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "mirrors the config API wire format"
+)]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ConfigApi {
     #[serde(default)]

@@ -6,6 +6,15 @@ pub fn mask_str(s: &str, visible: usize) -> String {
     }
 }
 
+/// Render a Unix timestamp using the browser's locale.
+///
+/// Milliseconds are computed in `f64`, matching the JavaScript `Date` API. The
+/// precision loss only bites past year 285616, so it cannot affect a cookie
+/// reset time.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "JS Date takes an f64; timestamps are far inside its exact range"
+)]
 pub fn format_timestamp(ts: i64) -> String {
     let date = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64((ts * 1000) as f64));
     to_locale_string(&date)

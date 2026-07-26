@@ -31,6 +31,7 @@ pub enum ClaudeContext {
 }
 
 impl ClaudeContext {
+    #[must_use]
     pub fn is_stream(&self) -> bool {
         match self {
             ClaudeContext::Web(ctx) => ctx.stream,
@@ -38,6 +39,7 @@ impl ClaudeContext {
         }
     }
 
+    #[must_use]
     pub fn api_format(&self) -> ClaudeApiFormat {
         match self {
             ClaudeContext::Web(ctx) => ctx.api_format,
@@ -45,14 +47,17 @@ impl ClaudeContext {
         }
     }
 
+    #[must_use]
     pub fn is_web(&self) -> bool {
         matches!(self, ClaudeContext::Web(_))
     }
 
+    #[must_use]
     pub fn is_code(&self) -> bool {
         matches!(self, ClaudeContext::Code(_))
     }
 
+    #[must_use]
     pub fn stop_sequences(&self) -> &[String] {
         match self {
             ClaudeContext::Web(ctx) => &ctx.stop_sequences,
@@ -60,6 +65,7 @@ impl ClaudeContext {
         }
     }
 
+    #[must_use]
     pub fn system_prompt_hash(&self) -> Option<u64> {
         match self {
             ClaudeContext::Web(_) => None,
@@ -67,6 +73,7 @@ impl ClaudeContext {
         }
     }
 
+    #[must_use]
     pub fn usage(&self) -> &Usage {
         match self {
             ClaudeContext::Web(ctx) => &ctx.usage,

@@ -11,6 +11,7 @@ pub struct ApiError {
 }
 
 impl ApiError {
+    #[must_use]
     pub fn unauthorized() -> Self {
         Self {
             code: StatusCode::UNAUTHORIZED,

@@ -64,7 +64,7 @@ impl CookieActor {
                 .chain(state.exhausted.iter())
                 .cloned()
                 .collect();
-            config.wasted_cookie = state.invalid.clone();
+            config.wasted_cookie.clone_from(&state.invalid);
             config
         });
 
@@ -174,7 +174,6 @@ impl CookieActor {
 
     /// Dispatches a cookie for use
     fn dispatch(
-        &self,
         state: &mut CookieActorState,
         hash: Option<u64>,
     ) -> Result<CookieStatus, ClewdrError> {
@@ -214,7 +213,8 @@ impl CookieActor {
             Reason::NormalPro => {
                 return;
             }
-            Reason::TooManyRequest(i) => {
+            // Both carry a reset timestamp, so the cookie is only parked.
+            Reason::TooManyRequest(i) | Reason::Restricted(i) => {
                 find_remove(&cookie);
                 cookie.reset_time = Some(i);
                 cookie.reset_window_usage();
@@ -222,25 +222,7 @@ impl CookieActor {
                     return;
                 }
             }
-            Reason::Restricted(i) => {
-                find_remove(&cookie);
-                cookie.reset_time = Some(i);
-                cookie.reset_window_usage();
-                if !state.exhausted.insert(cookie) {
-                    return;
-                }
-            }
-            Reason::Free => {
-                find_remove(&cookie);
-                let mut removed = cookie.clone();
-                removed.reset_window_usage();
-                if !state
-                    .invalid
-                    .insert(UselessCookie::new(removed.cookie.clone(), reason))
-                {
-                    return;
-                }
-            }
+            // Everything else retires the cookie for good.
             _ => {
                 find_remove(&cookie);
                 let mut removed = cookie.clone();
@@ -284,14 +266,14 @@ impl CookieActor {
     }
 
     /// Deletes a cookie from all collections
-    fn delete(state: &mut CookieActorState, cookie: CookieStatus) -> Result<(), ClewdrError> {
+    fn delete(state: &mut CookieActorState, cookie: &CookieStatus) -> Result<(), ClewdrError> {
         let mut found = false;
         state.valid.retain(|c| {
-            found |= *c == cookie;
-            *c != cookie
+            found |= c == cookie;
+            c != cookie
         });
         let useless = UselessCookie::new(cookie.cookie.clone(), Reason::Null);
-        found |= state.exhausted.remove(&cookie) | state.invalid.remove(&useless);
+        found |= state.exhausted.remove(cookie) | state.invalid.remove(&useless);
 
         if found {
             Self::save(state);
@@ -315,27 +297,30 @@ impl Actor for CookieActor {
         _myself: ActorRef<Self::Msg>,
         _arguments: Self::Arguments,
     ) -> Result<Self::State, ActorProcessingErr> {
-        let valid = VecDeque::from_iter(
-            CLEWDR_CONFIG
-                .load()
-                .cookie_array
-                .iter()
-                .filter(|c| c.reset_time.is_none())
-                .cloned(),
-        );
-        let exhausted = HashSet::from_iter(
-            CLEWDR_CONFIG
-                .load()
-                .cookie_array
-                .iter()
-                .filter(|c| c.reset_time.is_some())
-                .cloned(),
-        );
-        let invalid = HashSet::from_iter(CLEWDR_CONFIG.load().wasted_cookie.iter().cloned());
+        let valid = CLEWDR_CONFIG
+            .load()
+            .cookie_array
+            .iter()
+            .filter(|c| c.reset_time.is_none())
+            .cloned()
+            .collect::<VecDeque<_>>();
+        let exhausted = CLEWDR_CONFIG
+            .load()
+            .cookie_array
+            .iter()
+            .filter(|c| c.reset_time.is_some())
+            .cloned()
+            .collect::<HashSet<_>>();
+        let invalid = CLEWDR_CONFIG
+            .load()
+            .wasted_cookie
+            .iter()
+            .cloned()
+            .collect::<HashSet<_>>();
 
         let moka = Cache::builder()
             .max_capacity(1000)
-            .time_to_idle(std::time::Duration::from_secs(60 * 60))
+            .time_to_idle(std::time::Duration::from_hours(1))
             .build();
 
         let state = CookieActorState {
@@ -370,7 +355,7 @@ impl Actor for CookieActor {
                 Self::reset(state);
             }
             CookieActorMessage::Request(cache_hash, reply_port) => {
-                let result = self.dispatch(state, cache_hash);
+                let result = Self::dispatch(state, cache_hash);
                 reply_port.send(result)?;
             }
             CookieActorMessage::GetStatus(reply_port) => {
@@ -382,7 +367,7 @@ impl Actor for CookieActor {
                 reply_port.send(status_info)?;
             }
             CookieActorMessage::Delete(cookie, reply_port) => {
-                let result = Self::delete(state, cookie.clone());
+                let result = Self::delete(state, &cookie);
                 reply_port.send(result)?;
             }
         }
@@ -407,6 +392,9 @@ pub struct CookieActorHandle {
 
 impl CookieActorHandle {
     /// Create a new `CookieActor` and return a handle to it
+    ///
+    /// # Errors
+    /// If the actor cannot be spawned.
     pub async fn start() -> Result<Self, ractor::SpawnErr> {
         let (actor_ref, _join_handle) = Actor::spawn(None, CookieActor, ()).await?;
 
@@ -414,13 +402,13 @@ impl CookieActorHandle {
         let handle = Self {
             actor_ref: actor_ref.clone(),
         };
-        handle.spawn_timeout_checker().await;
+        handle.spawn_timeout_checker();
 
         Ok(handle)
     }
 
     /// Spawns a timeout checker task
-    async fn spawn_timeout_checker(&self) {
+    fn spawn_timeout_checker(&self) {
         let actor_ref = self.actor_ref.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(INTERVAL));
@@ -434,6 +422,10 @@ impl CookieActorHandle {
     }
 
     /// Request a cookie from the cookie actor
+    ///
+    /// # Errors
+    /// [`ClewdrError::RactorError`] if the actor cannot be reached, or the
+    /// actor's own error when no cookie is available.
     pub async fn request(&self, cache_hash: Option<u64>) -> Result<CookieStatus, ClewdrError> {
         ractor::call!(self.actor_ref, CookieActorMessage::Request, cache_hash).map_err(|e| {
             ClewdrError::RactorError {
@@ -444,6 +436,14 @@ impl CookieActorHandle {
     }
 
     /// Return a cookie to the cookie actor
+    ///
+    /// # Errors
+    /// [`ClewdrError::RactorError`] if the actor cannot be reached.
+    #[expect(
+        clippy::unused_async,
+        reason = "kept async so every handle method has the same shape; this \
+                  message is currently a fire-and-forget cast"
+    )]
     pub async fn return_cookie(
         &self,
         cookie: CookieStatus,
@@ -458,6 +458,14 @@ impl CookieActorHandle {
     }
 
     /// Submit a new cookie to the cookie actor
+    ///
+    /// # Errors
+    /// [`ClewdrError::RactorError`] if the actor cannot be reached.
+    #[expect(
+        clippy::unused_async,
+        reason = "kept async so every handle method has the same shape; this \
+                  message is currently a fire-and-forget cast"
+    )]
     pub async fn submit(&self, cookie: CookieStatus) -> Result<(), ClewdrError> {
         ractor::cast!(self.actor_ref, CookieActorMessage::Submit(cookie)).map_err(|e| {
             ClewdrError::RactorError {
@@ -468,6 +476,9 @@ impl CookieActorHandle {
     }
 
     /// Get status information about all cookies
+    ///
+    /// # Errors
+    /// [`ClewdrError::RactorError`] if the actor cannot be reached.
     pub async fn get_status(&self) -> Result<CookieStatusInfo, ClewdrError> {
         ractor::call!(self.actor_ref, CookieActorMessage::GetStatus).map_err(|e| {
             ClewdrError::RactorError {
@@ -480,6 +491,10 @@ impl CookieActorHandle {
     }
 
     /// Delete a cookie from the cookie actor
+    ///
+    /// # Errors
+    /// [`ClewdrError::RactorError`] if the actor cannot be reached, or the
+    /// actor's own error if the cookie is not present.
     pub async fn delete_cookie(&self, cookie: CookieStatus) -> Result<(), ClewdrError> {
         ractor::call!(self.actor_ref, CookieActorMessage::Delete, cookie).map_err(|e| {
             ClewdrError::RactorError {

@@ -128,6 +128,15 @@ pub struct CreateMessageParams {
 }
 
 impl CreateMessageParams {
+    /// Estimate the prompt's token count with the `o200k_base` encoding.
+    ///
+    /// This is an approximation: Anthropic does not publish its tokenizer, so
+    /// the count only informs local accounting.
+    ///
+    /// # Panics
+    /// If the bundled `o200k_base` encoding fails to load, which would mean
+    /// the tiktoken data compiled into the binary is corrupt.
+    #[must_use]
     pub fn count_tokens(&self) -> u32 {
         let bpe = o200k_base().expect("Failed to get encoding");
         let systems = match self.system {
@@ -150,8 +159,11 @@ impl CreateMessageParams {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        bpe.encode_with_special_tokens(&systems).len() as u32
-            + bpe.encode_with_special_tokens(&messages).len() as u32
+        let systems =
+            u32::try_from(bpe.encode_with_special_tokens(&systems).len()).unwrap_or(u32::MAX);
+        let messages =
+            u32::try_from(bpe.encode_with_special_tokens(&messages).len()).unwrap_or(u32::MAX);
+        systems.saturating_add(messages)
     }
 }
 
@@ -171,6 +183,7 @@ pub enum Thinking {
 
 impl Thinking {
     /// Legacy extended thinking with an explicit budget.
+    #[must_use]
     pub fn new(budget_tokens: u64) -> Self {
         Self::Enabled { budget_tokens }
     }
@@ -179,6 +192,7 @@ impl Thinking {
     ///
     /// `display` defaults to `omitted` on the newest models, so it has to be
     /// requested explicitly for the client to see any thinking text.
+    #[must_use]
     pub fn adaptive_summarized() -> Self {
         Self::Adaptive {
             display: Some("summarized".to_string()),
@@ -199,51 +213,61 @@ impl From<RequiredMessageParams> for CreateMessageParams {
 
 impl CreateMessageParams {
     /// Create new parameters with only required fields
+    #[must_use]
     pub fn new(required: RequiredMessageParams) -> Self {
         required.into()
     }
 
     // Builder methods for optional parameters
+    #[must_use]
     pub fn with_system(mut self, system: impl Into<String>) -> Self {
         self.system = Some(serde_json::json!(system.into()));
         self
     }
 
+    #[must_use]
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = Some(temperature);
         self
     }
 
+    #[must_use]
     pub fn with_stop_sequences(mut self, stop_sequences: Vec<String>) -> Self {
         self.stop_sequences = Some(stop_sequences);
         self
     }
 
+    #[must_use]
     pub fn with_stream(mut self, stream: bool) -> Self {
         self.stream = Some(stream);
         self
     }
 
+    #[must_use]
     pub fn with_top_k(mut self, top_k: u32) -> Self {
         self.top_k = Some(top_k);
         self
     }
 
+    #[must_use]
     pub fn with_top_p(mut self, top_p: f32) -> Self {
         self.top_p = Some(top_p);
         self
     }
 
+    #[must_use]
     pub fn with_tools(mut self, tools: Vec<Tool>) -> Self {
         self.tools = Some(tools);
         self
     }
 
+    #[must_use]
     pub fn with_tool_choice(mut self, tool_choice: ToolChoice) -> Self {
         self.tool_choice = Some(tool_choice);
         self
     }
 
+    #[must_use]
     pub fn with_metadata(mut self, metadata: Metadata) -> Self {
         self.metadata = Some(metadata);
         self
@@ -480,6 +504,7 @@ impl ImageSource {
     /// Supports format: data:<`media_type`>[;params];base64,<data>
     /// e.g., data:image/png;base64,iVBORw0KGgo...
     /// e.g., data:image/png;name=foo;base64,iVBORw0KGgo...
+    #[must_use]
     pub fn from_data_url(url: &str) -> Option<Self> {
         let url = url.trim();
         let (metadata, base64_data) = url.split_once(',')?;
@@ -504,6 +529,7 @@ impl ImageSource {
     }
 
     /// Parse an OpenAI-compatible image URL into an `ImageSource`.
+    #[must_use]
     pub fn from_image_url(url: &str) -> Option<Self> {
         let url = url.trim();
         Self::from_data_url(url).or_else(|| {
@@ -840,6 +866,15 @@ pub struct CreateMessageResponse {
 }
 
 impl CreateMessageResponse {
+    /// Estimate the response's token count with the `o200k_base` encoding.
+    ///
+    /// This is an approximation: Anthropic does not publish its tokenizer, so
+    /// the count only informs local accounting.
+    ///
+    /// # Panics
+    /// If the bundled `o200k_base` encoding fails to load, which would mean
+    /// the tiktoken data compiled into the binary is corrupt.
+    #[must_use]
     pub fn count_tokens(&self) -> u32 {
         let bpe = o200k_base().expect("Failed to get encoding");
         let content = self
@@ -851,17 +886,18 @@ impl CreateMessageResponse {
                     source: ImageSource::Base64 { data, .. },
                     ..
                 } => data.as_str(),
-                ContentBlock::Image { .. } => "",
+                // Non-base64 images and every other block contribute no text.
                 _ => "",
             })
             .collect::<Vec<_>>()
             .join("\n");
-        bpe.encode_with_special_tokens(&content).len() as u32
+        u32::try_from(bpe.encode_with_special_tokens(&content).len()).unwrap_or(u32::MAX)
     }
 }
 
 impl CreateMessageResponse {
     /// Create a new response with the given content blocks
+    #[must_use]
     pub fn text(content: String, model: String, usage: Usage) -> Self {
         Self {
             content: vec![ContentBlock::text(content)],
@@ -919,6 +955,7 @@ impl Message {
     }
 
     /// Create a new message with content blocks
+    #[must_use]
     pub fn new_blocks(role: Role, blocks: Vec<ContentBlock>) -> Self {
         Self {
             role,

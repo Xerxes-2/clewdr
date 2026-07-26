@@ -29,8 +29,11 @@ mod tests {
             (Reason::Free, "Free account"),
             (Reason::Banned, "Banned"),
             (Reason::Null, "Null"),
-            (Reason::Restricted(1735689600), "Restricted/Warning"),
-            (Reason::TooManyRequest(1735689600), "429 Too many request"),
+            (Reason::Restricted(1_735_689_600), "Restricted/Warning"),
+            (
+                Reason::TooManyRequest(1_735_689_600),
+                "429 Too many request",
+            ),
         ];
 
         for (reason, expected_substring) in test_cases {
@@ -51,7 +54,7 @@ mod tests {
     #[test]
     fn test_reason_with_timestamp_format() {
         // Verify that timestamps in Reason are formatted correctly without colors
-        let restricted = Reason::Restricted(1735689600); // 2025-01-01 00:00:00 UTC
+        let restricted = Reason::Restricted(1_735_689_600); // 2025-01-01 00:00:00 UTC
         let display_text = restricted.to_string();
 
         // Should contain UTC formatted date
@@ -59,7 +62,7 @@ mod tests {
         assert!(display_text.contains("2025")); // Year
         assert!(!display_text.contains(ANSI_ESCAPE_PATTERN));
 
-        let too_many_request = Reason::TooManyRequest(1735689600);
+        let too_many_request = Reason::TooManyRequest(1_735_689_600);
         let display_text = too_many_request.to_string();
 
         assert!(display_text.contains("UTC"));
@@ -72,7 +75,7 @@ mod tests {
         // Test that when Reason is serialized to JSON, there are no escaped ANSI codes
         use serde_json;
 
-        let reason = Reason::TooManyRequest(1735660800);
+        let reason = Reason::TooManyRequest(1_735_660_800);
         let json_str = serde_json::to_string(&reason).unwrap();
 
         // JSON should not contain escaped ANSI codes like \\x1b or \\u001b

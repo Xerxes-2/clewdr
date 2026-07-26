@@ -66,11 +66,13 @@ impl ClaudeWebState {
         }
     }
 
+    #[must_use]
     pub fn with_claude_format(mut self) -> Self {
         self.api_format = ClaudeApiFormat::Claude;
         self
     }
 
+    #[must_use]
     pub fn with_openai_format(mut self) -> Self {
         self.api_format = ClaudeApiFormat::OpenAI;
         self
@@ -81,7 +83,7 @@ impl ClaudeWebState {
     }
 
     /// Build a request with the current cookie and proxy settings
-    pub fn build_request(&self, method: Method, url: impl ToString) -> RequestBuilder {
+    pub fn build_request(&self, method: Method, url: &impl ToString) -> RequestBuilder {
         // let r = SUPER_CLIENT.cloned();
         let mut req = self
             .client
@@ -122,11 +124,15 @@ impl ClaudeWebState {
 
     /// Requests a new cookie from the cookie manager
     /// Updates the internal state with the new cookie and proxy configuration
+    ///
+    /// # Errors
+    /// If no cookie is available, or the HTTP client cannot be rebuilt for the
+    /// cookie's proxy.
     pub async fn request_cookie(&mut self) -> Result<CookieStatus, ClewdrError> {
         let res = self.cookie_actor_handle.request(None).await?;
         self.cookie = Some(res.clone());
         // Always pull latest proxy/endpoint before building the client
-        self.proxy = CLEWDR_CONFIG.load().wreq_proxy.clone();
+        self.proxy.clone_from(&CLEWDR_CONFIG.load().wreq_proxy);
         self.endpoint = CLEWDR_CONFIG.load().endpoint();
         self.client = Self::build_client(self.proxy.as_ref()).context(WreqSnafu {
             msg: "Failed to build client with new cookie",
@@ -184,7 +190,7 @@ impl ClaudeWebState {
     pub async fn fetch_web_usage(handle: CookieActorHandle, cookie: CookieStatus) -> Option<Value> {
         let mut state = ClaudeWebState::new(handle);
         state.cookie = Some(cookie.clone());
-        state.proxy = CLEWDR_CONFIG.load().wreq_proxy.clone();
+        state.proxy.clone_from(&CLEWDR_CONFIG.load().wreq_proxy);
         state.endpoint = CLEWDR_CONFIG.load().endpoint();
         state.client = Self::build_client(state.proxy.as_ref()).ok()?;
         state.cookie_header_value =
@@ -205,7 +211,7 @@ impl ClaudeWebState {
             .ok()?;
 
         let res = state
-            .build_request(Method::GET, url)
+            .build_request(Method::GET, &url)
             .send()
             .await
             .inspect_err(|e| {

@@ -124,7 +124,7 @@ pub fn ExhaustedRow(cookie: CookieStatus) -> impl IntoView {
 #[component]
 pub fn InvalidRow(cookie: UselessCookie) -> impl IntoView {
     let masked = utils::mask_str(&cookie.cookie, 6);
-    let reason = get_reason_text(&cookie.reason);
+    let reason = get_reason_text(cookie.reason.as_ref());
 
     view! {
         <div class="cookie-row">
@@ -137,7 +137,7 @@ pub fn InvalidRow(cookie: UselessCookie) -> impl IntoView {
     }
 }
 
-fn get_reason_text(reason: &Option<Reason>) -> String {
+fn get_reason_text(reason: Option<&Reason>) -> String {
     let i = use_i18n();
     let Some(r) = reason else {
         return i.t("cookieStatus.status.reasons.unknown");

@@ -52,6 +52,12 @@ fn generate_password() -> String {
 }
 
 /// A struct representing the configuration of the application
+// The bool fields are flat keys in the user's TOML. Grouping them into
+// sub-structs, as the lint suggests, would break every existing config file.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "mirrors the on-disk config format"
+)]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ClewdrConfig {
     // key configurations
@@ -391,6 +397,12 @@ impl ClewdrConfig {
     }
 
     /// Save the configuration to a file
+    ///
+    /// A no-op when running with `no_fs`.
+    ///
+    /// # Errors
+    /// If the config directory cannot be created, the config cannot be
+    /// serialized, or the file cannot be written.
     pub async fn save(&self) -> Result<(), ClewdrError> {
         if self.no_fs {
             return Ok(());
@@ -413,6 +425,7 @@ impl ClewdrConfig {
     }
 
     /// Validate the configuration
+    #[must_use]
     pub fn validate(mut self) -> Self {
         if self.password.trim().is_empty() {
             self.password = generate_password();

@@ -43,6 +43,7 @@ impl UselessCookie {
     ///
     /// # Returns
     /// A new `UselessCookie` instance
+    #[must_use]
     pub fn new(cookie: ClewdrCookie, reason: Reason) -> Self {
         Self { cookie, reason }
     }

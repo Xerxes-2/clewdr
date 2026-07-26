@@ -7,6 +7,7 @@ use std::{
 };
 
 pub use clewdr_types::UsageBreakdown;
+use clewdr_types::UsageFamily;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use snafu::{GenerateImplicitData, Location};
@@ -24,6 +25,16 @@ pub enum ModelFamily {
     Sonnet,
     Opus,
     Other,
+}
+
+impl From<ModelFamily> for UsageFamily {
+    fn from(family: ModelFamily) -> Self {
+        match family {
+            ModelFamily::Sonnet => Self::Sonnet,
+            ModelFamily::Opus => Self::Opus,
+            ModelFamily::Other => Self::Other,
+        }
+    }
 }
 
 /// A struct representing a cookie
@@ -135,6 +146,10 @@ impl CookieStatus {
     ///
     /// # Returns
     /// A new `CookieStatus` instance
+    ///
+    /// # Errors
+    /// [`ClewdrError::ParseCookieError`] if `cookie` is not a well-formed
+    /// `sessionKey` value.
     pub fn new(cookie: &str, reset_time: Option<i64>) -> Result<Self, ClewdrError> {
         let cookie = ClewdrCookie::from_str(cookie)?;
         Ok(Self {
@@ -165,6 +180,7 @@ impl CookieStatus {
     ///
     /// # Returns
     /// The same `CookieStatus` with potentially updated `reset_time`
+    #[must_use]
     pub fn reset(self) -> Self {
         if let Some(t) = self.reset_time
             && t < chrono::Utc::now().timestamp()
@@ -222,122 +238,17 @@ impl CookieStatus {
         if input == 0 && output == 0 {
             return;
         }
-        // Legacy totals/windows removed; only bucketed aggregation remains
-
-        // session bucket (total + per family)
-        self.session_usage.total_input_tokens =
-            self.session_usage.total_input_tokens.saturating_add(input);
-        self.session_usage.total_output_tokens = self
-            .session_usage
-            .total_output_tokens
-            .saturating_add(output);
-        match family {
-            ModelFamily::Sonnet => {
-                self.session_usage.sonnet_input_tokens =
-                    self.session_usage.sonnet_input_tokens.saturating_add(input);
-                self.session_usage.sonnet_output_tokens = self
-                    .session_usage
-                    .sonnet_output_tokens
-                    .saturating_add(output);
-            }
-            ModelFamily::Opus => {
-                self.session_usage.opus_input_tokens =
-                    self.session_usage.opus_input_tokens.saturating_add(input);
-                self.session_usage.opus_output_tokens =
-                    self.session_usage.opus_output_tokens.saturating_add(output);
-            }
-            ModelFamily::Other => {}
+        let family = family.into();
+        self.session_usage.add(input, output, family);
+        self.weekly_usage.add(input, output, family);
+        // The per-family weekly buckets only track their own family.
+        if family == UsageFamily::Sonnet {
+            self.weekly_sonnet_usage.add(input, output, family);
         }
-
-        // weekly bucket (total + per family)
-        self.weekly_usage.total_input_tokens =
-            self.weekly_usage.total_input_tokens.saturating_add(input);
-        self.weekly_usage.total_output_tokens =
-            self.weekly_usage.total_output_tokens.saturating_add(output);
-        match family {
-            ModelFamily::Sonnet => {
-                self.weekly_usage.sonnet_input_tokens =
-                    self.weekly_usage.sonnet_input_tokens.saturating_add(input);
-                self.weekly_usage.sonnet_output_tokens = self
-                    .weekly_usage
-                    .sonnet_output_tokens
-                    .saturating_add(output);
-
-                // weekly_sonnet bucket (only sonnet contributes)
-                self.weekly_sonnet_usage.total_input_tokens = self
-                    .weekly_sonnet_usage
-                    .total_input_tokens
-                    .saturating_add(input);
-                self.weekly_sonnet_usage.total_output_tokens = self
-                    .weekly_sonnet_usage
-                    .total_output_tokens
-                    .saturating_add(output);
-                self.weekly_sonnet_usage.sonnet_input_tokens = self
-                    .weekly_sonnet_usage
-                    .sonnet_input_tokens
-                    .saturating_add(input);
-                self.weekly_sonnet_usage.sonnet_output_tokens = self
-                    .weekly_sonnet_usage
-                    .sonnet_output_tokens
-                    .saturating_add(output);
-            }
-            ModelFamily::Opus => {
-                self.weekly_usage.opus_input_tokens =
-                    self.weekly_usage.opus_input_tokens.saturating_add(input);
-                self.weekly_usage.opus_output_tokens =
-                    self.weekly_usage.opus_output_tokens.saturating_add(output);
-            }
-            ModelFamily::Other => {}
+        if family == UsageFamily::Opus {
+            self.weekly_opus_usage.add(input, output, family);
         }
-
-        // weekly_opus bucket (only opus contributes)
-        if matches!(family, ModelFamily::Opus) {
-            self.weekly_opus_usage.total_input_tokens = self
-                .weekly_opus_usage
-                .total_input_tokens
-                .saturating_add(input);
-            self.weekly_opus_usage.total_output_tokens = self
-                .weekly_opus_usage
-                .total_output_tokens
-                .saturating_add(output);
-            self.weekly_opus_usage.opus_input_tokens = self
-                .weekly_opus_usage
-                .opus_input_tokens
-                .saturating_add(input);
-            self.weekly_opus_usage.opus_output_tokens = self
-                .weekly_opus_usage
-                .opus_output_tokens
-                .saturating_add(output);
-        }
-
-        // lifetime bucket (total + per family)
-        self.lifetime_usage.total_input_tokens =
-            self.lifetime_usage.total_input_tokens.saturating_add(input);
-        self.lifetime_usage.total_output_tokens = self
-            .lifetime_usage
-            .total_output_tokens
-            .saturating_add(output);
-        match family {
-            ModelFamily::Sonnet => {
-                self.lifetime_usage.sonnet_input_tokens = self
-                    .lifetime_usage
-                    .sonnet_input_tokens
-                    .saturating_add(input);
-                self.lifetime_usage.sonnet_output_tokens = self
-                    .lifetime_usage
-                    .sonnet_output_tokens
-                    .saturating_add(output);
-            }
-            ModelFamily::Opus => {
-                self.lifetime_usage.opus_input_tokens =
-                    self.lifetime_usage.opus_input_tokens.saturating_add(input);
-                self.lifetime_usage.opus_output_tokens = self
-                    .lifetime_usage
-                    .opus_output_tokens
-                    .saturating_add(output);
-            }
-            ModelFamily::Other => {}
-        }
+        self.lifetime_usage.add(input, output, family);
     }
 }
 
@@ -358,6 +269,7 @@ impl Default for ClewdrCookie {
 }
 
 impl ClewdrCookie {
+    #[must_use]
     pub fn mask(&self) -> String {
         let len = self.inner.len();
         if len > 20 {
@@ -448,5 +360,43 @@ mod tests {
     fn test_invalid_cookie() {
         let result = ClewdrCookie::from_str("invalid-cookie");
         assert!(result.is_err());
+    }
+
+    fn cookie() -> CookieStatus {
+        let base = make_base_cookie_with_len(86);
+        CookieStatus::new(&format!("sk-ant-sid01-{base}"), None).unwrap()
+    }
+
+    #[test]
+    fn buckets_usage_by_family() {
+        let mut c = cookie();
+        c.add_and_bucket_usage(10, 5, ModelFamily::Sonnet);
+        c.add_and_bucket_usage(20, 7, ModelFamily::Opus);
+        c.add_and_bucket_usage(3, 1, ModelFamily::Other);
+
+        // Totals collect every family.
+        for b in [&c.session_usage, &c.weekly_usage, &c.lifetime_usage] {
+            assert_eq!(b.total_input_tokens, 33);
+            assert_eq!(b.total_output_tokens, 13);
+            assert_eq!(b.sonnet_input_tokens, 10);
+            assert_eq!(b.opus_input_tokens, 20);
+        }
+        // The per-family weekly buckets only see their own family.
+        assert_eq!(c.weekly_sonnet_usage.total_input_tokens, 10);
+        assert_eq!(c.weekly_sonnet_usage.opus_input_tokens, 0);
+        assert_eq!(c.weekly_opus_usage.total_input_tokens, 20);
+        assert_eq!(c.weekly_opus_usage.sonnet_input_tokens, 0);
+    }
+
+    #[test]
+    fn ignores_empty_exchanges_and_saturates() {
+        let mut c = cookie();
+        c.add_and_bucket_usage(0, 0, ModelFamily::Sonnet);
+        assert!(!c.lifetime_usage.any_nonzero());
+
+        c.add_and_bucket_usage(u64::MAX, u64::MAX, ModelFamily::Opus);
+        c.add_and_bucket_usage(10, 10, ModelFamily::Opus);
+        assert_eq!(c.lifetime_usage.total_input_tokens, u64::MAX);
+        assert_eq!(c.lifetime_usage.opus_output_tokens, u64::MAX);
     }
 }

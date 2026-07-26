@@ -29,6 +29,10 @@ use crate::{
 ///
 /// # Returns
 /// Combined completion text from all events
+///
+/// # Errors
+/// If the stream yields a transport error, or an event's payload is not the
+/// expected JSON shape.
 pub async fn merge_sse(
     stream: EventStream<impl Stream<Item = Result<Bytes, wreq::Error>>>,
 ) -> Result<String, ClewdrError> {
@@ -74,80 +78,80 @@ impl ClaudeWebState {
     ///
     /// # Returns
     /// * `axum::response::Response` - Transformed response in the requested format
+    ///
+    /// # Errors
+    /// If the upstream body cannot be read or does not parse into the expected
+    /// shape.
     pub async fn transform_response(
         &mut self,
         wreq_res: wreq::Response,
     ) -> Result<axum::response::Response, ClewdrError> {
         if self.stream {
-            // Stream through while accumulating completion text; persist usage at end
-            let mut input_tokens = u64::from(self.usage.input_tokens);
-            let handle = self.cookie_actor_handle.clone();
-            let cookie = self.cookie.clone();
-            let enable_precise = crate::config::CLEWDR_CONFIG.load().enable_web_count_tokens;
-            let last_params = self.last_params.clone();
-            let endpoint = self.endpoint.clone();
-            let proxy = self.proxy.clone();
-            let client = self.client.clone();
-            // try to get precise input tokens via Claude Code count_tokens if enabled
-            if crate::config::CLEWDR_CONFIG.load().enable_web_count_tokens
-                && let Some(tokens) = self.try_code_count_tokens().await
-            {
-                input_tokens = u64::from(tokens);
-            }
+            return self.transform_stream_response(wreq_res).await;
+        }
+        self.transform_buffered_response(wreq_res).await
+    }
 
-            let stream = wreq_res
-                .bytes_stream()
-                .eventsource()
-                .map_err(axum::Error::new);
-            let stream = try_stream! {
-                let mut acc = String::new();
-                #[derive(serde::Deserialize)]
-                struct Data { completion: String }
-                futures::pin_mut!(stream);
-                while let Some(event) = stream.try_next().await? {
-                    if let Ok(d) = serde_json::from_str::<Data>(&event.data) {
-                        acc.push_str(&d.completion);
-                    }
-                    let e = SseEvent::default().event(event.event).id(event.id);
-                    let e = if let Some(retry) = event.retry { e.retry(retry) } else { e };
-                    yield e.data(event.data);
+    /// Stream the upstream SSE through to the client, accumulating usage as it
+    /// goes and persisting it once the stream ends.
+    async fn transform_stream_response(
+        &mut self,
+        wreq_res: wreq::Response,
+    ) -> Result<axum::response::Response, ClewdrError> {
+        // Stream through while accumulating completion text; persist usage at end
+        let mut input_tokens = u64::from(self.usage.input_tokens);
+        let handle = self.cookie_actor_handle.clone();
+        let cookie = self.cookie.clone();
+        let enable_precise = crate::config::CLEWDR_CONFIG.load().enable_web_count_tokens;
+        let last_params = self.last_params.clone();
+        let endpoint = self.endpoint.clone();
+        let proxy = self.proxy.clone();
+        let client = self.client.clone();
+        // try to get precise input tokens via Claude Code count_tokens if enabled
+        if crate::config::CLEWDR_CONFIG.load().enable_web_count_tokens
+            && let Some(tokens) = self.try_code_count_tokens().await
+        {
+            input_tokens = u64::from(tokens);
+        }
+
+        let stream = wreq_res
+            .bytes_stream()
+            .eventsource()
+            .map_err(axum::Error::new);
+        let stream = try_stream! {
+            let mut acc = String::new();
+            #[derive(serde::Deserialize)]
+            struct Data { completion: String }
+            futures::pin_mut!(stream);
+            while let Some(event) = stream.try_next().await? {
+                if let Ok(d) = serde_json::from_str::<Data>(&event.data) {
+                    acc.push_str(&d.completion);
                 }
-                // on end of stream, compute output tokens and persist totals
-                if !acc.is_empty() {
-                    // Prefer official count_tokens if enabled and possible; else estimate locally
-                    let mut out = None;
-                    if enable_precise
-                        && let Some(model) = last_params.as_ref().map(|p| p.model.clone())
-                    {
-                        out = count_code_output_tokens_for_text(
-                            cookie.clone(), endpoint.clone(), proxy.clone(), client.clone(),
-                            model, acc.clone(), handle.clone()
-                        ).await.map(|v| u64::from(v));
-                    }
-                    let out = out.unwrap_or_else(|| {
-                        let usage = crate::types::claude::Usage { input_tokens: input_tokens as u32, output_tokens: 0 };
-                        let resp = crate::types::claude::CreateMessageResponse::text(acc.clone(), Default::default(), usage);
-                        u64::from(resp.count_tokens())
-                    });
-                    if let Some(mut c) = cookie.clone() {
-                        let family = last_params
-                            .as_ref()
-                            .map(|p| p.model.as_str())
-                            .map_or(crate::config::ModelFamily::Other, |m| {
-                                let m = m.to_ascii_lowercase();
-                                if m.contains("opus") {
-                                    crate::config::ModelFamily::Opus
-                                } else if m.contains("sonnet") {
-                                    crate::config::ModelFamily::Sonnet
-                                } else {
-                                    crate::config::ModelFamily::Other
-                                }
-                            });
-                        c.add_and_bucket_usage(input_tokens, out, family);
-                        let _ = handle.return_cookie(c, None).await;
-                    }
-                } else if let Some(mut c) = cookie.clone() {
-                    // still persist input tokens to maintain parity
+                let e = SseEvent::default().event(event.event).id(event.id);
+                let e = if let Some(retry) = event.retry { e.retry(retry) } else { e };
+                yield e.data(event.data);
+            }
+            // on end of stream, compute output tokens and persist totals
+            if !acc.is_empty() {
+                // Prefer official count_tokens if enabled and possible; else estimate locally
+                let mut out = None;
+                if enable_precise
+                    && let Some(model) = last_params.as_ref().map(|p| p.model.clone())
+                {
+                    out = count_code_output_tokens_for_text(
+                        cookie.clone(), endpoint.clone(), proxy.clone(), client.clone(),
+                        model, acc.clone(), handle.clone()
+                    ).await.map(u64::from);
+                }
+                let out = out.unwrap_or_else(|| {
+                    let usage = crate::types::claude::Usage {
+                        input_tokens: u32::try_from(input_tokens).unwrap_or(u32::MAX),
+                        output_tokens: 0,
+                    };
+                    let resp = crate::types::claude::CreateMessageResponse::text(acc.clone(), String::default(), usage);
+                    u64::from(resp.count_tokens())
+                });
+                if let Some(mut c) = cookie.clone() {
                     let family = last_params
                         .as_ref()
                         .map(|p| p.model.as_str())
@@ -161,23 +165,50 @@ impl ClaudeWebState {
                                 crate::config::ModelFamily::Other
                             }
                         });
-                    c.add_and_bucket_usage(input_tokens, 0, family);
+                    c.add_and_bucket_usage(input_tokens, out, family);
                     let _ = handle.return_cookie(c, None).await;
                 }
-            };
-            // normalize error type for axum SSE
-            let stream = stream.map_err(|e: axum::Error| -> BoxError { e.into() });
-            return Ok(Sse::new(stream)
-                .keep_alive(Default::default())
-                .into_response());
-        }
+            } else if let Some(mut c) = cookie.clone() {
+                // still persist input tokens to maintain parity
+                let family = last_params
+                    .as_ref()
+                    .map(|p| p.model.as_str())
+                    .map_or(crate::config::ModelFamily::Other, |m| {
+                        let m = m.to_ascii_lowercase();
+                        if m.contains("opus") {
+                            crate::config::ModelFamily::Opus
+                        } else if m.contains("sonnet") {
+                            crate::config::ModelFamily::Sonnet
+                        } else {
+                            crate::config::ModelFamily::Other
+                        }
+                    });
+                c.add_and_bucket_usage(input_tokens, 0, family);
+                let _ = handle.return_cookie(c, None).await;
+            }
+        };
+        // normalize error type for axum SSE
+        let stream = stream.map_err(|e: axum::Error| -> BoxError { e.into() });
+        Ok(Sse::new(stream)
+            .keep_alive(axum::response::sse::KeepAlive::default())
+            .into_response())
+    }
 
+    /// Collect the whole upstream response and return it as a single JSON body.
+    ///
+    /// # Errors
+    /// If the upstream body cannot be read or does not parse into the expected
+    /// shape.
+    async fn transform_buffered_response(
+        &mut self,
+        wreq_res: wreq::Response,
+    ) -> Result<axum::response::Response, ClewdrError> {
         let stream = wreq_res.bytes_stream();
         let stream = stream.eventsource();
         let text = merge_sse(stream).await?;
         print_out_text(text.clone(), "claude_web_non_stream.txt");
         let mut response =
-            CreateMessageResponse::text(text.clone(), Default::default(), self.usage.clone());
+            CreateMessageResponse::text(text.clone(), String::default(), self.usage.clone());
 
         // Prefer official counting if enabled
         let enable_precise = crate::config::CLEWDR_CONFIG.load().enable_web_count_tokens;

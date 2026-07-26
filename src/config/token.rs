@@ -26,7 +26,7 @@ pub struct TokenInfo {
 
 impl TokenInfo {
     pub fn new(
-        raw: StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>,
+        raw: &StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>,
         organization_uuid: String,
     ) -> Self {
         let expires_at = Utc::now() + raw.expires_in().unwrap_or_default();
@@ -45,6 +45,6 @@ impl TokenInfo {
 
     pub fn is_expired(&self) -> bool {
         debug!("Expires at: {}", self.expires_at.to_rfc3339());
-        Utc::now() >= self.expires_at - Duration::from_secs(60 * 5) // 5 minutes
+        Utc::now() >= self.expires_at - Duration::from_mins(5)
     }
 }

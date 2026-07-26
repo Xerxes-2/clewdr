@@ -41,6 +41,14 @@ impl ClaudeCodeState {
     ///
     /// # Returns
     /// * `Result<axum::response::Response, ClewdrError>` - Formatted response or error
+    ///
+    /// # Errors
+    /// [`ClewdrError::TooManyRetries`] once `max_retries` attempts have all
+    /// failed, or any non-retryable error from the attempt itself.
+    ///
+    /// # Panics
+    /// If an attempt fails before a cookie was acquired. Every retry path
+    /// requests a cookie first, so this cannot happen in practice.
     pub async fn try_chat(
         &mut self,
         p: CreateMessageParams,
@@ -104,6 +112,11 @@ impl ClaudeCodeState {
         Err(ClewdrError::TooManyRetries)
     }
 
+    /// Perform a single (non-retrying) chat request against the Code backend.
+    ///
+    /// # Errors
+    /// Upstream HTTP failures, an expired or rejected token, or a response
+    /// body that cannot be parsed.
     pub async fn send_chat(
         &mut self,
         access_token: String,
@@ -156,6 +169,12 @@ impl ClaudeCodeState {
         }
     }
 
+    /// Fetch the account's usage metrics, refreshing the OAuth token first if
+    /// it is missing or expired.
+    ///
+    /// # Errors
+    /// Any failure in the token exchange or refresh, an upstream HTTP failure,
+    /// or a response body that is not valid JSON.
     pub async fn fetch_usage_metrics(&mut self) -> Result<serde_json::Value, ClewdrError> {
         match self.check_token() {
             TokenStatus::None => {
@@ -199,6 +218,15 @@ impl ClaudeCodeState {
             })
     }
 
+    /// Count tokens for `p`, retrying on cookie-level failures.
+    ///
+    /// # Errors
+    /// [`ClewdrError::TooManyRetries`] once `max_retries` attempts have all
+    /// failed, or any non-retryable error from the attempt itself.
+    ///
+    /// # Panics
+    /// If an attempt fails before a cookie was acquired. Every retry path
+    /// requests a cookie first, so this cannot happen in practice.
     pub async fn try_count_tokens(
         &mut self,
         p: CreateMessageParams,
@@ -306,15 +334,14 @@ impl ClaudeCodeState {
         response: wreq::Response,
         model_family: ModelFamily,
     ) -> Result<axum::response::Response, ClewdrError> {
-        if !self.stream {
-            let (resp, usage_pair) = Self::materialize_non_stream_response(response).await?;
-            let (input, output) = usage_pair.unwrap_or((u64::from(self.usage.input_tokens), 0));
-            self.persist_usage_totals(input, output, model_family).await;
-            Ok(resp)
-        } else {
+        if self.stream {
             // Stream pass-through while accumulating output token usage from message_delta events
-            return self.forward_stream_with_usage(response, model_family).await;
+            return Ok(self.forward_stream_with_usage(response, model_family));
         }
+        let (resp, usage_pair) = Self::materialize_non_stream_response(response).await?;
+        let (input, output) = usage_pair.unwrap_or((u64::from(self.usage.input_tokens), 0));
+        self.persist_usage_totals(input, output, model_family).await;
+        Ok(resp)
     }
 
     async fn persist_usage_totals(&mut self, input: u64, output: u64, family: ModelFamily) {
@@ -332,11 +359,11 @@ impl ClaudeCodeState {
         }
     }
 
-    async fn forward_stream_with_usage(
+    fn forward_stream_with_usage(
         &mut self,
         response: wreq::Response,
         family: ModelFamily,
-    ) -> Result<axum::response::Response, ClewdrError> {
+    ) -> axum::response::Response {
         use std::sync::{
             Arc,
             atomic::{AtomicU64, Ordering},
@@ -384,9 +411,9 @@ impl ClaudeCodeState {
             e.data(event.data)
         });
 
-        Ok(Sse::new(stream)
-            .keep_alive(Default::default())
-            .into_response())
+        Sse::new(stream)
+            .keep_alive(axum::response::sse::KeepAlive::default())
+            .into_response()
     }
 
     async fn materialize_non_stream_response(
@@ -418,12 +445,14 @@ impl ClaudeCodeState {
         if let Ok(value) = serde_json::from_slice::<serde_json::Value>(bytes)
             && let Some(usage) = value.get("usage")
         {
-            let input = usage
-                .get("input_tokens")
-                .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n.max(0) as u64)));
-            let output = usage
-                .get("output_tokens")
-                .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n.max(0) as u64)));
+            let input = usage.get("input_tokens").and_then(|v| {
+                v.as_u64()
+                    .or_else(|| v.as_i64().map(|n| n.max(0).cast_unsigned()))
+            });
+            let output = usage.get("output_tokens").and_then(|v| {
+                v.as_u64()
+                    .or_else(|| v.as_i64().map(|n| n.max(0).cast_unsigned()))
+            });
             if let (Some(i), Some(o)) = (input, output) {
                 return Some((i, o));
             }
@@ -487,9 +516,10 @@ impl ClaudeCodeState {
         cookie: &mut crate::config::CookieStatus,
         handle: &crate::services::cookie_actor::CookieActorHandle,
     ) {
-        let now = chrono::Utc::now().timestamp();
         const SESSION_WINDOW_SECS: i64 = 5 * 60 * 60; // 5h
         const WEEKLY_WINDOW_SECS: i64 = 7 * 24 * 60 * 60; // 7d
+
+        let now = chrono::Utc::now().timestamp();
 
         let tracked = |flag: Option<bool>| flag == Some(true);
         let unknown = |flag: Option<bool>| flag.is_none();

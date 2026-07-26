@@ -91,6 +91,7 @@ const EFFORT_FULL: &[OutputEffort] = &[
 impl ModelTraits {
     /// Look up what `model` accepts. Returns `None` for names ClewdR cannot
     /// place, in which case the request is forwarded untouched.
+    #[must_use]
     pub fn of(model: &str) -> Option<Self> {
         let name = model
             .strip_suffix(THINKING_SUFFIX)
@@ -134,6 +135,7 @@ impl ModelTraits {
     /// On models that already think by default this still resolves to an
     /// explicit `adaptive` config, because it flips `display` to `summarized`
     /// so the client actually receives the reasoning text.
+    #[must_use]
     pub fn thinking_for_suffix(&self) -> Thinking {
         match self.thinking {
             ThinkingSupport::AlwaysOn
@@ -161,16 +163,13 @@ impl ModelTraits {
             return;
         };
         params.thinking = match (self.thinking, requested) {
-            // Always-on models reject `enabled` and `disabled` alike; a budget
-            // request still means "think", so keep it as adaptive.
-            (ThinkingSupport::AlwaysOn, Thinking::Enabled { .. }) => {
-                Some(Thinking::adaptive_summarized())
-            }
             (ThinkingSupport::AlwaysOn, Thinking::Disabled) => None,
-            // 4.7+ dropped budgets but kept adaptive.
-            (ThinkingSupport::AdaptiveOnly, Thinking::Enabled { .. }) => {
-                Some(Thinking::adaptive_summarized())
-            }
+            // Neither line takes a budget, but the request still means "think",
+            // so it becomes adaptive rather than being dropped.
+            (
+                ThinkingSupport::AlwaysOn | ThinkingSupport::AdaptiveOnly,
+                Thinking::Enabled { .. },
+            ) => Some(Thinking::adaptive_summarized()),
             // 4.5 and earlier never learned adaptive.
             (ThinkingSupport::ExtendedOnly, Thinking::Adaptive { .. }) => {
                 Some(Thinking::new(DEFAULT_THINKING_BUDGET))
@@ -311,6 +310,7 @@ pub fn advertised_models() -> impl Iterator<Item = String> {
 }
 
 /// Strip the `-thinking` suffix, reporting whether it was present.
+#[must_use]
 pub fn split_thinking_suffix(model: &str) -> (&str, bool) {
     match model.strip_suffix(THINKING_SUFFIX) {
         Some(base) => (base, true),

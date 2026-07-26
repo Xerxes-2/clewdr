@@ -12,17 +12,23 @@ use crate::{
     config::CLEWDR_CONFIG,
     types::{
         claude::{ContentBlock, CreateMessageParams, ImageSource, Message, MessageContent, Role},
-        claude_web::request::*,
+        claude_web::request::{Attachment, Tool, WebRequestBody},
     },
     utils::{TIME_ZONE, print_out_text},
 };
+
+/// The subset of the upload endpoint's response that matters here.
+#[derive(serde::Deserialize)]
+struct UploadResponse {
+    file_uuid: String,
+}
 
 impl ClaudeWebState {
     pub fn transform_request(&self, mut value: CreateMessageParams) -> Option<WebRequestBody> {
         let system = value.system.take();
         let msgs = mem::take(&mut value.messages);
         let system = merge_system(system.unwrap_or_default());
-        let merged = merge_messages(msgs, system)?;
+        let merged = merge_messages(msgs, &system)?;
 
         let mut tools = vec![];
         if CLEWDR_CONFIG.load().web_search {
@@ -50,6 +56,13 @@ impl ClaudeWebState {
     }
 
     /// Upload images to the Claude.ai
+    ///
+    /// Images that fail to upload are skipped, so the result may be shorter
+    /// than `imgs`.
+    ///
+    /// # Panics
+    /// If the configured endpoint cannot be joined with the upload path,
+    /// which would mean the endpoint itself is malformed.
     pub async fn upload_images(&self, imgs: Vec<ImageSource>) -> Vec<String> {
         // upload images
         stream::iter(imgs)
@@ -69,8 +82,7 @@ impl ClaudeWebState {
                 let main_type = media_type.split(';').next().unwrap_or(&media_type);
                 let file_name = match main_type.to_lowercase().as_str() {
                     "image/png" => "image.png",
-                    "image/jpeg" => "image.jpg",
-                    "image/jpg" => "image.jpg",
+                    "image/jpeg" | "image/jpg" => "image.jpg",
                     "image/gif" => "image.gif",
                     "image/webp" => "image.webp",
                     "application/pdf" => "document.pdf",
@@ -85,7 +97,7 @@ impl ClaudeWebState {
                     .expect("Url parse error");
                 // send the request into future
                 let res = self
-                    .build_request(http::Method::POST, endpoint)
+                    .build_request(http::Method::POST, &endpoint)
                     .multipart(form)
                     .send()
                     .await
@@ -93,10 +105,6 @@ impl ClaudeWebState {
                         warn!("Failed to upload image: {}", e);
                     })
                     .ok()?;
-                #[derive(serde::Deserialize)]
-                struct UploadResponse {
-                    file_uuid: String,
-                }
                 // get the response json
                 let json = res
                     .json::<UploadResponse>()
@@ -130,7 +138,7 @@ struct Merged {
 ///
 /// # Returns
 /// * `Option<Merged>` - Merged prompt text, images, and additional metadata, or None if merging fails
-fn merge_messages(msgs: Vec<Message>, system: String) -> Option<Merged> {
+fn merge_messages(msgs: Vec<Message>, system: &str) -> Option<Merged> {
     if msgs.is_empty() {
         return None;
     }
@@ -147,7 +155,7 @@ fn merge_messages(msgs: Vec<Message>, system: String) -> Option<Merged> {
 
     let user_real_roles = CLEWDR_CONFIG.load().use_real_roles;
     let line_breaks = if user_real_roles { "\n\n\x08" } else { "\n\n" };
-    let system = system.trim().to_string();
+    let system = system.trim();
     let mut w = String::new();
 
     let mut imgs: Vec<ImageSource> = vec![];
@@ -215,11 +223,11 @@ fn merge_messages(msgs: Vec<Message>, system: String) -> Option<Merged> {
         (role, txt)
     });
     // first message does not need prefix
-    if !system.is_empty() {
-        w += system.as_str();
-    } else {
+    if system.is_empty() {
         let first = msgs.next()?;
         w += first.1.as_str();
+    } else {
+        w += system;
     }
     for (role, text) in msgs {
         let prefix = match role {

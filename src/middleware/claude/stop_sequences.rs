@@ -10,11 +10,20 @@ use crate::{
 
 type EventResult<T> = Result<T, eventsource_stream::EventStreamError<axum::Error>>;
 
+// `try_stream!` is this function's return value, but the lint reads the macro's
+// expansion and asks for a `;` that would make the body return `()`.
+#[expect(
+    clippy::semicolon_if_nothing_returned,
+    reason = "false positive inside the try_stream! expansion"
+)]
 fn stop_stream(
     sequences: Vec<String>,
     stream: impl Stream<Item = EventResult<SourceEvent>>,
 ) -> impl Stream<Item = EventResult<Event>> {
-    let trie = trie_rs::map::Trie::from_iter(sequences.into_iter().map(|s| (s.clone(), s)));
+    let trie = sequences
+        .into_iter()
+        .map(|s| (s.clone(), s))
+        .collect::<trie_rs::map::Trie<_, _>>();
     try_stream!({
         let mut searches = vec![trie.inc_search()];
         for await event in stream {
@@ -96,7 +105,7 @@ pub async fn apply_stop_sequences(resp: Response) -> Response {
     let stream = resp.into_body().into_data_stream().eventsource();
     let stream = stop_stream(f.stop_sequences().to_owned(), stream);
     let mut resp = Sse::new(stream)
-        .keep_alive(Default::default())
+        .keep_alive(axum::response::sse::KeepAlive::default())
         .into_response();
 
     resp.extensions_mut().insert(f);

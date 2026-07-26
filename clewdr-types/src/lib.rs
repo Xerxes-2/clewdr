@@ -5,7 +5,7 @@ mod usage;
 pub use config::ConfigApi;
 pub use reason::Reason;
 use serde::{Deserialize, Serialize};
-pub use usage::UsageBreakdown;
+pub use usage::{UsageBreakdown, UsageFamily};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct CookieStatusApi {

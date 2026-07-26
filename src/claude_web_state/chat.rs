@@ -32,6 +32,10 @@ impl ClaudeWebState {
     ///
     /// # Returns
     /// * `Result<axum::response::Response, ClewdrError>` - Formatted response or error
+    ///
+    /// # Errors
+    /// [`ClewdrError::TooManyRetries`] once `max_retries` attempts have all
+    /// failed, or any non-retryable error from the attempt itself.
     pub async fn try_chat(
         &mut self,
         p: CreateMessageParams,
@@ -123,7 +127,7 @@ impl ClaudeWebState {
             )
         };
 
-        self.build_request(Method::POST, endpoint)
+        self.build_request(Method::POST, &endpoint)
             .header(wreq::header::REFERER, referer)
             .json(&body)
             .send()
@@ -156,7 +160,7 @@ impl ClaudeWebState {
                 source: Some(Box::new(e)),
             })?;
         let _ = self
-            .build_request(Method::PUT, endpoint)
+            .build_request(Method::PUT, &endpoint)
             .json(&body)
             .send()
             .await;
@@ -182,7 +186,7 @@ impl ClaudeWebState {
             ))
             .expect("Url parse error");
 
-        self.build_request(Method::POST, endpoint)
+        self.build_request(Method::POST, &endpoint)
             .json(&body)
             .header(ACCEPT, "text/event-stream")
             .send()

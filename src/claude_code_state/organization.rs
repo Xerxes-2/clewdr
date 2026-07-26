@@ -11,13 +11,22 @@ use crate::{
 };
 
 impl ClaudeCodeState {
+    /// Resolve the organization UUID the cookie belongs to.
+    ///
+    /// # Errors
+    /// Upstream HTTP failures, or a bootstrap response with no usable
+    /// organization entry.
+    ///
+    /// # Panics
+    /// If the configured endpoint cannot be joined with the bootstrap path,
+    /// which would mean the endpoint itself is malformed.
     pub async fn get_organization(&self) -> Result<String, ClewdrError> {
         let end_point = self
             .endpoint
             .join("api/bootstrap")
             .expect("Url parse error");
         let res = self
-            .build_request(Method::GET, end_point)
+            .build_request(Method::GET, &end_point)
             .send()
             .await
             .context(WreqSnafu {

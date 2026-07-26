@@ -51,6 +51,9 @@ impl ClaudeCodeState {
     }
 
     /// Build a `ClaudeCodeState` initialized with an existing cookie snapshot
+    ///
+    /// # Errors
+    /// If the HTTP client cannot be built for the configured proxy.
     pub fn from_cookie(
         cookie_actor_handle: CookieActorHandle,
         cookie: CookieStatus,
@@ -88,7 +91,7 @@ impl ClaudeCodeState {
     }
 
     /// Build a request with the current cookie and proxy settings
-    pub fn build_request(&self, method: Method, url: impl ToString) -> RequestBuilder {
+    pub fn build_request(&self, method: Method, url: &impl ToString) -> RequestBuilder {
         // let r = SUPER_CLIENT.cloned();
         let mut req = self
             .client
@@ -109,6 +112,10 @@ impl ClaudeCodeState {
 
     /// Requests a new cookie from the cookie manager
     /// Updates the internal state with the new cookie and proxy configuration
+    ///
+    /// # Errors
+    /// If no cookie is available, or the HTTP client cannot be rebuilt for the
+    /// cookie's proxy.
     pub async fn request_cookie(&mut self) -> Result<CookieStatus, ClewdrError> {
         let res = self
             .cookie_actor_handle
@@ -117,7 +124,7 @@ impl ClaudeCodeState {
         self.cookie = Some(res.clone());
         self.cookie_header_value = HeaderValue::from_str(res.cookie.to_string().as_str())?;
         // Always pull latest proxy/endpoint before building the client
-        self.proxy = CLEWDR_CONFIG.load().wreq_proxy.clone();
+        self.proxy.clone_from(&CLEWDR_CONFIG.load().wreq_proxy);
         self.endpoint = CLEWDR_CONFIG.load().endpoint();
         self.client = build_http_client(self.proxy.as_ref()).context(WreqSnafu {
             msg: "Failed to build client with new cookie",

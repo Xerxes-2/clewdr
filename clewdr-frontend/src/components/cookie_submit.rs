@@ -10,6 +10,12 @@ struct CookieResult {
     message: String,
 }
 
+// Roughly half of this is a single `view!` template, which reads better whole
+// than split across helpers that each take a dozen signals.
+#[expect(
+    clippy::too_many_lines,
+    reason = "mostly one contiguous view! template"
+)]
 #[component]
 pub fn CookieSubmitForm() -> impl IntoView {
     let i18n = use_i18n();

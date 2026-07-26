@@ -42,7 +42,7 @@ pub struct CookieStatusQuery {
 static COOKIES_CACHE: LazyLock<Cache<String, CookieStatusCache>> = LazyLock::new(|| {
     Cache::builder()
         .max_capacity(1)
-        .time_to_live(Duration::from_secs(300)) // 5 minutes
+        .time_to_live(Duration::from_mins(5))
         .build()
 });
 
@@ -59,6 +59,11 @@ const COOKIE_STATUS_CACHE_KEY: &str = "all_cookies";
 ///
 /// # Returns
 /// * `StatusCode` - HTTP status code indicating success or failure
+///
+/// # Errors
+/// [`ApiError::unauthorized`] if the bearer token is not the admin password,
+/// or [`ApiError::internal`] if the cookie actor rejects the submission (for
+/// example when the cookie is already known).
 pub async fn api_post_cookie(
     State(s): State<CookieActorHandle>,
     AuthBearer(t): AuthBearer,
@@ -94,6 +99,10 @@ pub async fn api_post_cookie(
 ///
 /// # Returns
 /// * `Result<(HeaderMap, Json<Value>), ApiError>` - Response with cache headers and cookie status
+///
+/// # Errors
+/// [`ApiError::unauthorized`] if the bearer token is not the admin password,
+/// or [`ApiError::internal`] if the cookie actor cannot be reached.
 pub async fn api_get_cookies(
     State(s): State<CookieActorHandle>,
     AuthBearer(t): AuthBearer,
@@ -184,6 +193,10 @@ pub async fn api_get_cookies(
 ///
 /// # Returns
 /// * `Result<StatusCode, (StatusCode, Json<serde_json::Value>)>` - Success status or error
+///
+/// # Errors
+/// [`ApiError::unauthorized`] if the bearer token is not the admin password,
+/// or [`ApiError::internal`] if the cookie is not present or cannot be removed.
 pub async fn api_delete_cookie(
     State(s): State<CookieActorHandle>,
     AuthBearer(t): AuthBearer,
@@ -322,7 +335,7 @@ async fn fetch_usage_percent(
         .await
         .ok()?;
 
-    extract_usage_fields(&usage)
+    Some(extract_usage_fields(&usage))
 }
 
 /// Try the OAuth endpoint (`api.anthropic.com/api/oauth/usage`)
@@ -343,21 +356,33 @@ async fn try_oauth_usage(
         .map_err(|_| ())
 }
 
-type Usage = Option<(
+/// The six usage fields, each defaulting to zero / absent when the endpoint
+/// omits it.
+type Usage = (
     u32,
     Option<String>,
     u32,
     Option<String>,
     u32,
     Option<String>,
-)>;
+);
+
 /// Extract the six usage fields from the usage JSON returned by either endpoint
+///
+/// Utilization percentages are clamped into `u32` range: the cast is only safe
+/// because the endpoint reports a 0-100 percentage, and clamping keeps a
+/// malformed value from wrapping.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "values are clamped into range immediately before the cast"
+)]
 fn extract_usage_fields(usage: &serde_json::Value) -> Usage {
     let five = usage
         .get("five_hour")
         .and_then(|o| o.get("utilization"))
         .and_then(serde_json::Value::as_f64)
-        .map_or(0, |v| v.round() as u32);
+        .map_or(0, |v| v.round().clamp(0.0, f64::from(u32::MAX)) as u32);
     let five_reset = usage
         .get("five_hour")
         .and_then(|o| o.get("resets_at"))
@@ -367,7 +392,7 @@ fn extract_usage_fields(usage: &serde_json::Value) -> Usage {
         .get("seven_day")
         .and_then(|o| o.get("utilization"))
         .and_then(serde_json::Value::as_f64)
-        .map_or(0, |v| v.round() as u32);
+        .map_or(0, |v| v.round().clamp(0.0, f64::from(u32::MAX)) as u32);
     let seven_reset = usage
         .get("seven_day")
         .and_then(|o| o.get("resets_at"))
@@ -377,18 +402,18 @@ fn extract_usage_fields(usage: &serde_json::Value) -> Usage {
         .get("seven_day_sonnet")
         .and_then(|o| o.get("utilization"))
         .and_then(serde_json::Value::as_f64)
-        .map_or(0, |v| v.round() as u32);
+        .map_or(0, |v| v.round().clamp(0.0, f64::from(u32::MAX)) as u32);
     let sonnet_reset = usage
         .get("seven_day_sonnet")
         .and_then(|o| o.get("resets_at"))
         .and_then(|v| v.as_str())
         .map(std::string::ToString::to_string);
-    Some((
+    (
         five,
         five_reset,
         seven,
         seven_reset,
         seven_sonnet,
         sonnet_reset,
-    ))
+    )
 }

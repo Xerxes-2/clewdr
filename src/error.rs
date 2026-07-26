@@ -177,10 +177,6 @@ impl IntoResponse for ClewdrError {
                 StatusCode::BAD_REQUEST,
                 json!(format!("{}: {} (URL: {})", loc, source, url)),
             ),
-            ClewdrError::ParseCookieError { .. } => {
-                (StatusCode::BAD_REQUEST, json!(self.to_string()))
-            }
-            ClewdrError::InvalidUri { .. } => (StatusCode::BAD_REQUEST, json!(self.to_string())),
             ClewdrError::PathRejection { ref source } => {
                 (source.status(), json!(source.body_text()))
             }
@@ -203,11 +199,13 @@ impl IntoResponse for ClewdrError {
                 (source.status(), json!(source.body_text()))
             }
             ClewdrError::TooManyRetries => (StatusCode::GATEWAY_TIMEOUT, json!(self.to_string())),
-            ClewdrError::InvalidCookie { .. } => (StatusCode::BAD_REQUEST, json!(self.to_string())),
             ClewdrError::PathNotFound { .. } => (StatusCode::NOT_FOUND, json!(self.to_string())),
             ClewdrError::InvalidAuth => (StatusCode::UNAUTHORIZED, json!(self.to_string())),
-            ClewdrError::BadRequest { .. } => (StatusCode::BAD_REQUEST, json!(self.to_string())),
-            ClewdrError::InvalidHeaderValue { .. } => {
+            ClewdrError::ParseCookieError { .. }
+            | ClewdrError::InvalidUri { .. }
+            | ClewdrError::InvalidCookie { .. }
+            | ClewdrError::BadRequest { .. }
+            | ClewdrError::InvalidHeaderValue { .. } => {
                 (StatusCode::BAD_REQUEST, json!(self.to_string()))
             }
             ClewdrError::EmptyChoices => (StatusCode::NO_CONTENT, json!(self.to_string())),
@@ -294,6 +292,9 @@ impl CheckClaudeErr for Response {
     /// * `Ok(Response)` if the request was successful
     /// * `Err(ClewdrError)` if the request failed, with details about the failure
     async fn check_claude(self) -> Result<Self, ClewdrError> {
+        const OAUTH_403_PHRASE: &str =
+            "oauth authentication is currently not allowed for this organization";
+
         let status = self.status();
         if status.is_success() {
             return Ok(self);
@@ -347,8 +348,6 @@ impl CheckClaudeErr for Response {
         if status == 401 {
             return Err(Reason::Null.into());
         }
-        const OAUTH_403_PHRASE: &str =
-            "oauth authentication is currently not allowed for this organization";
         if status == 403
             && err
                 .error
@@ -372,11 +371,8 @@ impl CheckClaudeErr for Response {
                     .to_utc();
                 let now = chrono::Utc::now();
                 let diff = reset_time - now;
-                let mins = diff.num_minutes();
-                error!(
-                    "Rate limit exceeded, expires in {} hours",
-                    mins as f64 / 60.0
-                );
+                let hours = diff.as_seconds_f64() / 3600.0;
+                error!("Rate limit exceeded, expires in {hours} hours");
                 return Err(ClewdrError::InvalidCookie {
                     reason: Reason::TooManyRequest(ts),
                 });

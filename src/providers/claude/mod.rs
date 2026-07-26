@@ -29,6 +29,7 @@ pub struct ClaudeInvocation {
 }
 
 impl ClaudeInvocation {
+    #[must_use]
     pub fn messages(params: CreateMessageParams, context: ClaudeContext) -> Self {
         Self {
             params,
@@ -37,6 +38,7 @@ impl ClaudeInvocation {
         }
     }
 
+    #[must_use]
     pub fn count_tokens(params: CreateMessageParams, context: ClaudeContext) -> Self {
         Self {
             params,
@@ -70,6 +72,7 @@ pub struct ClaudeProviders {
 }
 
 impl ClaudeProviders {
+    #[must_use]
     pub fn new(cookie_actor_handle: CookieActorHandle) -> Self {
         let shared = Arc::new(ClaudeSharedState::new(cookie_actor_handle));
         let web = Arc::new(ClaudeWebProvider::new(shared.clone()));
@@ -77,10 +80,12 @@ impl ClaudeProviders {
         Self { web, code }
     }
 
+    #[must_use]
     pub fn web(&self) -> Arc<ClaudeWebProvider> {
         self.web.clone()
     }
 
+    #[must_use]
     pub fn code(&self) -> Arc<ClaudeCodeProvider> {
         self.code.clone()
     }
@@ -211,6 +216,7 @@ impl LLMProvider for ClaudeCodeProvider {
     }
 }
 
+#[must_use]
 pub fn build_providers(cookie_actor_handle: CookieActorHandle) -> ClaudeProviders {
     ClaudeProviders::new(cookie_actor_handle)
 }

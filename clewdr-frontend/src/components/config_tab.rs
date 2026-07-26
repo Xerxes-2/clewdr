@@ -5,6 +5,12 @@ use web_sys::HtmlInputElement;
 use crate::{api, i18n::use_i18n, storage, types::ConfigData};
 
 #[component]
+// Roughly half of this is a single `view!` template, which reads better whole
+// than split across helpers that each take a dozen signals.
+#[expect(
+    clippy::too_many_lines,
+    reason = "mostly one contiguous view! template"
+)]
 pub fn ConfigTab() -> impl IntoView {
     let i18n = use_i18n();
     let config = RwSignal::new(Option::<ConfigData>::None);

@@ -11,6 +11,11 @@ use crate::{
     },
 };
 
+/// Axum handler for `/v1/messages` on the Claude Code backend.
+///
+/// # Errors
+/// Propagates any [`ClewdrError`] from the provider: no cookie available,
+/// an upstream HTTP failure, or exhausted retries.
 pub async fn api_claude_code(
     State(provider): State<Arc<ClaudeCodeProvider>>,
     ClaudeCodePreprocess(params, context): ClaudeCodePreprocess,
@@ -21,6 +26,13 @@ pub async fn api_claude_code(
     Ok((Extension(context), response))
 }
 
+/// Axum handler for `/v1/messages/count_tokens` on the Claude Code backend.
+///
+/// Forces `stream: false`, since token counting has no streaming form.
+///
+/// # Errors
+/// Propagates any [`ClewdrError`] from the provider: no cookie available,
+/// an upstream HTTP failure, or exhausted retries.
 pub async fn api_claude_code_count_tokens(
     State(provider): State<Arc<ClaudeCodeProvider>>,
     ClaudeCodePreprocess(mut params, context): ClaudeCodePreprocess,

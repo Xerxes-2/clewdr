@@ -2,20 +2,22 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tiktoken_rs::o200k_base;
 
-use super::claude::{CreateMessageParams as ClaudeCreateMessageParams, *};
-use crate::types::claude::{ImageSource, Message};
+use super::claude::{
+    ContentBlock, CreateMessageParams as ClaudeCreateMessageParams, Metadata, OutputConfig,
+    OutputEffort, Role, Thinking, Tool, ToolChoice, default_max_tokens,
+};
+use crate::types::claude::{ImageSource, Message, MessageContent};
 
 /// Convert OAI `ImageUrl` to Claude Image format
 fn normalize_block(block: ContentBlock) -> Option<ContentBlock> {
     match block {
-        ContentBlock::Text { .. } => Some(block),
-        ContentBlock::Image { .. } => Some(block),
         ContentBlock::ImageUrl { image_url } => {
             ImageSource::from_image_url(&image_url.url).map(|source| ContentBlock::Image {
                 source,
                 cache_control: None,
             })
         }
+        // Text, Image and everything else pass through untouched.
         _ => Some(block),
     }
 }
@@ -32,7 +34,7 @@ fn normalize_message(msg: Message) -> Option<Message> {
             }
             MessageContent::Blocks { content: blocks }
         }
-        other => other,
+        other @ MessageContent::Text { .. } => other,
     };
     Some(Message {
         role: msg.role,
@@ -63,6 +65,7 @@ pub enum Effort {
 
 impl Effort {
     /// The matching rung on Claude's effort ladder.
+    #[must_use]
     pub fn output_effort(self) -> OutputEffort {
         match self {
             Self::Minimal | Self::Low => OutputEffort::Low,
@@ -76,6 +79,7 @@ impl Effort {
     /// Equivalent budget for models that only understand extended thinking.
     ///
     /// Never below the API floor of 1024 tokens.
+    #[must_use]
     pub fn budget_tokens(self) -> u64 {
         match self {
             Self::Minimal => 1024,
@@ -193,6 +197,15 @@ pub struct CreateMessageParams {
 }
 
 impl CreateMessageParams {
+    /// Estimate the prompt's token count with the `o200k_base` encoding.
+    ///
+    /// This is an approximation: Anthropic does not publish its tokenizer, so
+    /// the count only informs local accounting.
+    ///
+    /// # Panics
+    /// If the bundled `o200k_base` encoding fails to load, which would mean
+    /// the tiktoken data compiled into the binary is corrupt.
+    #[must_use]
     pub fn count_tokens(&self) -> u32 {
         let bpe = o200k_base().expect("Failed to get encoding");
         let messages = self
@@ -210,6 +223,6 @@ impl CreateMessageParams {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        bpe.encode_with_special_tokens(&messages).len() as u32
+        u32::try_from(bpe.encode_with_special_tokens(&messages).len()).unwrap_or(u32::MAX)
     }
 }
