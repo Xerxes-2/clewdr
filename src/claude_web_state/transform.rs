@@ -2,7 +2,6 @@ use std::{fmt::Write, mem};
 
 use base64::{Engine, prelude::BASE64_STANDARD};
 use futures::{StreamExt, stream};
-use itertools::Itertools;
 use serde_json::Value;
 use tracing::warn;
 use wreq::multipart::{Form, Part};
@@ -138,6 +137,23 @@ struct Merged {
 ///
 /// # Returns
 /// * `Option<Merged>` - Merged prompt text, images, and additional metadata, or None if merging fails
+///
+/// Folds runs of the same role into one message, joined with a newline, so the
+/// transcript alternates speakers the way the web prompt format expects.
+fn fold_runs_of_same_role(messages: impl Iterator<Item = (Role, String)>) -> Vec<(Role, String)> {
+    let mut folded: Vec<(Role, String)> = Vec::new();
+    for (role, text) in messages {
+        match folded.last_mut() {
+            Some((prev_role, acc)) if *prev_role == role => {
+                acc.push('\n');
+                acc.push_str(&text);
+            }
+            _ => folded.push((role, text)),
+        }
+    }
+    folded
+}
+
 fn merge_messages(msgs: Vec<Message>, system: &str) -> Option<Merged> {
     if msgs.is_empty() {
         return None;
@@ -160,68 +176,62 @@ fn merge_messages(msgs: Vec<Message>, system: &str) -> Option<Merged> {
 
     let mut imgs: Vec<ImageSource> = vec![];
 
-    let chunks = msgs
-        .into_iter()
-        .filter_map(|m| match m.content {
-            MessageContent::Blocks { content } => {
-                // collect all text blocks, join them with new line
-                let blocks = content
-                    .into_iter()
-                    .filter_map(|b| match b {
-                        ContentBlock::Text { text, .. } => Some(text.trim().to_string()),
-                        ContentBlock::Image { source, .. } => {
-                            match source {
-                                ImageSource::Base64 { .. } => {
-                                    // push image to the list
-                                    imgs.push(source);
-                                }
-                                ImageSource::Url { url } => {
-                                    if let Some(source) = ImageSource::from_data_url(&url) {
-                                        imgs.push(source);
-                                    } else {
-                                        warn!("Unsupported image url source");
-                                    }
-                                }
-                                ImageSource::File { .. } => {
-                                    warn!("Image file sources are not supported");
-                                }
-                            }
-                            None
-                        }
-                        ContentBlock::ImageUrl { image_url } => {
-                            // oai image
-                            if let Some(source) = ImageSource::from_data_url(&image_url.url) {
+    let flattened = msgs.into_iter().filter_map(|m| match m.content {
+        MessageContent::Blocks { content } => {
+            // collect all text blocks, join them with new line
+            let blocks = content
+                .into_iter()
+                .filter_map(|b| match b {
+                    ContentBlock::Text { text, .. } => Some(text.trim().to_string()),
+                    ContentBlock::Image { source, .. } => {
+                        match source {
+                            ImageSource::Base64 { .. } => {
+                                // push image to the list
                                 imgs.push(source);
                             }
-                            None
+                            ImageSource::Url { url } => {
+                                if let Some(source) = ImageSource::from_data_url(&url) {
+                                    imgs.push(source);
+                                } else {
+                                    warn!("Unsupported image url source");
+                                }
+                            }
+                            ImageSource::File { .. } => {
+                                warn!("Image file sources are not supported");
+                            }
                         }
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                if blocks.is_empty() {
-                    None
-                } else {
-                    Some((m.role, blocks))
-                }
+                        None
+                    }
+                    ContentBlock::ImageUrl { image_url } => {
+                        // oai image
+                        if let Some(source) = ImageSource::from_data_url(&image_url.url) {
+                            imgs.push(source);
+                        }
+                        None
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            if blocks.is_empty() {
+                None
+            } else {
+                Some((m.role, blocks))
             }
-            MessageContent::Text { content } => {
-                // plain text
-                let content = content.trim().to_string();
-                if content.is_empty() {
-                    None
-                } else {
-                    Some((m.role, content))
-                }
+        }
+        MessageContent::Text { content } => {
+            // plain text
+            let content = content.trim().to_string();
+            if content.is_empty() {
+                None
+            } else {
+                Some((m.role, content))
             }
-        })
-        // chunk by role
-        .chunk_by(|m| m.0);
-    // join same role with new line
-    let mut msgs = chunks.into_iter().map(|(role, grp)| {
-        let txt = grp.into_iter().map(|m| m.1).collect::<Vec<_>>().join("\n");
-        (role, txt)
+        }
     });
+    // Collected eagerly rather than left lazy: the closure above borrows `imgs`
+    // mutably, and draining it here releases that borrow before `imgs` is read.
+    let mut msgs = fold_runs_of_same_role(flattened).into_iter();
     // first message does not need prefix
     if system.is_empty() {
         let first = msgs.next()?;
