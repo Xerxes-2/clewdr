@@ -50,7 +50,6 @@ mimalloc = { version = "0.1" }
 moka = { version = "0.12", features = ["sync"] }
 oauth2 = { version = "5", default-features = false }
 passwords = "3"
-ractor = "0.15"
 regex = "1"
 self-replace = { version = "1", optional = true }
 serde = { version = "1", features = ["derive"] }

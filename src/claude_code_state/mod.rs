@@ -6,7 +6,6 @@ use http::{
     header::{COOKIE, ORIGIN, REFERER, USER_AGENT},
 };
 use snafu::ResultExt;
-use tracing::error;
 use wreq::RequestBuilder;
 
 use crate::{
@@ -14,14 +13,14 @@ use crate::{
     config::{CLAUDE_CODE_USER_AGENT, CLAUDE_ENDPOINT, CLEWDR_CONFIG, CookieStatus, Reason},
     error::{ClewdrError, WreqSnafu},
     middleware::claude::ClaudeApiFormat,
-    services::cookie_actor::CookieActorHandle,
+    services::cookie_pool::CookiePool,
     types::claude::Usage,
     utils::build_http_client,
 };
 
 #[derive(Clone)]
 pub struct ClaudeCodeState {
-    pub cookie_actor_handle: CookieActorHandle,
+    pub cookie_pool: CookiePool,
     pub cookie: Option<CookieStatus>,
     pub cookie_header_value: HeaderValue,
     pub proxy: Option<wreq::Proxy>,
@@ -35,9 +34,9 @@ pub struct ClaudeCodeState {
 
 impl ClaudeCodeState {
     /// Create a new `ClaudeCodeState` instance
-    pub fn new(cookie_actor_handle: CookieActorHandle) -> Self {
+    pub fn new(cookie_pool: CookiePool) -> Self {
         ClaudeCodeState {
-            cookie_actor_handle,
+            cookie_pool,
             cookie: None,
             cookie_header_value: HeaderValue::from_static(""),
             proxy: CLEWDR_CONFIG.load().wreq_proxy.clone(),
@@ -55,10 +54,10 @@ impl ClaudeCodeState {
     /// # Errors
     /// If the HTTP client cannot be built for the configured proxy.
     pub fn from_cookie(
-        cookie_actor_handle: CookieActorHandle,
+        cookie_pool: CookiePool,
         cookie: CookieStatus,
     ) -> Result<Self, ClewdrError> {
-        let mut state = Self::new(cookie_actor_handle);
+        let mut state = Self::new(cookie_pool);
         state.cookie = Some(cookie);
         let cookie_value = state
             .cookie
@@ -78,15 +77,10 @@ impl ClaudeCodeState {
 
     /// Returns the current cookie to the cookie manager
     /// Optionally provides a reason for returning the cookie (e.g., invalid, banned)
-    pub async fn return_cookie(&self, reason: Option<Reason>) {
+    pub fn return_cookie(&self, reason: Option<Reason>) {
         // return the cookie to the cookie manager
         if let Some(ref cookie) = self.cookie {
-            self.cookie_actor_handle
-                .return_cookie(cookie.to_owned(), reason)
-                .await
-                .unwrap_or_else(|e| {
-                    error!("Failed to send cookie: {}", e);
-                });
+            self.cookie_pool.return_cookie(cookie.to_owned(), reason);
         }
     }
 
@@ -116,11 +110,8 @@ impl ClaudeCodeState {
     /// # Errors
     /// If no cookie is available, or the HTTP client cannot be rebuilt for the
     /// cookie's proxy.
-    pub async fn request_cookie(&mut self) -> Result<CookieStatus, ClewdrError> {
-        let res = self
-            .cookie_actor_handle
-            .request(self.system_prompt_hash)
-            .await?;
+    pub fn request_cookie(&mut self) -> Result<CookieStatus, ClewdrError> {
+        let res = self.cookie_pool.request(self.system_prompt_hash)?;
         self.cookie = Some(res.clone());
         self.cookie_header_value = HeaderValue::from_str(res.cookie.to_string().as_str())?;
         // Always pull latest proxy/endpoint before building the client

@@ -100,7 +100,7 @@ impl ClaudeWebState {
     ) -> Result<axum::response::Response, ClewdrError> {
         // Stream through while accumulating completion text; persist usage at end
         let mut input_tokens = u64::from(self.usage.input_tokens);
-        let handle = self.cookie_actor_handle.clone();
+        let handle = self.cookie_pool.clone();
         let cookie = self.cookie.clone();
         let enable_precise = crate::config::CLEWDR_CONFIG.load().enable_web_count_tokens;
         let last_params = self.last_params.clone();
@@ -166,7 +166,7 @@ impl ClaudeWebState {
                             }
                         });
                     c.add_and_bucket_usage(input_tokens, out, family);
-                    let _ = handle.return_cookie(c, None).await;
+                    handle.return_cookie(c, None);
                 }
             } else if let Some(mut c) = cookie.clone() {
                 // still persist input tokens to maintain parity
@@ -184,7 +184,7 @@ impl ClaudeWebState {
                         }
                     });
                 c.add_and_bucket_usage(input_tokens, 0, family);
-                let _ = handle.return_cookie(c, None).await;
+                handle.return_cookie(c, None);
             }
         };
         // normalize error type for axum SSE
@@ -225,7 +225,7 @@ impl ClaudeWebState {
                 self.client.clone(),
                 model,
                 text.clone(),
-                self.cookie_actor_handle.clone(),
+                self.cookie_pool.clone(),
             )
             .await;
             if let Some(v) = out {
@@ -234,8 +234,7 @@ impl ClaudeWebState {
         }
         usage.output_tokens = output_tokens;
         response.usage = Some(usage.clone());
-        self.persist_usage_totals(u64::from(usage.input_tokens), u64::from(output_tokens))
-            .await;
+        self.persist_usage_totals(u64::from(usage.input_tokens), u64::from(output_tokens));
         Ok(Json(response).into_response())
     }
 }
@@ -264,7 +263,7 @@ impl ClaudeWebState {
     pub(crate) async fn try_code_count_tokens(&mut self) -> Option<u32> {
         self.cookie.as_ref()?;
         let params = self.last_params.as_ref()?.clone();
-        let mut code = ClaudeCodeState::new(self.cookie_actor_handle.clone());
+        let mut code = ClaudeCodeState::new(self.cookie_pool.clone());
         code.cookie = self.cookie.clone();
         code.endpoint = self.endpoint.clone();
         code.proxy = self.proxy.clone();
@@ -298,7 +297,7 @@ async fn count_code_output_tokens_for_text(
     client: wreq::Client,
     model: String,
     text: String,
-    handle: crate::services::cookie_actor::CookieActorHandle,
+    handle: crate::services::cookie_pool::CookiePool,
 ) -> Option<u32> {
     let mut code = ClaudeCodeState::new(handle.clone());
     code.cookie = cookie.clone();

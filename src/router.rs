@@ -19,34 +19,33 @@ use crate::{
         claude::{add_usage_info, apply_stop_sequences, check_overloaded, to_oai},
     },
     providers::claude::ClaudeProviders,
-    services::cookie_actor::CookieActorHandle,
+    services::cookie_pool::CookiePool,
 };
 
 /// `RouterBuilder` for the application
 pub struct RouterBuilder {
     claude_providers: ClaudeProviders,
-    cookie_actor_handle: CookieActorHandle,
+    cookie_pool: CookiePool,
     inner: Router,
 }
 
 impl RouterBuilder {
-    /// Creates a blank `RouterBuilder` instance
-    /// Initializes the router with the provided application state
+    /// Creates a blank `RouterBuilder`, loading the cookie pool from the
+    /// configuration and starting its background reset ticker.
     ///
-    /// # Arguments
-    /// * `state` - The application state containing client information
-    ///
-    /// # Panics
-    /// If the cookie actor cannot be started. This happens during startup and
-    /// leaves the proxy with no way to serve requests, so it is fatal.
-    pub async fn new() -> Self {
-        let cookie_handle = CookieActorHandle::start()
-            .await
-            .expect("Failed to start CookieActor");
-        let claude_providers = crate::providers::claude::build_providers(cookie_handle.clone());
+    /// Must be called from within a Tokio runtime.
+    #[must_use]
+    #[expect(
+        clippy::new_without_default,
+        reason = "starts a background task and needs a Tokio runtime, so it is \
+                  not a cheap `Default`"
+    )]
+    pub fn new() -> Self {
+        let cookie_pool = CookiePool::start();
+        let claude_providers = crate::providers::claude::build_providers(cookie_pool.clone());
         RouterBuilder {
             claude_providers,
-            cookie_actor_handle: cookie_handle,
+            cookie_pool,
             inner: Router::new(),
         }
     }
@@ -105,7 +104,7 @@ impl RouterBuilder {
         let cookie_router = Router::new()
             .route("/cookies", get(api_get_cookies))
             .route("/cookie", delete(api_delete_cookie).post(api_post_cookie))
-            .with_state(self.cookie_actor_handle.clone());
+            .with_state(self.cookie_pool.clone());
         let admin_router = Router::new()
             .route("/auth", get(api_auth))
             .route("/config", get(api_get_config).post(api_post_config));

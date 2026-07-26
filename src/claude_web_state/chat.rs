@@ -47,7 +47,7 @@ impl ClaudeWebState {
             let mut state = self.to_owned();
             let p = p.clone();
 
-            let cookie = state.request_cookie().await?;
+            let cookie = state.request_cookie()?;
             // check if request is successful
             let web_res = async {
                 state.bootstrap().await?;
@@ -65,7 +65,7 @@ impl ClaudeWebState {
                     error!("{e}");
                     // 429 error
                     if let ClewdrError::InvalidCookie { reason } = e {
-                        state.return_cookie(Some(reason.clone())).await;
+                        state.return_cookie(Some(reason.clone()));
                         continue;
                     }
                     return Err(e);

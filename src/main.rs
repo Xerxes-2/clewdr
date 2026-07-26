@@ -126,7 +126,6 @@ async fn main() -> Result<(), ClewdrError> {
     let addr = CLEWDR_CONFIG.load().address();
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let router = clewdr::router::RouterBuilder::new()
-        .await
         .with_default_setup()
         .build();
     // serve the application

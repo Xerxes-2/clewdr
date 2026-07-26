@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use axum::http::{HeaderValue, header::COOKIE};
 use serde_json::Value;
 use snafu::ResultExt;
-use tracing::{error, warn};
+use tracing::warn;
 use url::Url;
 use wreq::{
     Client, Method, Proxy, RequestBuilder,
@@ -14,7 +14,7 @@ use crate::{
     config::{CLAUDE_ENDPOINT, CLEWDR_CONFIG, CookieStatus, Reason},
     error::{ClewdrError, WreqSnafu},
     middleware::claude::ClaudeApiFormat,
-    services::cookie_actor::CookieActorHandle,
+    services::cookie_pool::CookiePool,
     types::claude::{CreateMessageParams, Usage},
     utils::build_http_client,
 };
@@ -30,7 +30,7 @@ pub static SUPER_CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
 pub struct ClaudeWebState {
     pub cookie: Option<CookieStatus>,
     cookie_header_value: HeaderValue,
-    pub cookie_actor_handle: CookieActorHandle,
+    pub cookie_pool: CookiePool,
     pub org_uuid: Option<String>,
     pub conv_uuid: Option<String>,
     pub capabilities: Vec<String>,
@@ -47,9 +47,9 @@ pub struct ClaudeWebState {
 
 impl ClaudeWebState {
     /// Create a new `AppState` instance
-    pub fn new(cookie_actor_handle: CookieActorHandle) -> Self {
+    pub fn new(cookie_pool: CookiePool) -> Self {
         ClaudeWebState {
-            cookie_actor_handle,
+            cookie_pool,
             cookie: None,
             org_uuid: None,
             conv_uuid: None,
@@ -128,8 +128,8 @@ impl ClaudeWebState {
     /// # Errors
     /// If no cookie is available, or the HTTP client cannot be rebuilt for the
     /// cookie's proxy.
-    pub async fn request_cookie(&mut self) -> Result<CookieStatus, ClewdrError> {
-        let res = self.cookie_actor_handle.request(None).await?;
+    pub fn request_cookie(&mut self) -> Result<CookieStatus, ClewdrError> {
+        let res = self.cookie_pool.request(None)?;
         self.cookie = Some(res.clone());
         // Always pull latest proxy/endpoint before building the client
         self.proxy.clone_from(&CLEWDR_CONFIG.load().wreq_proxy);
@@ -143,15 +143,10 @@ impl ClaudeWebState {
 
     /// Returns the current cookie to the cookie manager
     /// Optionally provides a reason for returning the cookie (e.g., invalid, banned)
-    pub async fn return_cookie(&self, reason: Option<Reason>) {
+    pub fn return_cookie(&self, reason: Option<Reason>) {
         // return the cookie to the cookie manager
         if let Some(ref cookie) = self.cookie {
-            self.cookie_actor_handle
-                .return_cookie(cookie.to_owned(), reason)
-                .await
-                .unwrap_or_else(|e| {
-                    error!("Failed to send cookie: {}", e);
-                });
+            self.cookie_pool.return_cookie(cookie.to_owned(), reason);
         }
     }
 
@@ -166,7 +161,7 @@ impl ClaudeWebState {
         }
     }
 
-    pub async fn persist_usage_totals(&mut self, input: u64, output: u64) {
+    pub fn persist_usage_totals(&mut self, input: u64, output: u64) {
         if input == 0 && output == 0 {
             return;
         }
@@ -179,15 +174,13 @@ impl ClaudeWebState {
                 });
             cookie.add_and_bucket_usage(input, output, family);
             let cloned = cookie.clone();
-            if let Err(err) = self.cookie_actor_handle.return_cookie(cloned, None).await {
-                warn!("Failed to persist usage statistics: {}", err);
-            }
+            self.cookie_pool.return_cookie(cloned, None);
         }
     }
 
     /// Fetch usage data via the claude.ai web endpoint.
     /// Used as a fallback when the OAuth usage endpoint is not available (e.g. Without Claude Code Access).
-    pub async fn fetch_web_usage(handle: CookieActorHandle, cookie: CookieStatus) -> Option<Value> {
+    pub async fn fetch_web_usage(handle: CookiePool, cookie: CookieStatus) -> Option<Value> {
         let mut state = ClaudeWebState::new(handle);
         state.cookie = Some(cookie.clone());
         state.proxy.clone_from(&CLEWDR_CONFIG.load().wreq_proxy);

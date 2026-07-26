@@ -1,3 +1,3 @@
-pub mod cookie_actor;
+pub mod cookie_pool;
 #[cfg(feature = "portable")]
 pub mod update;

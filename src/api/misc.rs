@@ -21,7 +21,7 @@ use crate::{
     claude_code_state::ClaudeCodeState,
     claude_web_state::ClaudeWebState,
     config::{CLEWDR_CONFIG, CookieStatus},
-    services::cookie_actor::CookieActorHandle,
+    services::cookie_pool::CookiePool,
 };
 
 /// Cache entry for cookie status responses
@@ -61,11 +61,10 @@ const COOKIE_STATUS_CACHE_KEY: &str = "all_cookies";
 /// * `StatusCode` - HTTP status code indicating success or failure
 ///
 /// # Errors
-/// [`ApiError::unauthorized`] if the bearer token is not the admin password,
-/// or [`ApiError::internal`] if the cookie actor rejects the submission (for
-/// example when the cookie is already known).
+/// [`ApiError::unauthorized`] if the bearer token is not the admin password.
+/// Submitting a cookie the pool already knows is a no-op, not an error.
 pub async fn api_post_cookie(
-    State(s): State<CookieActorHandle>,
+    State(s): State<CookiePool>,
     AuthBearer(t): AuthBearer,
     Json(mut c): Json<CookieStatus>,
 ) -> Result<StatusCode, ApiError> {
@@ -74,19 +73,11 @@ pub async fn api_post_cookie(
     }
     c.reset_time = None;
     info!("Cookie accepted: {}", c.cookie);
-    match s.submit(c).await {
-        Ok(()) => {
-            info!("Cookie submitted successfully");
-            // Clear cache to ensure fresh data on next request
-            COOKIES_CACHE.invalidate(COOKIE_STATUS_CACHE_KEY);
-            info!("Cookie status cache invalidated after adding new cookie");
-            Ok(StatusCode::OK)
-        }
-        Err(e) => {
-            error!("Failed to submit cookie: {}", e);
-            Err(ApiError::internal(format!("Failed to submit cookie: {e}")))
-        }
-    }
+    s.submit(c);
+    // Clear cache to ensure fresh data on next request
+    COOKIES_CACHE.invalidate(COOKIE_STATUS_CACHE_KEY);
+    info!("Cookie status cache invalidated after adding new cookie");
+    Ok(StatusCode::OK)
 }
 
 /// API endpoint to retrieve all cookies and their status
@@ -101,10 +92,9 @@ pub async fn api_post_cookie(
 /// * `Result<(HeaderMap, Json<Value>), ApiError>` - Response with cache headers and cookie status
 ///
 /// # Errors
-/// [`ApiError::unauthorized`] if the bearer token is not the admin password,
-/// or [`ApiError::internal`] if the cookie actor cannot be reached.
+/// [`ApiError::unauthorized`] if the bearer token is not the admin password.
 pub async fn api_get_cookies(
-    State(s): State<CookieActorHandle>,
+    State(s): State<CookiePool>,
     AuthBearer(t): AuthBearer,
     Query(query): Query<CookieStatusQuery>,
 ) -> Result<(HeaderMap, Json<Value>), ApiError> {
@@ -129,58 +119,52 @@ pub async fn api_get_cookies(
     }
 
     // Cache miss or force refresh - fetch fresh data
-    match s.get_status().await {
-        Ok(status) => {
-            let valid = augment_utilization(status.valid, s.clone()).await;
-            let exhausted = augment_utilization(status.exhausted, s.clone()).await;
-            let invalid = status
-                .invalid
-                .into_iter()
-                .map(|u| serde_json::to_value(u).unwrap_or(json!({})))
-                .collect::<Vec<_>>();
+    let status = s.status();
+    let valid = augment_utilization(status.valid, s.clone()).await;
+    let exhausted = augment_utilization(status.exhausted, s.clone()).await;
+    let invalid = status
+        .invalid
+        .into_iter()
+        .map(|u| serde_json::to_value(u).unwrap_or(json!({})))
+        .collect::<Vec<_>>();
 
-            let response_data = json!({
-                "valid": valid,
-                "exhausted": exhausted,
-                "invalid": invalid,
-            });
+    let response_data = json!({
+        "valid": valid,
+        "exhausted": exhausted,
+        "invalid": invalid,
+    });
 
-            // Store in cache
-            let timestamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_else(|e| {
-                    warn!("System time error: {}, using fallback timestamp", e);
-                    Duration::from_secs(0)
-                })
-                .as_secs();
+    // Store in cache
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|e| {
+            warn!("System time error: {}, using fallback timestamp", e);
+            Duration::from_secs(0)
+        })
+        .as_secs();
 
-            COOKIES_CACHE.insert(
-                COOKIE_STATUS_CACHE_KEY.to_string(),
-                CookieStatusCache {
-                    data: response_data.clone(),
-                    timestamp,
-                },
-            );
+    COOKIES_CACHE.insert(
+        COOKIE_STATUS_CACHE_KEY.to_string(),
+        CookieStatusCache {
+            data: response_data.clone(),
+            timestamp,
+        },
+    );
 
-            headers.insert("X-Cache-Status", HeaderValue::from_static("MISS"));
-            headers.insert(
-                "X-Cache-Timestamp",
-                HeaderValue::from_str(&timestamp.to_string())
-                    .unwrap_or_else(|_| HeaderValue::from_static("0")),
-            );
+    headers.insert("X-Cache-Status", HeaderValue::from_static("MISS"));
+    headers.insert(
+        "X-Cache-Timestamp",
+        HeaderValue::from_str(&timestamp.to_string())
+            .unwrap_or_else(|_| HeaderValue::from_static("0")),
+    );
 
-            if query.refresh {
-                info!("Cookie status force refreshed");
-            } else {
-                info!("Cookie status fetched and cached");
-            }
-
-            Ok((headers, Json(response_data)))
-        }
-        Err(e) => Err(ApiError::internal(format!(
-            "Failed to get cookie status: {e}"
-        ))),
+    if query.refresh {
+        info!("Cookie status force refreshed");
+    } else {
+        info!("Cookie status fetched and cached");
     }
+
+    Ok((headers, Json(response_data)))
 }
 
 /// API endpoint to delete a specific cookie
@@ -198,7 +182,7 @@ pub async fn api_get_cookies(
 /// [`ApiError::unauthorized`] if the bearer token is not the admin password,
 /// or [`ApiError::internal`] if the cookie is not present or cannot be removed.
 pub async fn api_delete_cookie(
-    State(s): State<CookieActorHandle>,
+    State(s): State<CookiePool>,
     AuthBearer(t): AuthBearer,
     Json(c): Json<CookieStatus>,
 ) -> Result<StatusCode, ApiError> {
@@ -206,7 +190,7 @@ pub async fn api_delete_cookie(
         return Err(ApiError::unauthorized());
     }
 
-    match s.delete_cookie(c.clone()).await {
+    match s.delete(&c) {
         Ok(()) => {
             info!("Cookie deleted successfully: {}", c.cookie);
             // Clear cache to ensure fresh data on next request
@@ -270,7 +254,7 @@ pub async fn api_get_models() -> Json<Value> {
 use futures::{StreamExt, TryFutureExt, stream};
 use http::HeaderValue;
 
-async fn augment_utilization(cookies: Vec<CookieStatus>, handle: CookieActorHandle) -> Vec<Value> {
+async fn augment_utilization(cookies: Vec<CookieStatus>, handle: CookiePool) -> Vec<Value> {
     let concurrency = 5usize;
     stream::iter(cookies.into_iter().map(move |cookie| {
         let handle = handle.clone();
@@ -305,7 +289,7 @@ async fn augment_utilization(cookies: Vec<CookieStatus>, handle: CookieActorHand
 
 async fn fetch_usage_percent(
     cookie: CookieStatus,
-    handle: CookieActorHandle,
+    handle: CookiePool,
 ) -> Option<(
     u32,
     Option<String>,
@@ -341,14 +325,14 @@ async fn fetch_usage_percent(
 /// Try the OAuth endpoint (`api.anthropic.com/api/oauth/usage`)
 async fn try_oauth_usage(
     cookie: &CookieStatus,
-    handle: &CookieActorHandle,
+    handle: &CookiePool,
 ) -> Result<serde_json::Value, ()> {
     let Ok(mut state) = ClaudeCodeState::from_cookie(handle.clone(), cookie.clone()) else {
         warn!("try_oauth_usage: from_cookie failed for {}", cookie.cookie);
         return Err(());
     };
     let result = state.fetch_usage_metrics().await;
-    state.return_cookie(None).await;
+    state.return_cookie(None);
     result
         .inspect_err(|e| {
             warn!("try_oauth_usage: fetch failed for {}: {}", cookie.cookie, e);

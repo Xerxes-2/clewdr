@@ -7,14 +7,14 @@ use eventsource_stream::Eventsource;
 use futures::TryStreamExt;
 use http::header::{ACCEPT, USER_AGENT};
 use snafu::{GenerateImplicitData, ResultExt};
-use tracing::{Instrument, error, info, warn};
+use tracing::{Instrument, error, info};
 use wreq::Method;
 
 use crate::{
     claude_code_state::{ClaudeCodeState, TokenStatus},
     config::{CLAUDE_CODE_USER_AGENT, CLEWDR_CONFIG, ModelFamily},
     error::{CheckClaudeErr, ClewdrError, WreqSnafu},
-    services::cookie_actor::CookieActorHandle,
+    services::cookie_pool::CookiePool,
     types::claude::{CountMessageTokensResponse, CreateMessageParams},
 };
 
@@ -60,7 +60,7 @@ impl ClaudeCodeState {
             let mut state = self.to_owned();
             let p = p.clone();
 
-            let cookie = state.request_cookie().await?;
+            let cookie = state.request_cookie()?;
             let retry = async {
                 match state.check_token() {
                     TokenStatus::None => {
@@ -68,12 +68,12 @@ impl ClaudeCodeState {
                         let org = state.get_organization().await?;
                         let code_res = state.exchange_code(&org).await?;
                         state.exchange_token(code_res).await?;
-                        state.return_cookie(None).await;
+                        state.return_cookie(None);
                     }
                     TokenStatus::Expired => {
                         info!("Token expired, refreshing token");
                         state.refresh_token().await?;
-                        state.return_cookie(None).await;
+                        state.return_cookie(None);
                     }
                     TokenStatus::Valid => {
                         info!("Token is valid, proceeding with request");
@@ -102,7 +102,7 @@ impl ClaudeCodeState {
                     );
                     // 429 error
                     if let ClewdrError::InvalidCookie { reason } = e {
-                        state.return_cookie(Some(reason.clone())).await;
+                        state.return_cookie(Some(reason.clone()));
                         continue;
                     }
                     return Err(e);
@@ -156,16 +156,14 @@ impl ClaudeCodeState {
             .await
     }
 
-    async fn persist_count_tokens_allowed(&mut self, value: bool) {
+    fn persist_count_tokens_allowed(&mut self, value: bool) {
         if let Some(cookie) = self.cookie.as_mut() {
             if cookie.count_tokens_allowed == Some(value) {
                 return;
             }
             cookie.set_count_tokens_allowed(Some(value));
             let cloned = cookie.clone();
-            if let Err(err) = self.cookie_actor_handle.return_cookie(cloned, None).await {
-                warn!("Failed to persist count_tokens permission: {}", err);
-            }
+            self.cookie_pool.return_cookie(cloned, None);
         }
     }
 
@@ -239,12 +237,12 @@ impl ClaudeCodeState {
             let mut state = self.to_owned();
             let p = p.clone();
 
-            let cookie = state.request_cookie().await?;
+            let cookie = state.request_cookie()?;
             let web_attempt_allowed = CLEWDR_CONFIG.load().enable_web_count_tokens;
             let cookie_disallows = matches!(cookie.count_tokens_allowed, Some(false));
             if cookie_disallows || (for_web && !web_attempt_allowed) {
                 if cookie_disallows {
-                    state.persist_count_tokens_allowed(false).await;
+                    state.persist_count_tokens_allowed(false);
                 }
                 return Ok(Self::local_count_tokens_response(&p));
             }
@@ -255,12 +253,12 @@ impl ClaudeCodeState {
                         let org = state.get_organization().await?;
                         let code_res = state.exchange_code(&org).await?;
                         state.exchange_token(code_res).await?;
-                        state.return_cookie(None).await;
+                        state.return_cookie(None);
                     }
                     TokenStatus::Expired => {
                         info!("Token expired, refreshing token");
                         state.refresh_token().await?;
-                        state.return_cookie(None).await;
+                        state.return_cookie(None);
                     }
                     TokenStatus::Valid => {
                         info!("Token is valid, proceeding with count_tokens");
@@ -290,7 +288,7 @@ impl ClaudeCodeState {
                         e
                     );
                     if let ClewdrError::InvalidCookie { reason } = e {
-                        state.return_cookie(Some(reason.clone())).await;
+                        state.return_cookie(Some(reason.clone()));
                         continue;
                     }
                     return Err(e);
@@ -313,13 +311,13 @@ impl ClaudeCodeState {
             .await
         {
             Ok(response) => {
-                self.persist_count_tokens_allowed(true).await;
+                self.persist_count_tokens_allowed(true);
                 let (resp, _) = Self::materialize_non_stream_response(response).await?;
                 Ok(resp)
             }
             Err(err) => {
                 if Self::is_count_tokens_unauthorized(&err) {
-                    self.persist_count_tokens_allowed(false).await;
+                    self.persist_count_tokens_allowed(false);
                     if allow_fallback {
                         return Ok(Self::local_count_tokens_response(&p));
                     }
@@ -350,12 +348,10 @@ impl ClaudeCodeState {
         }
         if let Some(cookie) = self.cookie.as_mut() {
             // Lazy boundary refresh if due, then reset period counters and start fresh
-            Self::update_cookie_boundaries_if_due(cookie, &self.cookie_actor_handle).await;
+            Self::update_cookie_boundaries_if_due(cookie, &self.cookie_pool).await;
             cookie.add_and_bucket_usage(input, output, family);
             let cloned = cookie.clone();
-            if let Err(err) = self.cookie_actor_handle.return_cookie(cloned, None).await {
-                warn!("Failed to persist usage statistics: {}", err);
-            }
+            self.cookie_pool.return_cookie(cloned, None);
         }
     }
 
@@ -371,7 +367,7 @@ impl ClaudeCodeState {
 
         let input_tokens = u64::from(self.usage.input_tokens);
         let output_sum = Arc::new(AtomicU64::new(0));
-        let handle = self.cookie_actor_handle.clone();
+        let handle = self.cookie_pool.clone();
         let cookie = self.cookie.clone();
 
         let osum = output_sum.clone();
@@ -394,7 +390,7 @@ impl ClaudeCodeState {
                                 ClaudeCodeState::update_cookie_boundaries_if_due(&mut c, &handle)
                                     .await;
                                 c.add_and_bucket_usage(input_tokens, total_out, family);
-                                let _ = handle.return_cookie(c, None).await;
+                                handle.return_cookie(c, None);
                             });
                         }
                     }
@@ -514,7 +510,7 @@ impl ClaudeCodeState {
     // ---------------------------------------------
     async fn update_cookie_boundaries_if_due(
         cookie: &mut crate::config::CookieStatus,
-        handle: &crate::services::cookie_actor::CookieActorHandle,
+        handle: &crate::services::cookie_pool::CookiePool,
     ) {
         const SESSION_WINDOW_SECS: i64 = 5 * 60 * 60; // 5h
         const WEEKLY_WINDOW_SECS: i64 = 7 * 24 * 60 * 60; // 7d
@@ -611,11 +607,11 @@ impl ClaudeCodeState {
 
     async fn fetch_usage_resets(
         cookie: &mut crate::config::CookieStatus,
-        handle: &CookieActorHandle,
+        handle: &CookiePool,
     ) -> Option<(Option<i64>, Option<i64>, Option<i64>)> {
         let mut state = ClaudeCodeState::from_cookie(handle.clone(), cookie.clone()).ok()?;
         let usage = state.fetch_usage_metrics().await.ok()?;
-        state.return_cookie(None).await;
+        state.return_cookie(None);
         if let Some(updated) = state.cookie.clone() {
             *cookie = updated;
         }

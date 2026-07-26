@@ -29,12 +29,6 @@ pub enum ClewdrError {
         loc: Location,
         source: http::Error,
     },
-    #[snafu(display("Ractor error: {}", msg))]
-    RactorError {
-        #[snafu(implicit)]
-        loc: Location,
-        msg: String,
-    },
     #[snafu(display("Error requesting token: {}", source))]
     #[snafu(context(false))]
     RequestTokenError {
