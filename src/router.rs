@@ -167,11 +167,10 @@ impl RouterBuilder {
         }
         #[cfg(feature = "external-resource")]
         {
-            use const_format::formatc;
             use tower_http::services::ServeDir;
-            self.inner = self.inner.fallback_service(ServeDir::new(formatc!(
-                "{}/static",
-                env!("CARGO_MANIFEST_DIR")
+            self.inner = self.inner.fallback_service(ServeDir::new(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/static"
             )));
         }
         self

@@ -586,7 +586,6 @@ dependencies = [
  "clewdr-types",
  "colored",
  "console-subscriber",
- "const_format",
  "enable-ansi-support",
  "etcetera",
  "eventsource-stream",
