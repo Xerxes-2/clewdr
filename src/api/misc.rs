@@ -254,12 +254,40 @@ pub async fn api_get_models() -> Json<Value> {
 use futures::{StreamExt, TryFutureExt, stream};
 use http::HeaderValue;
 
+/// Render a stored boundary the way the usage endpoint sends it.
+///
+/// `CookieStatus` keeps these as epoch seconds, parsed out of the endpoint's
+/// RFC 3339 strings by `fetch_usage_resets`. This is that step inverted, so a
+/// boundary we already know reaches the UI in the shape it expects whether or
+/// not the live probe answered.
+fn render_boundary(epoch: Option<i64>) -> Value {
+    epoch
+        .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))
+        .map_or(Value::Null, |dt| {
+            json!(dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+        })
+}
+
+/// Project a cookie into the JSON the frontend deserializes.
+///
+/// The serialized `CookieStatus` is not that type: it carries the boundaries as
+/// integers under names the API does not use. Both have to be translated here,
+/// because the frontend reads the listing as one value and a single field of
+/// the wrong type fails all of it.
+fn cookie_api_value(cookie: &CookieStatus) -> Value {
+    let mut value = serde_json::to_value(cookie).unwrap_or_else(|_| json!({}));
+    value["session_resets_at"] = render_boundary(cookie.session_resets_at);
+    value["seven_day_resets_at"] = render_boundary(cookie.weekly_resets_at);
+    value["seven_day_sonnet_resets_at"] = render_boundary(cookie.weekly_sonnet_resets_at);
+    value
+}
+
 async fn augment_utilization(cookies: Vec<CookieStatus>, handle: CookiePool) -> Vec<Value> {
     let concurrency = 5usize;
     stream::iter(cookies.into_iter().map(move |cookie| {
         let handle = handle.clone();
         async move {
-            let base = serde_json::to_value(&cookie).unwrap_or(json!({}));
+            let base = cookie_api_value(&cookie);
             match fetch_usage_percent(cookie, handle).await {
                 Some((
                     five_hour,
@@ -400,4 +428,66 @@ fn extract_usage_fields(usage: &serde_json::Value) -> Usage {
         seven_sonnet,
         sonnet_reset,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use clewdr_types::CookieStatusApi;
+
+    use super::*;
+
+    /// A well-formed cookie whose windows all carry a known boundary.
+    fn cookie_with_boundaries() -> CookieStatus {
+        let raw = format!("sk-ant-sid01-{}-{}AA", "a".repeat(86), "b".repeat(6));
+        let mut cookie = CookieStatus::new(&raw, None).expect("valid test cookie");
+        cookie.session_resets_at = Some(1_785_087_657);
+        cookie.weekly_resets_at = Some(1_785_600_000);
+        cookie.weekly_sonnet_resets_at = Some(1_785_700_000);
+        cookie
+    }
+
+    /// The frontend deserializes the whole listing in one go, so a single
+    /// cookie the live probe could not reach must not make the response
+    /// unreadable.
+    #[test]
+    fn a_cookie_without_live_usage_still_parses_as_the_api_type() {
+        let value = cookie_api_value(&cookie_with_boundaries());
+
+        let parsed: CookieStatusApi =
+            serde_json::from_value(value).expect("the API type must accept an unprobed cookie");
+
+        assert_eq!(
+            parsed.session_resets_at.as_deref(),
+            Some("2026-07-26T17:40:57Z"),
+            "the stored epoch should reach the UI as the timestamp it was parsed from"
+        );
+    }
+
+    /// The stored epoch came from parsing the endpoint's RFC 3339 string, so
+    /// rendering it back has to produce the same shape the live path sends.
+    #[test]
+    fn a_rendered_boundary_round_trips_through_the_parser_the_live_path_uses() {
+        let value = cookie_api_value(&cookie_with_boundaries());
+        let rendered = value["seven_day_resets_at"].as_str().expect("a string");
+
+        let reparsed = chrono::DateTime::parse_from_rfc3339(rendered)
+            .expect("the live path parses boundaries with rfc3339")
+            .timestamp();
+
+        assert_eq!(reparsed, 1_785_600_000);
+    }
+
+    /// An unset boundary is absent, not the epoch.
+    #[test]
+    fn an_unknown_boundary_stays_absent() {
+        let raw = format!("sk-ant-sid01-{}-{}AA", "c".repeat(86), "d".repeat(6));
+        let cookie = CookieStatus::new(&raw, None).expect("valid test cookie");
+
+        let parsed: CookieStatusApi =
+            serde_json::from_value(cookie_api_value(&cookie)).expect("still parses");
+
+        assert_eq!(parsed.session_resets_at, None);
+        assert_eq!(parsed.seven_day_resets_at, None);
+        assert_eq!(parsed.seven_day_sonnet_resets_at, None);
+    }
 }
