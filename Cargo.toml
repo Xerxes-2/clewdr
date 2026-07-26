@@ -57,10 +57,8 @@ serde_json = "1"
 serde_with = { version = "3", features = ["chrono_0_4"] }
 sha2 = "0.11"
 snafu = { version = "0.9", features = ["futures", "rust_1_81"] }
-struct_iterable = "0.1"
 strum = { version = "0.28", features = ["derive"] }
 tempfile = { version = "3", optional = true }
-thiserror = "2"
 tiktoken-rs = "0.12"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 toml = "1"
@@ -94,15 +92,6 @@ wreq-util = "3.0.0-rc.10"
 zip = { version = "8", default-features = false, features = [
   "deflate",
 ], optional = true }
-
-[target.'cfg(not(target_os = "android"))'.dependencies]
-aws-lc-rs = "1"
-rustls = { version = "0.23", default-features = false, features = [
-  "aws_lc_rs",
-] }
-
-[target.'cfg(target_os = "android")'.dependencies]
-rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 [target.'cfg(windows)'.dependencies]
 enable-ansi-support = "0.3"
