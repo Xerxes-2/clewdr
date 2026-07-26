@@ -30,9 +30,9 @@ async-stream = "0.3"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros"] }
 axum-auth = "0.8"
-# Held one minor behind: oauth2, tiktoken-rs and axum-auth all pull base64
-# 0.22, and 0.23 is a semver-incompatible second copy for no gain here. Bump
-# once those three have moved.
+# Held one minor behind to share the copy axum-auth and tiktoken-rs pull in;
+# 0.23 is semver-incompatible with those, so asking for it means building two
+# base64s. Bump once both have moved.
 base64 = "0.22"
 bytes = "1"
 chrono = "0.4"
@@ -50,13 +50,14 @@ hex = "0.4"
 http = "1"
 include_dir = { version = "0.7", optional = true }
 mimalloc = { version = "0.1" }
-oauth2 = { version = "5", default-features = false }
 regex = "1"
 self-replace = { version = "1", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# Held one minor behind to share oauth2's copy; 0.11 drags in a parallel
-# digest/block-buffer/crypto-common stack. Bump once oauth2 has moved.
+# Nothing else in the tree depends on sha2 since oauth2 went, so this is no
+# longer about sharing a copy: 0.11 swaps generic-array for hybrid-array and
+# adds const-oid, a net extra crate, and nothing here uses an API newer than
+# 0.10. Worth revisiting when something else wants 0.11.
 sha2 = "0.10"
 snafu = { version = "0.9", features = ["futures", "rust_1_81"] }
 strum = { version = "0.28", features = ["derive"] }

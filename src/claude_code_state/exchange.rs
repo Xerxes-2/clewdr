@@ -1,113 +1,47 @@
-use std::{collections::HashMap, pin::Pin, str::FromStr};
+use std::{collections::HashMap, str::FromStr};
 
-use http::header::{COOKIE, USER_AGENT};
-use oauth2::{
-    AsyncHttpClient, AuthUrl, AuthorizationCode, Client, ClientId, CsrfToken, EndpointNotSet,
-    EndpointSet, HttpClientError, HttpRequest, HttpResponse, PkceCodeChallenge, PkceCodeVerifier,
-    RedirectUrl, Scope, StandardRevocableToken, TokenUrl,
-    basic::{
-        BasicErrorResponse, BasicRevocationErrorResponse, BasicTokenIntrospectionResponse,
-        BasicTokenResponse,
-    },
-    http::{
-        self,
-        header::{HeaderName, HeaderValue},
-    },
-};
+use http::header::{ACCEPT, CONTENT_TYPE, COOKIE, USER_AGENT};
 use serde_json::Value;
 use snafu::{OptionExt, ResultExt};
 use url::Url;
 
-use super::chat::{CLAUDE_API_VERSION, CLAUDE_BETA_BASE};
+use super::{
+    chat::{CLAUDE_API_VERSION, CLAUDE_BETA_BASE},
+    oauth::{
+        Pkce, TokenErrorResponse, TokenResponse, authorization_code_form, authorize_params,
+        random_state, refresh_token_form,
+    },
+};
 use crate::{
     claude_code_state::ClaudeCodeState,
     config::{
         CC_REDIRECT_URI, CC_TOKEN_URL, CLAUDE_CODE_USER_AGENT, CLEWDR_CONFIG, CookieStatus,
         TokenInfo,
     },
-    error::{CheckClaudeErr, ClewdrError, UnexpectedNoneSnafu, UrlSnafu, WreqSnafu},
+    error::{
+        CheckClaudeErr, ClewdrError, RequestTokenSnafu, UnexpectedNoneSnafu, UrlSnafu, WreqSnafu,
+    },
 };
 
-type ClaudeOauthClient = Client<
-    BasicErrorResponse,
-    BasicTokenResponse,
-    BasicTokenIntrospectionResponse,
-    StandardRevocableToken,
-    BasicRevocationErrorResponse,
-    EndpointNotSet,
-    EndpointNotSet,
-    EndpointNotSet,
-    EndpointNotSet,
-    EndpointSet,
->;
-
-struct OauthClient {
-    client: wreq::Client,
-}
-
-impl<'c> AsyncHttpClient<'c> for OauthClient {
-    type Error = HttpClientError<wreq::Error>;
-
-    type Future = Pin<Box<dyn Future<Output = Result<HttpResponse, Self::Error>> + Send + 'c>>;
-
-    fn call(&'c self, mut request: HttpRequest) -> Self::Future {
-        {
-            let headers = request.headers_mut();
-            headers.insert(
-                HeaderName::from_static("anthropic-version"),
-                HeaderValue::from_static(CLAUDE_API_VERSION),
-            );
-            headers.insert(
-                HeaderName::from_static("anthropic-beta"),
-                HeaderValue::from_static(CLAUDE_BETA_BASE),
-            );
-        }
-
-        Box::pin(async move {
-            let (parts, body) = request.into_parts();
-            let mut req = self.client.request(parts.method, parts.uri.to_string());
-            for (name, value) in &parts.headers {
-                req = req.header(name, value.clone());
-            }
-            let response = req.body(body).send().await.map_err(Box::new)?;
-
-            let mut builder = http::Response::builder().status(response.status());
-
-            {
-                builder = builder.version(response.version());
-            }
-
-            for (name, value) in response.headers() {
-                builder = builder.header(name, value);
-            }
-
-            builder
-                .body(response.bytes().await.map_err(Box::new)?.to_vec())
-                .map_err(HttpClientError::Http)
-        })
-    }
-}
+/// The scopes this client asks for.
+const SCOPES: [&str; 2] = ["user:profile", "user:inference"];
 
 pub struct ExchangeResult {
     code: String,
     state: Option<String>,
-    verifier: PkceCodeVerifier,
+    pkce: Pkce,
     org_uuid: String,
 }
 
-fn setup_client(cc_client_id: String) -> Result<ClaudeOauthClient, ClewdrError> {
-    Ok(oauth2::basic::BasicClient::new(ClientId::new(cc_client_id))
-        .set_auth_type(oauth2::AuthType::RequestBody)
-        .set_redirect_uri(RedirectUrl::new(CC_REDIRECT_URI.into()).map_err(|_| {
-            ClewdrError::UnexpectedNone {
-                msg: "Invalid redirect URI",
-            }
-        })?)
-        .set_token_uri(TokenUrl::new(CC_TOKEN_URL.into()).map_err(|_| {
-            ClewdrError::UnexpectedNone {
-                msg: "Invalid token URI",
-            }
-        })?))
+/// The outcome of a token request that the caller has to tell apart.
+///
+/// A rejected grant is not treated as a failure by every caller: a refresh
+/// that comes back `invalid_grant` is recoverable by authorizing again, so the
+/// distinction is carried in the return type rather than buried in an error
+/// string that would have to be matched on.
+enum TokenOutcome {
+    Granted(Box<TokenResponse>),
+    Rejected(TokenErrorResponse),
 }
 
 impl ClaudeCodeState {
@@ -129,27 +63,19 @@ impl ClaudeCodeState {
             .expect("Url parse error");
         let cc_client_id = CLEWDR_CONFIG.load().cc_client_id();
 
-        let client = setup_client(cc_client_id)?.set_auth_uri(
-            AuthUrl::from_url(authorize_url), // Avoid reparsing the URL
+        let pkce = Pkce::new_random();
+        let mut query_params = authorize_params(
+            &cc_client_id,
+            CC_REDIRECT_URI,
+            &SCOPES,
+            &pkce,
+            &random_state(),
         );
-
-        let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
-
-        let (mut auth_url, _csrf_token) = client
-            .authorize_url(|| CsrfToken::new_random_len(32))
-            .add_scope(Scope::new("user:profile".to_string()))
-            .add_scope(Scope::new("user:inference".to_string()))
-            .set_pkce_challenge(pkce_challenge)
-            .url();
-
-        let mut query_params: HashMap<String, String> =
-            auth_url.query_pairs().into_owned().collect();
         query_params.insert("organization_uuid".to_string(), org_uuid.to_string());
-        auth_url.set_query(None);
 
         let wreq_client = self.get_wreq_client();
         let mut authorize_req = wreq_client
-            .post(auth_url.to_string())
+            .post(authorize_url.to_string())
             .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
             .json(&query_params);
         if let Some(cookie) = self.cookie.as_ref() {
@@ -189,7 +115,7 @@ impl ClaudeCodeState {
         Ok(ExchangeResult {
             code: code.to_string(),
             state: state.map(std::string::ToString::to_string),
-            verifier: pkce_verifier,
+            pkce,
             org_uuid: org_uuid.to_string(),
         })
     }
@@ -201,22 +127,23 @@ impl ClaudeCodeState {
     pub async fn exchange_token(&mut self, code_res: ExchangeResult) -> Result<(), ClewdrError> {
         let cc_client_id = CLEWDR_CONFIG.load().cc_client_id();
 
-        let client = setup_client(cc_client_id)?;
+        let form = authorization_code_form(
+            &cc_client_id,
+            CC_REDIRECT_URI,
+            &code_res.code,
+            &code_res.pkce,
+            code_res.state.as_deref(),
+        );
 
-        let wreq_client = self.get_wreq_client();
-        let my_client = OauthClient {
-            client: wreq_client.clone(),
+        let token = match self.post_token_request(form).await? {
+            TokenOutcome::Granted(token) => token,
+            TokenOutcome::Rejected(error) => {
+                return RequestTokenSnafu {
+                    msg: error.to_string(),
+                }
+                .fail();
+            }
         };
-
-        let mut token_request = client
-            .exchange_code(AuthorizationCode::new(code_res.code))
-            .set_pkce_verifier(code_res.verifier);
-
-        if let Some(state) = code_res.state {
-            token_request = token_request.add_extra_param("state", state);
-        }
-
-        let token = token_request.request_async(&my_client).await?;
 
         if let Some(cookie) = self.cookie.as_mut() {
             cookie.token = Some(TokenInfo::new(&token, code_res.org_uuid.clone()));
@@ -233,9 +160,8 @@ impl ClaudeCodeState {
     /// # Errors
     /// Upstream HTTP failures, or a token response that cannot be parsed.
     pub async fn refresh_token(&mut self) -> Result<(), ClewdrError> {
-        let wreq_client = self.get_wreq_client();
         let Some(CookieStatus {
-            token: Some(ref mut token),
+            token: Some(ref token),
             ..
         }) = self.cookie
         else {
@@ -249,33 +175,33 @@ impl ClaudeCodeState {
 
         let cc_client_id = CLEWDR_CONFIG.load().cc_client_id();
 
-        let client = oauth2::basic::BasicClient::new(ClientId::new(cc_client_id))
-            .set_auth_type(oauth2::AuthType::RequestBody)
-            .set_token_uri(TokenUrl::new(CC_TOKEN_URL.into()).map_err(|_| {
-                ClewdrError::UnexpectedNone {
-                    msg: "Invalid token URI",
-                }
-            })?);
-
-        let my_client = OauthClient {
-            client: wreq_client.clone(),
-        };
-
+        // Copied out so the borrow of self.cookie ends before the request;
+        // the reply is written back through a fresh borrow below.
         let org_uuid = token.organization.uuid.clone();
-        let refresh_result = client
-            .exchange_refresh_token(&oauth2::RefreshToken::new(token.refresh_token.clone()))
-            .request_async(&my_client)
-            .await;
+        let form = refresh_token_form(&cc_client_id, &token.refresh_token);
 
-        match refresh_result {
-            Ok(new_token) => {
+        match self.post_token_request(form).await? {
+            TokenOutcome::Granted(new_token) => {
+                let Some(CookieStatus {
+                    token: Some(ref mut token),
+                    ..
+                }) = self.cookie
+                else {
+                    return Err(ClewdrError::UnexpectedNone {
+                        msg: "No token found to refresh token",
+                    });
+                };
                 *token = TokenInfo::new(&new_token, org_uuid);
                 Ok(())
             }
-            Err(e) => {
-                // Check if this is an invalid_grant error
-                if !Self::is_invalid_grant_error(&e) {
-                    return Err(e.into());
+            TokenOutcome::Rejected(error) => {
+                // Anything other than a rejected grant is a real failure;
+                // re-authorizing would not help and would cost a round trip.
+                if !error.is_invalid_grant() {
+                    return RequestTokenSnafu {
+                        msg: error.to_string(),
+                    }
+                    .fail();
                 }
                 tracing::warn!(
                     "Refresh token invalid (invalid_grant), attempting to re-authorize with new OAuth2 flow"
@@ -314,34 +240,281 @@ impl ClaudeCodeState {
         }
     }
 
-    /// Checks if the error is an `invalid_grant` error from `OAuth2`
-    fn is_invalid_grant_error(
-        error: &oauth2::RequestTokenError<
-            oauth2::HttpClientError<wreq::Error>,
-            oauth2::StandardErrorResponse<oauth2::basic::BasicErrorResponseType>,
-        >,
-    ) -> bool {
-        use oauth2::RequestTokenError;
-        match error {
-            RequestTokenError::ServerResponse(response) => {
-                // Check if error type is invalid_grant
-                response
-                    .error()
-                    .to_string()
-                    .to_lowercase()
-                    .contains("invalid_grant")
-                    || response.error_description().is_some_and(|desc| {
-                        let desc_lower = desc.to_lowercase();
-                        desc_lower.contains("refresh token not found")
-                            || desc_lower.contains("refresh token")
-                                && desc_lower.contains("invalid")
-                    })
-            }
-            _ => false,
-        }
+    /// Posts a form to the token endpoint and classifies the reply.
+    ///
+    /// # Errors
+    /// Transport failures, and any reply that is neither a token nor a
+    /// well-formed error -- an HTML error page from a proxy, say.
+    async fn post_token_request(
+        &self,
+        form: Vec<(String, String)>,
+    ) -> Result<TokenOutcome, ClewdrError> {
+        let response = self
+            .get_wreq_client()
+            .post(CC_TOKEN_URL)
+            .header(ACCEPT, "application/json")
+            .header("anthropic-version", CLAUDE_API_VERSION)
+            .header("anthropic-beta", CLAUDE_BETA_BASE)
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(urlencode(&form))
+            .send()
+            .await
+            .context(WreqSnafu {
+                msg: "Failed to send token request",
+            })?;
+
+        let status = response.status();
+        let body = response.bytes().await.context(WreqSnafu {
+            msg: "Failed to read token response",
+        })?;
+
+        classify_token_response(status.as_u16(), &body)
     }
 
     fn get_wreq_client(&self) -> wreq::Client {
         self.client.clone()
+    }
+}
+
+/// Reads a token endpoint reply.
+///
+/// Separated from the request so the classification can be tested against
+/// recorded replies; it is the part with rules in it.
+///
+/// # Errors
+/// A 200 whose body is not a token, or a non-200 whose body is not the
+/// documented error shape -- an HTML page from a proxy in front of the API,
+/// most likely.
+fn classify_token_response(status: u16, body: &[u8]) -> Result<TokenOutcome, ClewdrError> {
+    // Only 200 carries a token. RFC 6749 gives every other status to the error
+    // path, and the previous implementation drew the line in the same place,
+    // so a 201 is treated as a failure rather than guessed at.
+    if status == 200 {
+        return serde_json::from_slice(body)
+            .map(|token| TokenOutcome::Granted(Box::new(token)))
+            .map_err(|e| {
+                RequestTokenSnafu {
+                    msg: format!("malformed token response: {e}"),
+                }
+                .build()
+            });
+    }
+
+    // A body that is not the documented error shape means something other than
+    // the token endpoint answered. Reporting it beats mistaking it for a
+    // rejected grant, which would start a re-authorization that fails the same
+    // way and discards a refresh token that may still be good.
+    serde_json::from_slice::<TokenErrorResponse>(body)
+        .ok()
+        .filter(|error| !error.error.is_empty() || error.error_description.is_some())
+        .map(TokenOutcome::Rejected)
+        .ok_or_else(|| {
+            RequestTokenSnafu {
+                msg: format!(
+                    "token endpoint returned {status}: {}",
+                    String::from_utf8_lossy(body)
+                        .chars()
+                        .take(200)
+                        .collect::<String>()
+                ),
+            }
+            .build()
+        })
+}
+
+/// Encodes form pairs as `application/x-www-form-urlencoded`.
+///
+/// Done here rather than through wreq's `form` feature, which would pull in a
+/// serialiser for the sake of a flat list of string pairs.
+fn urlencode(pairs: &[(String, String)]) -> String {
+    url::form_urlencoded::Serializer::new(String::new())
+        .extend_pairs(pairs)
+        .finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Recorded byte-for-byte from the `oauth2` crate this replaced. An
+    /// authorization code is opaque and routinely contains `+`, `/` and `=`;
+    /// sending those raw would corrupt the code and fail every login, and the
+    /// failure would look like an upstream problem rather than an encoding
+    /// bug.
+    #[test]
+    fn the_form_encoding_is_unchanged() {
+        let form = vec![
+            ("grant_type".to_owned(), "authorization_code".to_owned()),
+            ("code".to_owned(), "THE CODE/+=".to_owned()),
+            (
+                "redirect_uri".to_owned(),
+                "https://console.anthropic.com/oauth/code/callback".to_owned(),
+            ),
+        ];
+
+        assert_eq!(
+            urlencode(&form),
+            "grant_type=authorization_code\
+             &code=THE+CODE%2F%2B%3D\
+             &redirect_uri=https%3A%2F%2Fconsole.anthropic.com%2Foauth%2Fcode%2Fcallback"
+        );
+    }
+
+    /// Pairs go out in the order given, which is the order the previous
+    /// implementation used.
+    #[test]
+    fn the_form_preserves_order() {
+        let form = vec![
+            ("b".to_owned(), "1".to_owned()),
+            ("a".to_owned(), "2".to_owned()),
+        ];
+
+        assert_eq!(urlencode(&form), "b=1&a=2");
+    }
+
+    /// Byte-for-byte comparison against output recorded from the `oauth2`
+    /// crate, with the random values held fixed. This is the check that the
+    /// endpoint sees exactly what it saw before.
+    #[test]
+    fn the_request_bodies_match_the_previous_implementation_byte_for_byte() {
+        const ID: &str = "CLIENT_ID_X";
+        const REDIRECT: &str = "https://console.anthropic.com/oauth/code/callback";
+        const VERIFIER: &str = "C9XYlGBnyeoIiuPZbwnMoY0TvXrofivIJfnFDfkoJN4";
+
+        let mut form = super::super::oauth::authorization_code_form(
+            ID,
+            REDIRECT,
+            "THE CODE/+=",
+            &super::super::oauth::Pkce::new_random(),
+            Some("THE STATE"),
+        );
+        // Substitute the recorded verifier for the generated one.
+        for pair in &mut form {
+            if pair.0 == "code_verifier" {
+                pair.1 = VERIFIER.to_owned();
+            }
+        }
+
+        assert_eq!(
+            urlencode(&form),
+            "grant_type=authorization_code&code=THE+CODE%2F%2B%3D\
+             &code_verifier=C9XYlGBnyeoIiuPZbwnMoY0TvXrofivIJfnFDfkoJN4\
+             &client_id=CLIENT_ID_X\
+             &redirect_uri=https%3A%2F%2Fconsole.anthropic.com%2Foauth%2Fcode%2Fcallback\
+             &state=THE+STATE"
+        );
+
+        assert_eq!(
+            urlencode(&super::super::oauth::refresh_token_form(ID, "THE REFRESH")),
+            "grant_type=refresh_token&refresh_token=THE+REFRESH&client_id=CLIENT_ID_X"
+        );
+    }
+
+    fn granted(status: u16, body: &str) -> TokenResponse {
+        match classify_token_response(status, body.as_bytes()) {
+            Ok(TokenOutcome::Granted(token)) => *token,
+            other => panic!("expected a token, got {:?}", other.map(|_| "rejected")),
+        }
+    }
+
+    fn rejected(status: u16, body: &str) -> TokenErrorResponse {
+        match classify_token_response(status, body.as_bytes()) {
+            Ok(TokenOutcome::Rejected(error)) => error,
+            other => panic!("expected a rejection, got {:?}", other.map(|_| "granted")),
+        }
+    }
+
+    #[test]
+    fn a_200_carrying_a_token_is_granted() {
+        let token = granted(
+            200,
+            r#"{"access_token":"AT","token_type":"bearer","expires_in":3600,"refresh_token":"RT"}"#,
+        );
+
+        assert_eq!(token.access_token, "AT");
+        assert_eq!(token.refresh_token.as_deref(), Some("RT"));
+    }
+
+    /// Matches the previous implementation, which accepted only 200. A 2xx
+    /// that is not 200 is not a token response, and treating one as success
+    /// would store an empty access token.
+    #[test]
+    fn a_non_200_success_is_not_a_token() {
+        let body = r#"{"access_token":"AT","token_type":"bearer"}"#;
+
+        for status in [201u16, 202, 204, 299] {
+            assert!(
+                classify_token_response(status, body.as_bytes()).is_err(),
+                "status {status} should not be read as a token"
+            );
+        }
+    }
+
+    #[test]
+    fn an_error_body_is_a_rejection() {
+        let error = rejected(
+            400,
+            r#"{"error":"invalid_grant","error_description":"Refresh token not found"}"#,
+        );
+
+        assert!(error.is_invalid_grant());
+    }
+
+    /// A rejection is only recognised from the documented shape. An HTML
+    /// error page from a proxy in front of the API used to deserialize into
+    /// an all-default error, which reads as "not `invalid_grant`" and would be
+    /// reported -- but an empty error with no description is indistinguishable
+    /// from a successful parse, so it is rejected explicitly.
+    #[test]
+    fn a_body_that_is_not_an_error_response_is_an_error() {
+        for body in [
+            "<html>502 Bad Gateway</html>",
+            "",
+            "{}",
+            r#"{"detail":"rate limited"}"#,
+        ] {
+            let result = classify_token_response(500, body.as_bytes());
+
+            assert!(
+                result.is_err(),
+                "{body:?} should not be read as a rejected grant"
+            );
+        }
+    }
+
+    /// The `invalid_grant` path discards the refresh token and re-authorizes,
+    /// so a garbled 200 must not reach it by way of a default-constructed
+    /// error.
+    #[test]
+    fn a_malformed_token_response_is_an_error() {
+        let result = classify_token_response(200, b"<html>hello</html>");
+
+        assert!(result.is_err());
+    }
+
+    /// The endpoint's own error text is worth keeping: it is the only clue
+    /// when something between here and Anthropic is answering instead.
+    #[test]
+    fn an_unrecognised_body_is_reported_with_its_status() {
+        let Err(e) = classify_token_response(502, b"<html>Bad Gateway</html>") else {
+            panic!("expected an error");
+        };
+
+        let msg = e.to_string();
+        assert!(msg.contains("502"), "{msg}");
+        assert!(msg.contains("Bad Gateway"), "{msg}");
+    }
+
+    /// A proxy can return a very long HTML page; the message goes into logs
+    /// and an error response, so it is truncated.
+    #[test]
+    fn a_long_error_body_is_truncated() {
+        let body = "x".repeat(10_000);
+
+        let Err(e) = classify_token_response(500, body.as_bytes()) else {
+            panic!("expected an error");
+        };
+
+        assert!(e.to_string().len() < 400, "{}", e.to_string().len());
     }
 }

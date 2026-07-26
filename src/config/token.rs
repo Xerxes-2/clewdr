@@ -1,8 +1,9 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use oauth2::{EmptyExtraTokenFields, StandardTokenResponse, TokenResponse, basic::BasicTokenType};
 use serde::{Deserialize, Serialize};
+
+use crate::claude_code_state::oauth::TokenResponse;
 use tracing::debug;
 
 /// A [`Duration`] as whole seconds.
@@ -81,21 +82,17 @@ pub struct TokenInfo {
 }
 
 impl TokenInfo {
-    pub fn new(
-        raw: &StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>,
-        organization_uuid: String,
-    ) -> Self {
-        let expires_at = Utc::now() + raw.expires_in().unwrap_or_default();
+    #[must_use]
+    pub fn new(raw: &TokenResponse, organization_uuid: String) -> Self {
+        let expires_in = raw.expires_in();
         Self {
-            access_token: raw.access_token().secret().clone(),
-            expires_in: raw.expires_in().unwrap_or_default(),
+            access_token: raw.access_token.clone(),
+            expires_in,
             organization: Organization {
                 uuid: organization_uuid,
             },
-            refresh_token: raw
-                .refresh_token()
-                .map_or_else(Default::default, |rt| rt.secret().clone()),
-            expires_at,
+            refresh_token: raw.refresh_token.clone().unwrap_or_default(),
+            expires_at: Utc::now() + expires_in,
         }
     }
 

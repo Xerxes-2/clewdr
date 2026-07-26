@@ -1,5 +1,6 @@
 mod chat;
 mod exchange;
+pub mod oauth;
 mod organization;
 use http::{
     HeaderValue, Method,

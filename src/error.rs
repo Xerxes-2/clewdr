@@ -7,7 +7,6 @@ use axum::{
 };
 use chrono::Utc;
 use colored::Colorize;
-use oauth2::{RequestTokenError, StandardErrorResponse, basic::BasicErrorResponseType};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use snafu::Location;
@@ -29,15 +28,11 @@ pub enum ClewdrError {
         loc: Location,
         source: http::Error,
     },
-    #[snafu(display("Error requesting token: {}", source))]
-    #[snafu(context(false))]
+    #[snafu(display("Error requesting token: {}, at: {}", msg, loc))]
     RequestTokenError {
         #[snafu(implicit)]
         loc: Location,
-        source: RequestTokenError<
-            oauth2::HttpClientError<wreq::Error>,
-            StandardErrorResponse<BasicErrorResponseType>,
-        >,
+        msg: String,
     },
     #[snafu(display("URL parse error: {}, at: {}", source, loc))]
     UrlError {
