@@ -21,6 +21,18 @@ env:
 permissions:
   contents: write
 
+# A new push to a branch makes the previous run's results irrelevant, and the
+# matrix is expensive enough that leaving superseded runs going is the single
+# biggest source of queue contention.
+#
+# Tags are exempt, so a release build is never cancelled by a later push. The
+# event name is part of the group because a manual dispatch builds the full
+# matrix: without it, a push to master would cancel a dispatch someone started
+# on master to get artifacts.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   check:
     name: Format, lint and test
@@ -91,9 +103,14 @@ jobs:
           path: static/
           retention-days: 1
 
+  # This matrix exists to produce release artifacts, so it runs when a release
+  # is being made. On pull requests it was building nine cross-platform
+  # binaries, zipping them, uploading them, and discarding them a day later.
+  # Those runs get the `smoke` job below instead.
   build:
     name: Build binary
     needs: build-frontend
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
     strategy:
       matrix:
         os: [linux, musllinux, android, windows, macos]
@@ -135,12 +152,18 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Add Rust target
+      - name: Compute target triple
         shell: bash
         id: target
-        run: |
-          echo "triple=${{ matrix.target_arch }}-${{matrix.target_vendor_sys_env}}" >> $GITHUB_OUTPUT
-          rustup target add ${{ matrix.target_arch }}-${{matrix.target_vendor_sys_env}} && rustup update
+        run: echo "triple=${{ matrix.target_arch }}-${{matrix.target_vendor_sys_env}}" >> $GITHUB_OUTPUT
+
+      # Pinned instead of `rustup update`, which floats. rust-cache keys on the
+      # rustc version, so every new stable release used to invalidate all nine
+      # matrix caches at the same moment and force nine cold builds.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ steps.target.outputs.triple }}
 
       - uses: nttld/setup-ndk@v1
         if: ${{ matrix.os == 'android' }}
@@ -166,11 +189,22 @@ jobs:
           brew update
           brew install ${{ env.HOMEBREW_PACKAGES }}
 
+      # Downloads a prebuilt binary, falling back to a source build only if no
+      # release matches. `cargo install cross` ran ahead of the cache step
+      # below, so it had nothing to restore from and recompiled cross from
+      # source on every musllinux run.
+      - uses: cargo-bins/cargo-binstall@main
+        if: ${{ matrix.cross || matrix.os == 'android' }}
+
       - name: Install cross
         if: ${{ matrix.cross }}
         run: |
-          cargo install cross --locked
+          cargo binstall cross --no-confirm
           echo "CROSS_NO_DEFAULT_TOOLCHAIN=1" >> $GITHUB_ENV
+
+      - name: Install cargo-ndk
+        if: ${{ matrix.os == 'android' }}
+        run: cargo binstall cargo-ndk --no-confirm
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -209,9 +243,7 @@ jobs:
 
       - name: Build with Android NDK
         if: ${{ matrix.os == 'android' }}
-        run: |
-          cargo install cargo-ndk
-          cargo ndk --target ${{ steps.target.outputs.triple }} build --release $FEATURE_ARGS
+        run: cargo ndk --target ${{ steps.target.outputs.triple }} build --release $FEATURE_ARGS
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
@@ -238,6 +270,41 @@ jobs:
           name: ${{ env.BIN_NAME }}-${{ matrix.os }}-${{matrix.target_arch}}
           path: ${{ env.BIN_NAME }}-${{ matrix.os }}-${{matrix.target_arch}}.zip
           retention-days: 1
+
+  # Stands in for the matrix on pull requests and master pushes. `check`
+  # already covers all four feature combinations, but only through clippy on
+  # the dev profile; this covers the one thing it cannot, that the release
+  # profile and the embed-resource feature actually build and link.
+  smoke:
+    name: Smoke build (release profile)
+    needs: build-frontend
+    if: ${{ !(startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ env.APT_PACKAGES }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: smoke
+
+      # embed-resource compiles static/ into the binary, so the frontend has to
+      # exist before this builds.
+      - name: Download static files
+        uses: actions/download-artifact@v8
+        with:
+          name: static-files
+          path: static
+
+      - name: Build
+        run: cargo build --release --no-default-features --features embed-resource,portable
 
   release:
     name: Create Release
