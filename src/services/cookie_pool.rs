@@ -1,12 +1,11 @@
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, Mutex, MutexGuard, PoisonError, Weak},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use chrono::Utc;
 use colored::Colorize;
-use moka::sync::Cache;
 use serde::Serialize;
 use tracing::{error, info, warn};
 
@@ -21,6 +20,64 @@ use crate::{
 const INTERVAL: u64 = 300;
 const SESSION_WINDOW_SECS: i64 = 5 * 60 * 60; // 5h
 const WEEKLY_WINDOW_SECS: i64 = 7 * 24 * 60 * 60; // 7d
+
+/// How many prompt hashes keep a remembered cookie
+const STICKY_CAPACITY: usize = 1000;
+/// How long a remembered cookie survives without being asked for again
+const STICKY_IDLE: Duration = Duration::from_hours(1);
+
+/// Remembers which cookie served a given prompt hash, so repeated requests
+/// with the same system prompt keep hitting the same upstream account.
+///
+/// Bounded by both idleness and capacity, because the keys are attacker-
+/// influenced: a caller varying the prompt would otherwise grow this forever.
+/// Purely an optimisation — a miss costs a different cookie, nothing more — so
+/// eviction only has to be approximately least-recently-used, which a linear
+/// scan over at most [`STICKY_CAPACITY`] entries gives cheaply enough for a
+/// path that already runs under the pool's mutex.
+#[derive(Debug)]
+struct StickyCookies {
+    entries: HashMap<u64, (CookieStatus, Instant)>,
+}
+
+impl StickyCookies {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+        }
+    }
+
+    /// The cookie remembered for `hash`, renewing its idle deadline.
+    fn get(&mut self, hash: u64) -> Option<CookieStatus> {
+        let now = Instant::now();
+        let (cookie, last_used) = self.entries.get_mut(&hash)?;
+        if now.duration_since(*last_used) >= STICKY_IDLE {
+            self.entries.remove(&hash);
+            return None;
+        }
+        *last_used = now;
+        Some(cookie.clone())
+    }
+
+    /// Remembers `cookie` for `hash`, evicting if that would exceed capacity.
+    fn insert(&mut self, hash: u64, cookie: CookieStatus) {
+        let now = Instant::now();
+        if !self.entries.contains_key(&hash) && self.entries.len() >= STICKY_CAPACITY {
+            self.entries
+                .retain(|_, (_, last_used)| now.duration_since(*last_used) < STICKY_IDLE);
+            if self.entries.len() >= STICKY_CAPACITY
+                && let Some(&oldest) = self
+                    .entries
+                    .iter()
+                    .min_by_key(|(_, (_, last_used))| *last_used)
+                    .map(|(hash, _)| hash)
+            {
+                self.entries.remove(&oldest);
+            }
+        }
+        self.entries.insert(hash, (cookie, now));
+    }
+}
 
 #[derive(Debug, Serialize, Clone)]
 pub struct CookieStatusInfo {
@@ -39,7 +96,7 @@ struct PoolState {
     valid: VecDeque<CookieStatus>,
     exhausted: HashSet<CookieStatus>,
     invalid: HashSet<UselessCookie>,
-    moka: Cache<u64, CookieStatus>,
+    sticky: StickyCookies,
 }
 
 impl PoolState {
@@ -55,16 +112,11 @@ impl PoolState {
         let exhausted = cooling.into_iter().collect::<HashSet<_>>();
         let invalid = loaded.wasted;
 
-        let moka = Cache::builder()
-            .max_capacity(1000)
-            .time_to_idle(Duration::from_hours(1))
-            .build();
-
         Self {
             valid,
             exhausted,
             invalid,
-            moka,
+            sticky: StickyCookies::new(),
         }
     }
 
@@ -200,12 +252,12 @@ impl PoolState {
     fn dispatch(&mut self, hash: Option<u64>) -> Result<CookieStatus, ClewdrError> {
         self.reset();
         if let Some(hash) = hash
-            && let Some(cookie) = self.moka.get(&hash)
-            && let Some(cookie) = self.valid.iter().find(|&c| c == &cookie)
+            && let Some(remembered) = self.sticky.get(hash)
+            && let Some(cookie) = self.valid.iter().find(|&c| c == &remembered)
         {
-            // renew moka cache
+            // renew the sticky entry
             let cookie = cookie.clone();
-            self.moka.insert(hash, cookie.clone());
+            self.sticky.insert(hash, cookie.clone());
             return Ok(cookie);
         }
         let cookie = self
@@ -214,7 +266,7 @@ impl PoolState {
             .ok_or(ClewdrError::NoCookieAvailable)?;
         self.valid.push_back(cookie.clone());
         if let Some(hash) = hash {
-            self.moka.insert(hash, cookie.clone());
+            self.sticky.insert(hash, cookie.clone());
         }
         Ok(cookie)
     }
@@ -393,5 +445,139 @@ impl CookiePool {
     /// [`ClewdrError::UnexpectedNone`] if the pool has never seen the cookie.
     pub fn delete(&self, cookie: &CookieStatus) -> Result<(), ClewdrError> {
         self.lock().delete(cookie)
+    }
+}
+
+#[cfg(test)]
+mod sticky_tests {
+    use super::*;
+
+    /// A distinct, well-formed cookie per `tag`.
+    fn cookie(tag: char) -> CookieStatus {
+        let raw = format!(
+            "sk-ant-sid01-{}-{}AA",
+            str::repeat(&tag.to_string(), 86),
+            "b".repeat(6)
+        );
+        CookieStatus::new(&raw, None).expect("valid test cookie")
+    }
+
+    #[test]
+    fn a_remembered_cookie_comes_back_for_the_same_hash() {
+        let mut sticky = StickyCookies::new();
+        sticky.insert(1, cookie('a'));
+
+        assert_eq!(sticky.get(1), Some(cookie('a')));
+    }
+
+    #[test]
+    fn an_unknown_hash_is_a_miss() {
+        let mut sticky = StickyCookies::new();
+        sticky.insert(1, cookie('a'));
+
+        assert_eq!(sticky.get(2), None);
+    }
+
+    #[test]
+    fn re_inserting_a_hash_replaces_the_cookie() {
+        let mut sticky = StickyCookies::new();
+        sticky.insert(1, cookie('a'));
+        sticky.insert(1, cookie('b'));
+
+        assert_eq!(sticky.get(1), Some(cookie('b')));
+        assert_eq!(sticky.entries.len(), 1);
+    }
+
+    /// The keys are prompt hashes, so a caller varying its system prompt
+    /// controls how many there are. Without a cap this would grow without
+    /// bound for as long as the process runs.
+    #[test]
+    fn the_map_never_exceeds_its_capacity() {
+        let mut sticky = StickyCookies::new();
+        for hash in 0..(STICKY_CAPACITY as u64 * 3) {
+            sticky.insert(hash, cookie('a'));
+        }
+
+        assert!(
+            sticky.entries.len() <= STICKY_CAPACITY,
+            "grew to {} entries",
+            sticky.entries.len()
+        );
+    }
+
+    /// Overflowing the cap must drop the entry that has gone longest without
+    /// being asked for, not an arbitrary one, or a busy prompt would lose its
+    /// cookie to a burst of one-off ones.
+    #[test]
+    fn eviction_takes_the_least_recently_used_entry() {
+        let mut sticky = StickyCookies::new();
+        for hash in 0..STICKY_CAPACITY as u64 {
+            sticky.insert(hash, cookie('a'));
+        }
+        // Touch the oldest key so it is no longer the least recently used.
+        assert!(sticky.get(0).is_some());
+
+        // One more entry than fits, forcing exactly one eviction.
+        sticky.insert(u64::MAX, cookie('b'));
+
+        assert!(sticky.get(0).is_some(), "the touched entry must survive");
+        assert_eq!(sticky.get(u64::MAX), Some(cookie('b')));
+        assert!(sticky.get(1).is_none(), "the untouched oldest must be gone");
+    }
+
+    /// Re-inserting an existing key is not growth, so it must not evict.
+    #[test]
+    fn refreshing_a_full_map_evicts_nothing() {
+        let mut sticky = StickyCookies::new();
+        for hash in 0..STICKY_CAPACITY as u64 {
+            sticky.insert(hash, cookie('a'));
+        }
+
+        sticky.insert(0, cookie('b'));
+
+        assert_eq!(sticky.entries.len(), STICKY_CAPACITY);
+        assert_eq!(sticky.get(0), Some(cookie('b')));
+        assert!(sticky.get(1).is_some(), "no other entry should have gone");
+    }
+
+    #[test]
+    fn an_idle_entry_is_not_returned() {
+        let mut sticky = StickyCookies::new();
+        sticky.insert(1, cookie('a'));
+        // Backdate the entry past the idle deadline.
+        sticky.entries.get_mut(&1).unwrap().1 = Instant::now()
+            .checked_sub(STICKY_IDLE + Duration::from_secs(1))
+            .expect("the test clock must reach back past the idle window");
+
+        assert_eq!(sticky.get(1), None);
+        assert!(
+            sticky.entries.is_empty(),
+            "the stale entry should be dropped"
+        );
+    }
+
+    /// Reading an entry renews it, so a prompt that keeps being asked for
+    /// keeps its cookie however long the process has been up.
+    #[test]
+    fn reading_an_entry_renews_its_deadline() {
+        let mut sticky = StickyCookies::new();
+        sticky.insert(1, cookie('a'));
+        // Nearly stale, but not yet.
+        sticky.entries.get_mut(&1).unwrap().1 = Instant::now()
+            .checked_sub(
+                STICKY_IDLE
+                    .checked_sub(Duration::from_secs(30))
+                    .expect("the idle window is longer than 30s"),
+            )
+            .expect("the test clock must reach back into the idle window");
+
+        assert!(sticky.get(1).is_some());
+
+        // The read should have reset the clock, leaving a full idle window.
+        let age = sticky.entries[&1].1.elapsed();
+        assert!(
+            age < Duration::from_secs(1),
+            "deadline was not renewed: {age:?}"
+        );
     }
 }

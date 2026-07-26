@@ -1,6 +1,6 @@
 use std::{
-    sync::LazyLock,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    sync::{Mutex, PoisonError},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
@@ -9,7 +9,6 @@ use axum::{
     http::HeaderMap,
 };
 use axum_auth::AuthBearer;
-use moka::sync::Cache;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing::{error, info, warn};
@@ -28,7 +27,11 @@ use crate::{
 #[derive(Clone)]
 struct CookieStatusCache {
     data: Value,
+    /// Epoch seconds, reported to the client in `X-Cache-Timestamp`.
     timestamp: u64,
+    /// When the entry was stored, for expiry. Kept separate from `timestamp`
+    /// because a wall-clock jump must not extend or shorten the TTL.
+    stored_at: Instant,
 }
 
 /// Query parameters for cookie status endpoint
@@ -38,16 +41,31 @@ pub struct CookieStatusQuery {
     refresh: bool,
 }
 
-/// Global cache for cookie status responses (TTL: 5 minutes)
-static COOKIES_CACHE: LazyLock<Cache<String, CookieStatusCache>> = LazyLock::new(|| {
-    Cache::builder()
-        .max_capacity(1)
-        .time_to_live(Duration::from_mins(5))
-        .build()
-});
+/// How long a stored cookie listing is served before it is rebuilt
+const COOKIE_STATUS_CACHE_TTL: Duration = Duration::from_mins(5);
 
-/// Cache key for cookie status
-const COOKIE_STATUS_CACHE_KEY: &str = "all_cookies";
+/// The cached cookie status response.
+///
+/// A single slot, not a map: the listing takes no parameters, so there is only
+/// ever one response worth keeping.
+static COOKIES_CACHE: Mutex<Option<CookieStatusCache>> = Mutex::new(None);
+
+/// The stored listing, if one is present and still inside its TTL.
+fn cached_cookie_status() -> Option<CookieStatusCache> {
+    let mut slot = COOKIES_CACHE.lock().unwrap_or_else(PoisonError::into_inner);
+    if slot
+        .as_ref()
+        .is_some_and(|c| c.stored_at.elapsed() >= COOKIE_STATUS_CACHE_TTL)
+    {
+        *slot = None;
+    }
+    slot.clone()
+}
+
+/// Drops the stored listing, so the next read rebuilds it.
+fn invalidate_cookie_status() {
+    *COOKIES_CACHE.lock().unwrap_or_else(PoisonError::into_inner) = None;
+}
 
 /// API endpoint to submit a new cookie
 /// Validates and adds the cookie to the cookie manager
@@ -75,7 +93,7 @@ pub async fn api_post_cookie(
     info!("Cookie accepted: {}", c.cookie);
     s.submit(c);
     // Clear cache to ensure fresh data on next request
-    COOKIES_CACHE.invalidate(COOKIE_STATUS_CACHE_KEY);
+    invalidate_cookie_status();
     info!("Cookie status cache invalidated after adding new cookie");
     Ok(StatusCode::OK)
 }
@@ -106,7 +124,7 @@ pub async fn api_get_cookies(
 
     // Check cache if not force refreshing
     if !query.refresh
-        && let Some(cached) = COOKIES_CACHE.get(COOKIE_STATUS_CACHE_KEY)
+        && let Some(cached) = cached_cookie_status()
     {
         headers.insert("X-Cache-Status", HeaderValue::from_static("HIT"));
         headers.insert(
@@ -143,13 +161,11 @@ pub async fn api_get_cookies(
         })
         .as_secs();
 
-    COOKIES_CACHE.insert(
-        COOKIE_STATUS_CACHE_KEY.to_string(),
-        CookieStatusCache {
-            data: response_data.clone(),
-            timestamp,
-        },
-    );
+    *COOKIES_CACHE.lock().unwrap_or_else(PoisonError::into_inner) = Some(CookieStatusCache {
+        data: response_data.clone(),
+        timestamp,
+        stored_at: Instant::now(),
+    });
 
     headers.insert("X-Cache-Status", HeaderValue::from_static("MISS"));
     headers.insert(
@@ -194,7 +210,7 @@ pub async fn api_delete_cookie(
         Ok(()) => {
             info!("Cookie deleted successfully: {}", c.cookie);
             // Clear cache to ensure fresh data on next request
-            COOKIES_CACHE.invalidate(COOKIE_STATUS_CACHE_KEY);
+            invalidate_cookie_status();
             info!("Cookie status cache invalidated");
             Ok(StatusCode::NO_CONTENT)
         }

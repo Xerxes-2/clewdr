@@ -48,7 +48,6 @@ hex = "0.4"
 http = "1"
 include_dir = { version = "0.7", optional = true }
 mimalloc = { version = "0.1" }
-moka = { version = "0.12", features = ["sync"] }
 oauth2 = { version = "5", default-features = false }
 passwords = "3"
 regex = "1"
