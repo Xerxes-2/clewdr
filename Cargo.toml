@@ -44,12 +44,14 @@ etcetera = { version = "0.11", optional = true }
 eventsource-stream = "0.2"
 figment = { version = "0.10", features = ["env", "toml"] }
 futures = "0.3"
+# Already in the tree under uuid; taking it directly costs no new crates and
+# saves pulling a second RNG stack just to generate the admin password.
+getrandom = "0.4"
 hex = "0.4"
 http = "1"
 include_dir = { version = "0.7", optional = true }
 mimalloc = { version = "0.1" }
 oauth2 = { version = "5", default-features = false }
-passwords = "3"
 regex = "1"
 self-replace = { version = "1", optional = true }
 serde = { version = "1", features = ["derive"] }

@@ -14,7 +14,6 @@ use figment::{
     providers::{Env, Format, Toml},
 };
 use http::uri::Authority;
-use passwords::PasswordGenerator;
 use serde::{Deserialize, Serialize};
 use tokio::{io::AsyncWriteExt, spawn};
 use tracing::error;
@@ -81,25 +80,67 @@ use crate::{
     utils::enabled,
 };
 
+/// The alphabet a generated password draws from.
+///
+/// Alphanumerics minus the glyphs that are easy to confuse when a password is
+/// read off one screen and typed into another: `0`/`O`, `1`/`l`/`I`.
+const PASSWORD_ALPHABET: &[u8] = b"23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ";
+
+/// Length of a generated password, in characters
+const PASSWORD_LENGTH: usize = 64;
+
+/// The largest multiple of the alphabet size that fits in a byte.
+///
+/// Bytes at or above it are discarded rather than folded back into the
+/// alphabet: `byte % 56` alone would map five distinct byte values onto the
+/// alphabet's first 32 characters and only four onto the rest, making those
+/// characters likelier and costing the password some of its entropy.
+/// Computed in `usize` because 256, the number of byte values, is one past
+/// what a `u8` holds.
+const PASSWORD_SAMPLE_CUTOFF: usize = 256 - (256 % PASSWORD_ALPHABET.len());
+
+/// Maps uniformly random bytes onto [`PASSWORD_ALPHABET`], discarding those
+/// that would bias the result, until `length` characters have been produced.
+///
+/// Split from [`generate_password`] so the sampling can be checked against a
+/// known byte sequence instead of inferred from the output's statistics.
+fn password_from_bytes(bytes: impl Iterator<Item = u8>, length: usize) -> String {
+    bytes
+        .filter(|&b| usize::from(b) < PASSWORD_SAMPLE_CUTOFF)
+        .map(|b| PASSWORD_ALPHABET[usize::from(b) % PASSWORD_ALPHABET.len()] as char)
+        .take(length)
+        .collect()
+}
+
 /// Generates a random password for authentication
 /// Creates a secure 64-character password with mixed character types
 ///
 /// # Returns
 /// A random password string
+///
+/// # Panics
+/// If the OS refuses to supply randomness. Continuing past that would mean
+/// inventing a predictable admin password, so failing loudly is the only
+/// correct response.
 fn generate_password() -> String {
-    let pg = PasswordGenerator {
-        length: 64,
-        numbers: true,
-        lowercase_letters: true,
-        uppercase_letters: true,
-        symbols: false,
-        spaces: false,
-        exclude_similar_characters: true,
-        strict: true,
-    };
-
     println!("{}", "Generating random password......".green());
-    pg.generate_one().unwrap()
+
+    // Drawn a buffer at a time: rejection means the number of bytes needed is
+    // not known up front, but one syscall almost always covers it.
+    let mut buf = [0u8; PASSWORD_LENGTH];
+    let mut next = buf.len();
+    let random_bytes = std::iter::from_fn(|| {
+        if next == buf.len() {
+            getrandom::fill(&mut buf)
+                .expect("the OS must provide randomness for the admin password");
+            next = 0;
+        }
+        let byte = buf[next];
+        next += 1;
+        Some(byte)
+    });
+
+    password_from_bytes(random_bytes, PASSWORD_LENGTH)
 }
 
 /// A struct representing the configuration of the application
@@ -558,6 +599,94 @@ impl ClewdrConfig {
 #[cfg(test)]
 mod tests {
     use super::{super::Reason, *};
+
+    /// its length is a security property, not a cosmetic one.
+    #[test]
+    fn a_generated_password_has_the_advertised_length() {
+        let password = generate_password();
+        assert_eq!(password.chars().count(), PASSWORD_LENGTH);
+    }
+
+    /// alphabet through and index out of bounds, or spin forever.
+    #[test]
+    fn a_generated_password_only_uses_the_alphabet() {
+        for _ in 0..32 {
+            let password = generate_password();
+            assert!(
+                password.bytes().all(|b| PASSWORD_ALPHABET.contains(&b)),
+                "password left the alphabet: {password}"
+            );
+        }
+    }
+
+    /// is copied off one screen and typed into another.
+    #[test]
+    fn the_alphabet_excludes_confusable_characters() {
+        for confusable in *b"0O1lI" {
+            assert!(
+                !PASSWORD_ALPHABET.contains(&confusable),
+                "{} is easy to misread and must not appear",
+                confusable as char
+            );
+        }
+    }
+
+    /// deployment the same admin credential.
+    #[test]
+    fn generated_passwords_differ() {
+        let first = generate_password();
+        let second = generate_password();
+        assert_ne!(first, second);
+    }
+
+    /// each and the remaining 24 only four, and this counts that directly.
+    #[test]
+    fn every_character_is_equally_likely() {
+        use std::collections::HashMap;
+
+        let all_bytes = 0..=u8::MAX;
+        let mapped = password_from_bytes(all_bytes, usize::MAX);
+
+        let mut counts: HashMap<char, usize> = HashMap::new();
+        for c in mapped.chars() {
+            *counts.entry(c).or_default() += 1;
+        }
+
+        assert_eq!(counts.len(), PASSWORD_ALPHABET.len());
+        let per_character = PASSWORD_SAMPLE_CUTOFF / PASSWORD_ALPHABET.len();
+        for &byte in PASSWORD_ALPHABET {
+            assert_eq!(
+                counts[&(byte as char)],
+                per_character,
+                "'{}' is not equally likely",
+                byte as char
+            );
+        }
+    }
+
+    /// The bytes that would have biased the result are dropped, not reused.
+    #[test]
+    fn out_of_range_bytes_are_discarded() {
+        let rejected = (PASSWORD_SAMPLE_CUTOFF..=usize::from(u8::MAX))
+            .map(|b| u8::try_from(b).unwrap())
+            .collect::<Vec<_>>();
+        assert!(!rejected.is_empty(), "the test needs bytes to reject");
+
+        assert_eq!(password_from_bytes(rejected.into_iter(), 64), "");
+    }
+
+    /// until the full length is reached.
+    #[test]
+    fn rejected_bytes_do_not_shorten_the_password() {
+        // One acceptable byte for every rejected one.
+        let alternating =
+            (0..u8::MAX).flat_map(|_| [u8::try_from(PASSWORD_SAMPLE_CUTOFF).unwrap(), 0u8]);
+
+        let password = password_from_bytes(alternating, PASSWORD_LENGTH);
+
+        assert_eq!(password.chars().count(), PASSWORD_LENGTH);
+        assert!(password.chars().all(|c| c == PASSWORD_ALPHABET[0] as char));
+    }
 
     /// `main` prints the config with `println!`, and a `Display` impl that
     /// returns `Err` makes that panic rather than fail gracefully. The URLs are
