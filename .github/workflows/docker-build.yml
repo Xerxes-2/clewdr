@@ -12,6 +12,10 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   build:
     name: Build (${{ matrix.arch }})
@@ -38,7 +42,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      # A pull request does not publish, so it has nothing to log in for, and a
+      # pull request from a fork cannot: its GITHUB_TOKEN is read-only whatever
+      # this workflow asks for.
       - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -58,12 +66,12 @@ jobs:
           flavor: |
             suffix=-${{ matrix.arch }}
 
-      - name: Build and push
+      - name: Build${{ github.event_name != 'pull_request' && ' and push' || '' }}
         uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/${{ matrix.arch }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -72,13 +80,21 @@ jobs:
           # with a single binary copied in, so the dependency build would never
           # be stored. The two arches build on separate runners and share no
           # layers, so they get separate scopes to avoid evicting each other.
+          #
+          # Pull requests read the cache but do not write one. GitHub isolates a
+          # pull request's cache writes to that pull request, so they would not
+          # be reused, but they do count against the repository's 10GB and would
+          # push out the entry from master that every build actually reads.
           cache-from: type=gha,scope=${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,mode=max,scope={0}', matrix.arch) || '' }}
 
   manifest:
     name: Create multi-arch manifests
     runs-on: ubuntu-latest
     needs: build
+    # Nothing was pushed on a pull request, so there are no per-arch images to
+    # join, and the tags this would reference do not exist.
+    if: github.event_name != 'pull_request'
     steps:
       - name: Set lowercased image name
         id: image
