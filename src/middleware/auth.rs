@@ -82,7 +82,7 @@ where
 ///
 /// This extractor first tries to validate the X-API-Key header, and if not present,
 /// falls back to Bearer token authentication. This is useful for Claude Code CLI
-/// which uses ANTHROPIC_AUTH_TOKEN and may send only Authorization header.
+/// which uses `ANTHROPIC_AUTH_TOKEN` and may send only Authorization header.
 pub struct RequireFlexibleAuth;
 impl<S> FromRequestParts<S> for RequireFlexibleAuth
 where

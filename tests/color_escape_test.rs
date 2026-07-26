@@ -8,8 +8,8 @@
 //! escaped as `\\x1b[31m`, appearing as literal text instead of colors.
 //!
 //! ## Fixed Issues
-//! - VERSION_INFO: Removed colors to fix /api/version endpoint
-//! - Reason::Display: Removed colors to fix InvalidCookie error responses
+//! - `VERSION_INFO`: Removed colors to fix /api/version endpoint
+//! - `Reason::Display`: Removed colors to fix `InvalidCookie` error responses
 
 #[cfg(test)]
 mod tests {
@@ -38,17 +38,12 @@ mod tests {
 
             assert!(
                 !display_text.contains(ANSI_ESCAPE_PATTERN),
-                "Reason::{:?} Display contains ANSI escape codes: {}",
-                reason,
-                display_text
+                "Reason::{reason:?} Display contains ANSI escape codes: {display_text}"
             );
 
             assert!(
                 display_text.contains(expected_substring),
-                "Reason::{:?} Display doesn't contain expected text '{}': {}",
-                reason,
-                expected_substring,
-                display_text
+                "Reason::{reason:?} Display doesn't contain expected text '{expected_substring}': {display_text}"
             );
         }
     }
@@ -83,6 +78,6 @@ mod tests {
         // JSON should not contain escaped ANSI codes like \\x1b or \\u001b
         assert!(!json_str.contains("\\x1b"));
         assert!(!json_str.contains("\\u001b"));
-        assert!(!json_str.contains("\x1b"));
+        assert!(!json_str.contains('\x1b'));
     }
 }

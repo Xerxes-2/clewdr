@@ -80,7 +80,7 @@ async fn main() -> Result<(), ClewdrError> {
     let subscriber = Registry::default().with(
         fmt::Layer::default()
             .with_writer(std::io::stdout)
-            .with_timer(timer.to_owned())
+            .with_timer(timer.clone())
             .with_ansi(stdout_is_tty)
             .with_ansi_sanitization(false)
             .with_filter(env_filter),

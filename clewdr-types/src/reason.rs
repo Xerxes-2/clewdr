@@ -21,7 +21,7 @@ pub enum Reason {
 
 #[cfg(feature = "display")]
 fn format_timestamp(secs: i64) -> String {
-    chrono::DateTime::from_timestamp(secs, 0)
-        .map(|t| t.format("UTC %Y-%m-%d %H:%M:%S").to_string())
-        .unwrap_or("Invalid date".to_string())
+    chrono::DateTime::from_timestamp(secs, 0).map_or("Invalid date".to_string(), |t| {
+        t.format("UTC %Y-%m-%d %H:%M:%S").to_string()
+    })
 }

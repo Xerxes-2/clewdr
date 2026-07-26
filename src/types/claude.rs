@@ -131,7 +131,7 @@ impl CreateMessageParams {
     pub fn count_tokens(&self) -> u32 {
         let bpe = o200k_base().expect("Failed to get encoding");
         let systems = match self.system {
-            Some(Value::String(ref s)) => s.to_string(),
+            Some(Value::String(ref s)) => s.clone(),
             Some(Value::Array(ref arr)) => arr.iter().filter_map(|v| v["text"].as_str()).collect(),
             _ => String::new(),
         };
@@ -139,7 +139,7 @@ impl CreateMessageParams {
             .messages
             .iter()
             .map(|msg| match msg.content {
-                MessageContent::Text { ref content } => content.to_string(),
+                MessageContent::Text { ref content } => content.clone(),
                 MessageContent::Blocks { ref content } => content
                     .iter()
                     .map(|block| match block {
@@ -159,7 +159,9 @@ impl CreateMessageParams {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Thinking {
-    Enabled { budget_tokens: u64 },
+    Enabled {
+        budget_tokens: u64,
+    },
     Disabled,
     Adaptive {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -474,8 +476,8 @@ impl ImageSource {
         }
     }
 
-    /// Parse a data URI into an ImageSource
-    /// Supports format: data:<media_type>[;params];base64,<data>
+    /// Parse a data URI into an `ImageSource`
+    /// Supports format: data:<`media_type`>[;params];base64,<data>
     /// e.g., data:image/png;base64,iVBORw0KGgo...
     /// e.g., data:image/png;name=foo;base64,iVBORw0KGgo...
     pub fn from_data_url(url: &str) -> Option<Self> {
@@ -501,7 +503,7 @@ impl ImageSource {
         })
     }
 
-    /// Parse an OpenAI-compatible image URL into an ImageSource.
+    /// Parse an OpenAI-compatible image URL into an `ImageSource`.
     pub fn from_image_url(url: &str) -> Option<Self> {
         let url = url.trim();
         Self::from_data_url(url).or_else(|| {

@@ -158,7 +158,7 @@ pub enum ClewdrError {
     TimestampError { timestamp: i64 },
     #[snafu(display("Key/Password Invalid"))]
     InvalidAuth,
-    #[snafu(whatever, display("{}: {}", message, source.as_ref().map_or_else(|| "Unknown error".into(), |e| e.to_string())))]
+    #[snafu(whatever, display("{}: {}", message, source.as_ref().map_or_else(|| "Unknown error".into(), std::string::ToString::to_string)))]
     Whatever {
         message: String,
         #[snafu(source(from(Box<dyn std::error::Error + Send>, Some)))]
@@ -380,12 +380,11 @@ impl CheckClaudeErr for Response {
                 return Err(ClewdrError::InvalidCookie {
                     reason: Reason::TooManyRequest(ts),
                 });
-            } else {
-                error!("Rate limit exceeded, but no reset time provided");
-                return Err(ClewdrError::InvalidCookie {
-                    reason: Reason::TooManyRequest(Utc::now().timestamp() + 3600),
-                });
             }
+            error!("Rate limit exceeded, but no reset time provided");
+            return Err(ClewdrError::InvalidCookie {
+                reason: Reason::TooManyRequest(Utc::now().timestamp() + 3600),
+            });
         }
         Err(ClewdrError::ClaudeHttpError {
             code: status,

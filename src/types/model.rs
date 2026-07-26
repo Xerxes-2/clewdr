@@ -72,7 +72,8 @@ pub struct ModelTraits {
     efforts: &'static [OutputEffort],
 }
 
-const EFFORT_BASIC: &[OutputEffort] = &[OutputEffort::Low, OutputEffort::Medium, OutputEffort::High];
+const EFFORT_BASIC: &[OutputEffort] =
+    &[OutputEffort::Low, OutputEffort::Medium, OutputEffort::High];
 const EFFORT_MAX: &[OutputEffort] = &[
     OutputEffort::Low,
     OutputEffort::Medium,
@@ -248,7 +249,9 @@ fn clamp_thinking_budget(params: &mut CreateMessageParams) {
         params.thinking = None;
         return;
     }
-    params.thinking = Some(Thinking::new(budget_tokens.clamp(MIN_THINKING_BUDGET, ceiling)));
+    params.thinking = Some(Thinking::new(
+        budget_tokens.clamp(MIN_THINKING_BUDGET, ceiling),
+    ));
 }
 
 /// Which product line `name` belongs to.
@@ -388,7 +391,9 @@ mod tests {
         let mut p = params("claude-sonnet-4-6");
         p.temperature = Some(0.7);
         p.top_p = Some(0.9);
-        ModelTraits::of("claude-sonnet-4-6").unwrap().sanitize(&mut p);
+        ModelTraits::of("claude-sonnet-4-6")
+            .unwrap()
+            .sanitize(&mut p);
         assert_eq!(p.temperature, Some(0.7));
         assert_eq!(p.top_p, None);
     }
@@ -486,7 +491,10 @@ mod tests {
             Some(OutputEffort::High)
         );
         // Sonnet 4.5 has no effort parameter at all.
-        assert_eq!(effort("claude-sonnet-4-5-20250929", OutputEffort::Low), None);
+        assert_eq!(
+            effort("claude-sonnet-4-5-20250929", OutputEffort::Low),
+            None
+        );
     }
 
     #[test]

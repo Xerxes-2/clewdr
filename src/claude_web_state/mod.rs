@@ -46,7 +46,7 @@ pub struct ClaudeWebState {
 }
 
 impl ClaudeWebState {
-    /// Create a new AppState instance
+    /// Create a new `AppState` instance
     pub fn new(cookie_actor_handle: CookieActorHandle) -> Self {
         ClaudeWebState {
             cookie_actor_handle,
@@ -56,7 +56,7 @@ impl ClaudeWebState {
             cookie_header_value: HeaderValue::from_static(""),
             capabilities: Vec::new(),
             endpoint: CLEWDR_CONFIG.load().endpoint(),
-            proxy: CLEWDR_CONFIG.load().wreq_proxy.to_owned(),
+            proxy: CLEWDR_CONFIG.load().wreq_proxy.clone(),
             api_format: ClaudeApiFormat::Claude,
             stream: false,
             client: SUPER_CLIENT.to_owned(),
@@ -90,21 +90,21 @@ impl ClaudeWebState {
         if !self.cookie_header_value.as_bytes().is_empty() {
             req = req.header(COOKIE, self.cookie_header_value.clone());
         }
-        if let Some(uuid) = self.conv_uuid.to_owned() {
+        if let Some(uuid) = self.conv_uuid.clone() {
             req.header(
                 REFERER,
-                self.endpoint
-                    .join(&format!("chat/{uuid}"))
-                    .map(|u| u.into())
-                    .unwrap_or_else(|_| format!("{CLAUDE_ENDPOINT}chat/{uuid}")),
+                self.endpoint.join(&format!("chat/{uuid}")).map_or_else(
+                    |_| format!("{CLAUDE_ENDPOINT}chat/{uuid}"),
+                    std::convert::Into::into,
+                ),
             )
         } else {
             req.header(
                 REFERER,
-                self.endpoint
-                    .join("new")
-                    .map(|u| u.into())
-                    .unwrap_or_else(|_| format!("{CLAUDE_ENDPOINT}new")),
+                self.endpoint.join("new").map_or_else(
+                    |_| format!("{CLAUDE_ENDPOINT}new"),
+                    std::convert::Into::into,
+                ),
             )
         }
     }
@@ -124,9 +124,9 @@ impl ClaudeWebState {
     /// Updates the internal state with the new cookie and proxy configuration
     pub async fn request_cookie(&mut self) -> Result<CookieStatus, ClewdrError> {
         let res = self.cookie_actor_handle.request(None).await?;
-        self.cookie = Some(res.to_owned());
+        self.cookie = Some(res.clone());
         // Always pull latest proxy/endpoint before building the client
-        self.proxy = CLEWDR_CONFIG.load().wreq_proxy.to_owned();
+        self.proxy = CLEWDR_CONFIG.load().wreq_proxy.clone();
         self.endpoint = CLEWDR_CONFIG.load().endpoint();
         self.client = Self::build_client(self.proxy.as_ref()).context(WreqSnafu {
             msg: "Failed to build client with new cookie",
@@ -168,8 +168,9 @@ impl ClaudeWebState {
             let family = self
                 .last_params
                 .as_ref()
-                .map(|p| Self::classify_model(&p.model))
-                .unwrap_or(crate::config::ModelFamily::Other);
+                .map_or(crate::config::ModelFamily::Other, |p| {
+                    Self::classify_model(&p.model)
+                });
             cookie.add_and_bucket_usage(input, output, family);
             let cloned = cookie.clone();
             if let Err(err) = self.cookie_actor_handle.return_cookie(cloned, None).await {
@@ -183,7 +184,7 @@ impl ClaudeWebState {
     pub async fn fetch_web_usage(handle: CookieActorHandle, cookie: CookieStatus) -> Option<Value> {
         let mut state = ClaudeWebState::new(handle);
         state.cookie = Some(cookie.clone());
-        state.proxy = CLEWDR_CONFIG.load().wreq_proxy.to_owned();
+        state.proxy = CLEWDR_CONFIG.load().wreq_proxy.clone();
         state.endpoint = CLEWDR_CONFIG.load().endpoint();
         state.client = Self::build_client(state.proxy.as_ref()).ok()?;
         state.cookie_header_value =
@@ -200,7 +201,7 @@ impl ClaudeWebState {
         let org_uuid = state.org_uuid.as_ref()?;
         let url = state
             .endpoint
-            .join(&format!("api/organizations/{}/usage", org_uuid))
+            .join(&format!("api/organizations/{org_uuid}/usage"))
             .ok()?;
 
         let res = state

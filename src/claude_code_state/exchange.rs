@@ -77,7 +77,7 @@ impl<'c> AsyncHttpClient<'c> for OauthClient {
                 builder = builder.version(response.version());
             }
 
-            for (name, value) in response.headers().iter() {
+            for (name, value) in response.headers() {
                 builder = builder.header(name, value);
             }
 
@@ -116,7 +116,7 @@ impl ClaudeCodeState {
         let authorize_url = CLEWDR_CONFIG
             .load()
             .endpoint()
-            .join(&format!("v1/oauth/{}/authorize", org_uuid))
+            .join(&format!("v1/oauth/{org_uuid}/authorize"))
             .expect("Url parse error");
         let cc_client_id = CLEWDR_CONFIG.load().cc_client_id();
 
@@ -179,7 +179,7 @@ impl ClaudeCodeState {
 
         Ok(ExchangeResult {
             code: code.to_string(),
-            state: state.map(|s| s.to_string()),
+            state: state.map(std::string::ToString::to_string),
             verifier: pkce_verifier,
             org_uuid: org_uuid.to_string(),
         })
@@ -246,7 +246,7 @@ impl ClaudeCodeState {
 
         let org_uuid = token.organization.uuid.clone();
         let refresh_result = client
-            .exchange_refresh_token(&oauth2::RefreshToken::new(token.refresh_token.to_owned()))
+            .exchange_refresh_token(&oauth2::RefreshToken::new(token.refresh_token.clone()))
             .request_async(&my_client)
             .await;
 
@@ -281,7 +281,7 @@ impl ClaudeCodeState {
                     tracing::error!("Failed to exchange code during re-authorization: {}", e)
                 })?;
                 match self.exchange_token(code_res).await {
-                    Ok(_) => {
+                    Ok(()) => {
                         tracing::info!("Successfully re-authorized with new OAuth2 flow");
                         Ok(())
                     }
@@ -297,7 +297,7 @@ impl ClaudeCodeState {
         }
     }
 
-    /// Checks if the error is an invalid_grant error from OAuth2
+    /// Checks if the error is an `invalid_grant` error from `OAuth2`
     fn is_invalid_grant_error(
         error: &oauth2::RequestTokenError<
             oauth2::HttpClientError<wreq::Error>,
@@ -313,15 +313,12 @@ impl ClaudeCodeState {
                     .to_string()
                     .to_lowercase()
                     .contains("invalid_grant")
-                    || response
-                        .error_description()
-                        .map(|desc| {
-                            let desc_lower = desc.to_lowercase();
-                            desc_lower.contains("refresh token not found")
-                                || desc_lower.contains("refresh token")
-                                    && desc_lower.contains("invalid")
-                        })
-                        .unwrap_or(false)
+                    || response.error_description().is_some_and(|desc| {
+                        let desc_lower = desc.to_lowercase();
+                        desc_lower.contains("refresh token not found")
+                            || desc_lower.contains("refresh token")
+                                && desc_lower.contains("invalid")
+                    })
             }
             _ => false,
         }

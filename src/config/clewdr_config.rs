@@ -177,7 +177,7 @@ impl Display for ClewdrConfig {
         let authority: Authority = authority.to_string().parse().map_err(|_| std::fmt::Error)?;
         let api_url = Uri::builder()
             .scheme(Scheme::HTTP)
-            .authority(authority.to_owned())
+            .authority(authority.clone())
             .path_and_query("/v1")
             .build()
             .map_err(|_| std::fmt::Error)?;
@@ -205,7 +205,7 @@ impl Display for ClewdrConfig {
             self.admin_password.yellow(),
         )?;
         if let Some(ref proxy) = self.proxy {
-            writeln!(f, "Proxy: {}", proxy.to_string().blue())?;
+            writeln!(f, "Proxy: {}", proxy.clone().blue())?;
         }
         if let Some(ref rproxy) = self.rproxy {
             writeln!(f, "Reverse Proxy: {}", rproxy.to_string().blue())?;
@@ -243,7 +243,7 @@ impl From<&ClewdrConfig> for clewdr_types::ConfigApi {
             password: c.password.clone(),
             admin_password: c.admin_password.clone(),
             proxy: c.proxy.clone(),
-            rproxy: c.rproxy.as_ref().map(|u| u.to_string()),
+            rproxy: c.rproxy.as_ref().map(std::string::ToString::to_string),
             max_retries: c.max_retries,
             preserve_chats: c.preserve_chats,
             web_search: c.web_search,
@@ -347,7 +347,7 @@ impl ClewdrConfig {
         }
         let config = config.validate();
         if !config.no_fs {
-            let config_clone = config.to_owned();
+            let config_clone = config.clone();
             spawn(async move {
                 config_clone.save().await.unwrap_or_else(|e| {
                     error!("Failed to save config: {}", e);
@@ -420,8 +420,12 @@ impl ClewdrConfig {
         if self.admin_password.trim().is_empty() {
             self.admin_password = generate_password();
         }
-        self.cookie_array = self.cookie_array.into_iter().map(|x| x.reset()).collect();
-        self.wreq_proxy = self.proxy.to_owned().and_then(|p| {
+        self.cookie_array = self
+            .cookie_array
+            .into_iter()
+            .map(super::cookie::CookieStatus::reset)
+            .collect();
+        self.wreq_proxy = self.proxy.clone().and_then(|p| {
             Proxy::all(p)
                 .inspect_err(|e| {
                     self.proxy = None;

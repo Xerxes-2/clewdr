@@ -80,7 +80,7 @@ impl ClaudeWebState {
     ) -> Result<axum::response::Response, ClewdrError> {
         if self.stream {
             // Stream through while accumulating completion text; persist usage at end
-            let mut input_tokens = self.usage.input_tokens as u64;
+            let mut input_tokens = u64::from(self.usage.input_tokens);
             let handle = self.cookie_actor_handle.clone();
             let cookie = self.cookie.clone();
             let enable_precise = crate::config::CLEWDR_CONFIG.load().enable_web_count_tokens;
@@ -92,7 +92,7 @@ impl ClaudeWebState {
             if crate::config::CLEWDR_CONFIG.load().enable_web_count_tokens
                 && let Some(tokens) = self.try_code_count_tokens().await
             {
-                input_tokens = tokens as u64;
+                input_tokens = u64::from(tokens);
             }
 
             let stream = wreq_res
@@ -122,18 +122,18 @@ impl ClaudeWebState {
                         out = count_code_output_tokens_for_text(
                             cookie.clone(), endpoint.clone(), proxy.clone(), client.clone(),
                             model, acc.clone(), handle.clone()
-                        ).await.map(|v| v as u64);
+                        ).await.map(|v| u64::from(v));
                     }
                     let out = out.unwrap_or_else(|| {
                         let usage = crate::types::claude::Usage { input_tokens: input_tokens as u32, output_tokens: 0 };
                         let resp = crate::types::claude::CreateMessageResponse::text(acc.clone(), Default::default(), usage);
-                        resp.count_tokens() as u64
+                        u64::from(resp.count_tokens())
                     });
                     if let Some(mut c) = cookie.clone() {
                         let family = last_params
                             .as_ref()
                             .map(|p| p.model.as_str())
-                            .map(|m| {
+                            .map_or(crate::config::ModelFamily::Other, |m| {
                                 let m = m.to_ascii_lowercase();
                                 if m.contains("opus") {
                                     crate::config::ModelFamily::Opus
@@ -142,8 +142,7 @@ impl ClaudeWebState {
                                 } else {
                                     crate::config::ModelFamily::Other
                                 }
-                            })
-                            .unwrap_or(crate::config::ModelFamily::Other);
+                            });
                         c.add_and_bucket_usage(input_tokens, out, family);
                         let _ = handle.return_cookie(c, None).await;
                     }
@@ -152,7 +151,7 @@ impl ClaudeWebState {
                     let family = last_params
                         .as_ref()
                         .map(|p| p.model.as_str())
-                        .map(|m| {
+                        .map_or(crate::config::ModelFamily::Other, |m| {
                             let m = m.to_ascii_lowercase();
                             if m.contains("opus") {
                                 crate::config::ModelFamily::Opus
@@ -161,8 +160,7 @@ impl ClaudeWebState {
                             } else {
                                 crate::config::ModelFamily::Other
                             }
-                        })
-                        .unwrap_or(crate::config::ModelFamily::Other);
+                        });
                     c.add_and_bucket_usage(input_tokens, 0, family);
                     let _ = handle.return_cookie(c, None).await;
                 }
@@ -177,13 +175,13 @@ impl ClaudeWebState {
         let stream = wreq_res.bytes_stream();
         let stream = stream.eventsource();
         let text = merge_sse(stream).await?;
-        print_out_text(text.to_owned(), "claude_web_non_stream.txt");
+        print_out_text(text.clone(), "claude_web_non_stream.txt");
         let mut response =
-            CreateMessageResponse::text(text.clone(), Default::default(), self.usage.to_owned());
+            CreateMessageResponse::text(text.clone(), Default::default(), self.usage.clone());
 
         // Prefer official counting if enabled
         let enable_precise = crate::config::CLEWDR_CONFIG.load().enable_web_count_tokens;
-        let mut usage = self.usage.to_owned();
+        let mut usage = self.usage.clone();
         if enable_precise && let Some(inp) = self.try_code_count_tokens().await {
             usage.input_tokens = inp;
         }
@@ -205,7 +203,7 @@ impl ClaudeWebState {
         }
         usage.output_tokens = output_tokens;
         response.usage = Some(usage.clone());
-        self.persist_usage_totals(usage.input_tokens as u64, output_tokens as u64)
+        self.persist_usage_totals(u64::from(usage.input_tokens), u64::from(output_tokens))
             .await;
         Ok(Json(response).into_response())
     }

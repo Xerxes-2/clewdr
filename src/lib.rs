@@ -57,13 +57,13 @@ pub fn version_info_colored() -> String {
     )
 }
 
-pub const FIG: &str = r#"
+pub const FIG: &str = r"
     //   ) )                                    //   ) ) 
    //        //  ___                   ___   / //___/ /  
   //        // //___) ) //  / /  / / //   ) / / ___ (    
  //        // //       //  / /  / / //   / / //   | |    
 ((____/ / // ((____   ((__( (__/ / ((___/ / //    | |    
-"#;
+";
 
 /// Reverse Proxy API for Claude
 #[derive(Parser, Debug)]

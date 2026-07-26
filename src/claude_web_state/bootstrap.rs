@@ -73,7 +73,7 @@ impl ClaudeWebState {
             .map(|a| {
                 a.iter()
                     .filter_map(|c| c.as_str())
-                    .map(|c| c.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
@@ -119,7 +119,7 @@ impl ClaudeWebState {
                     .max_by_key(|v| {
                         v.get("capabilities")
                             .and_then(|c| c.as_array())
-                            .map(|c| c.len())
+                            .map(std::vec::Vec::len)
                             .unwrap_or_default()
                     })
             })
@@ -176,7 +176,7 @@ impl ClaudeWebState {
                 .iter()
                 .filter(|(f, _)| f.contains(flag))
                 .max_by_key(|(_, expire)| expire.timestamp())
-                .cloned()
+                .copied()
         };
         let restricted = find_flag("restricted");
         let second = find_flag("second_warning");

@@ -137,12 +137,12 @@ fn merge_messages(msgs: Vec<Message>, system: String) -> Option<Merged> {
     let h = CLEWDR_CONFIG
         .load()
         .custom_h
-        .to_owned()
+        .clone()
         .unwrap_or("Human".to_string());
     let a = CLEWDR_CONFIG
         .load()
         .custom_a
-        .to_owned()
+        .clone()
         .unwrap_or("Assistant".to_string());
 
     let user_real_roles = CLEWDR_CONFIG.load().use_real_roles;
@@ -232,10 +232,10 @@ fn merge_messages(msgs: Vec<Message>, system: String) -> Option<Merged> {
         };
         write!(w, "{line_breaks}{prefix}{text}").ok()?;
     }
-    print_out_text(w.to_owned(), "paste.txt");
+    print_out_text(w.clone(), "paste.txt");
 
     // prompt polyfill
-    let p = CLEWDR_CONFIG.load().custom_prompt.to_owned();
+    let p = CLEWDR_CONFIG.load().custom_prompt.clone();
 
     Some(Merged {
         paste: w,
@@ -258,7 +258,7 @@ fn merge_system(sys: Value) -> String {
         Value::Array(arr) => arr
             .iter()
             .filter_map(|v| v["text"].as_str())
-            .map(|v| v.trim())
+            .map(str::trim)
             .collect::<Vec<_>>()
             .join("\n"),
         _ => String::new(),

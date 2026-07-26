@@ -70,7 +70,7 @@ pub async fn api_post_cookie(
     c.reset_time = None;
     info!("Cookie accepted: {}", c.cookie);
     match s.submit(c).await {
-        Ok(_) => {
+        Ok(()) => {
             info!("Cookie submitted successfully");
             // Clear cache to ensure fresh data on next request
             COOKIES_CACHE.invalidate(COOKIE_STATUS_CACHE_KEY);
@@ -79,10 +79,7 @@ pub async fn api_post_cookie(
         }
         Err(e) => {
             error!("Failed to submit cookie: {}", e);
-            Err(ApiError::internal(format!(
-                "Failed to submit cookie: {}",
-                e
-            )))
+            Err(ApiError::internal(format!("Failed to submit cookie: {e}")))
         }
     }
 }
@@ -172,8 +169,7 @@ pub async fn api_get_cookies(
             Ok((headers, Json(response_data)))
         }
         Err(e) => Err(ApiError::internal(format!(
-            "Failed to get cookie status: {}",
-            e
+            "Failed to get cookie status: {e}"
         ))),
     }
 }
@@ -197,8 +193,8 @@ pub async fn api_delete_cookie(
         return Err(ApiError::unauthorized());
     }
 
-    match s.delete_cookie(c.to_owned()).await {
-        Ok(_) => {
+    match s.delete_cookie(c.clone()).await {
+        Ok(()) => {
             info!("Cookie deleted successfully: {}", c.cookie);
             // Clear cache to ensure fresh data on next request
             COOKIES_CACHE.invalidate(COOKIE_STATUS_CACHE_KEY);
@@ -207,10 +203,7 @@ pub async fn api_delete_cookie(
         }
         Err(e) => {
             error!("Failed to delete cookie: {}", e);
-            Err(ApiError::internal(format!(
-                "Failed to delete cookie: {}",
-                e
-            )))
+            Err(ApiError::internal(format!("Failed to delete cookie: {e}")))
         }
     }
 }
@@ -312,7 +305,7 @@ async fn fetch_usage_percent(
     let fallback_cookie = cookie.clone();
     let fallback_cookie_name = fallback_cookie.cookie.to_string();
     let usage = try_oauth_usage(&cookie, &oauth_handle)
-        .or_else(|_| async move {
+        .or_else(|()| async move {
             info!(
                 "OAuth usage unavailable for {}, trying web fallback",
                 fallback_cookie_name
@@ -363,36 +356,33 @@ fn extract_usage_fields(usage: &serde_json::Value) -> Usage {
     let five = usage
         .get("five_hour")
         .and_then(|o| o.get("utilization"))
-        .and_then(|v| v.as_f64())
-        .map(|v| v.round() as u32)
-        .unwrap_or(0);
+        .and_then(serde_json::Value::as_f64)
+        .map_or(0, |v| v.round() as u32);
     let five_reset = usage
         .get("five_hour")
         .and_then(|o| o.get("resets_at"))
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
     let seven = usage
         .get("seven_day")
         .and_then(|o| o.get("utilization"))
-        .and_then(|v| v.as_f64())
-        .map(|v| v.round() as u32)
-        .unwrap_or(0);
+        .and_then(serde_json::Value::as_f64)
+        .map_or(0, |v| v.round() as u32);
     let seven_reset = usage
         .get("seven_day")
         .and_then(|o| o.get("resets_at"))
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
     let seven_sonnet = usage
         .get("seven_day_sonnet")
         .and_then(|o| o.get("utilization"))
-        .and_then(|v| v.as_f64())
-        .map(|v| v.round() as u32)
-        .unwrap_or(0);
+        .and_then(serde_json::Value::as_f64)
+        .map_or(0, |v| v.round() as u32);
     let sonnet_reset = usage
         .get("seven_day_sonnet")
         .and_then(|o| o.get("resets_at"))
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
     Some((
         five,
         five_reset,

@@ -36,7 +36,7 @@ use crate::{
 /// - Detects and processes "thinking mode" requests by modifying model names
 /// - Identifies test messages and handles them appropriately
 /// - Attempts to retrieve responses from cache before processing requests
-/// - Provides format information via the FormatInfo extension
+/// - Provides format information via the `FormatInfo` extension
 pub struct ClaudeWebPreprocess(pub CreateMessageParams, pub ClaudeContext);
 
 /// Contains information about the API format and streaming status
@@ -110,8 +110,7 @@ fn first_user_message_text(messages: &[Message]) -> &str {
 fn sample_js_code_unit(text: &str, idx: usize) -> String {
     text.encode_utf16()
         .nth(idx)
-        .map(|unit| String::from_utf16_lossy(&[unit]))
-        .unwrap_or_else(|| "0".to_string())
+        .map_or_else(|| "0".to_string(), |unit| String::from_utf16_lossy(&[unit]))
 }
 
 fn claude_code_billing_header(messages: &[Message]) -> String {
@@ -255,7 +254,8 @@ where
         if wants_thinking {
             body.model = base_model.to_string();
             if let Some(traits) = traits {
-                body.thinking.get_or_insert_with(|| traits.thinking_for_suffix());
+                body.thinking
+                    .get_or_insert_with(|| traits.thinking_for_suffix());
             }
         }
         // Rewrite parameters the target model would reject outright.
@@ -292,7 +292,7 @@ where
         let info = ClaudeWebContext {
             stream,
             api_format: format,
-            stop_sequences: body.stop_sequences.to_owned().unwrap_or_default(),
+            stop_sequences: body.stop_sequences.clone().unwrap_or_default(),
             usage: Usage {
                 input_tokens,
                 output_tokens: 0, // Placeholder for output token count

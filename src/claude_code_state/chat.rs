@@ -45,12 +45,12 @@ impl ClaudeCodeState {
         &mut self,
         p: CreateMessageParams,
     ) -> Result<axum::response::Response, ClewdrError> {
-        for i in 0..CLEWDR_CONFIG.load().max_retries + 1 {
+        for i in 0..=CLEWDR_CONFIG.load().max_retries {
             if i > 0 {
                 info!("[RETRY] attempt: {}", i.to_string().green());
             }
             let mut state = self.to_owned();
-            let p = p.to_owned();
+            let p = p.clone();
 
             let cookie = state.request_cookie().await?;
             let retry = async {
@@ -71,15 +71,12 @@ impl ClaudeCodeState {
                         info!("Token is valid, proceeding with request");
                     }
                 }
-                let Some(access_token) = state.cookie.as_ref().and_then(|c| c.token.to_owned())
-                else {
+                let Some(access_token) = state.cookie.as_ref().and_then(|c| c.token.clone()) else {
                     return Err(ClewdrError::UnexpectedNone {
                         msg: "No access token found in cookie",
                     });
                 };
-                state
-                    .send_chat(access_token.access_token.to_owned(), p)
-                    .await
+                state.send_chat(access_token.access_token.clone(), p).await
             }
             .instrument(tracing::info_span!(
                 "claude_code",
@@ -97,7 +94,7 @@ impl ClaudeCodeState {
                     );
                     // 429 error
                     if let ClewdrError::InvalidCookie { reason } = e {
-                        state.return_cookie(Some(reason.to_owned())).await;
+                        state.return_cookie(Some(reason.clone())).await;
                         continue;
                     }
                     return Err(e);
@@ -180,7 +177,7 @@ impl ClaudeCodeState {
                 msg: "No access token available",
             })?
             .access_token
-            .to_owned();
+            .clone();
 
         self.client
             .request(Method::GET, CLAUDE_USAGE_URL)
@@ -207,12 +204,12 @@ impl ClaudeCodeState {
         p: CreateMessageParams,
         for_web: bool,
     ) -> Result<axum::response::Response, ClewdrError> {
-        for i in 0..CLEWDR_CONFIG.load().max_retries + 1 {
+        for i in 0..=CLEWDR_CONFIG.load().max_retries {
             if i > 0 {
                 info!("[TOKENS][RETRY] attempt: {}", i.to_string().green());
             }
             let mut state = self.to_owned();
-            let p = p.to_owned();
+            let p = p.clone();
 
             let cookie = state.request_cookie().await?;
             let web_attempt_allowed = CLEWDR_CONFIG.load().enable_web_count_tokens;
@@ -241,14 +238,13 @@ impl ClaudeCodeState {
                         info!("Token is valid, proceeding with count_tokens");
                     }
                 }
-                let Some(access_token) = state.cookie.as_ref().and_then(|c| c.token.to_owned())
-                else {
+                let Some(access_token) = state.cookie.as_ref().and_then(|c| c.token.clone()) else {
                     return Err(ClewdrError::UnexpectedNone {
                         msg: "No access token found in cookie",
                     });
                 };
                 state
-                    .perform_count_tokens(access_token.access_token.to_owned(), p, for_web)
+                    .perform_count_tokens(access_token.access_token.clone(), p, for_web)
                     .await
             }
             .instrument(tracing::info_span!(
@@ -266,7 +262,7 @@ impl ClaudeCodeState {
                         e
                     );
                     if let ClewdrError::InvalidCookie { reason } = e {
-                        state.return_cookie(Some(reason.to_owned())).await;
+                        state.return_cookie(Some(reason.clone())).await;
                         continue;
                     }
                     return Err(e);
@@ -312,7 +308,7 @@ impl ClaudeCodeState {
     ) -> Result<axum::response::Response, ClewdrError> {
         if !self.stream {
             let (resp, usage_pair) = Self::materialize_non_stream_response(response).await?;
-            let (input, output) = usage_pair.unwrap_or((self.usage.input_tokens as u64, 0));
+            let (input, output) = usage_pair.unwrap_or((u64::from(self.usage.input_tokens), 0));
             self.persist_usage_totals(input, output, model_family).await;
             Ok(resp)
         } else {
@@ -346,7 +342,7 @@ impl ClaudeCodeState {
             atomic::{AtomicU64, Ordering},
         };
 
-        let input_tokens = self.usage.input_tokens as u64;
+        let input_tokens = u64::from(self.usage.input_tokens);
         let output_sum = Arc::new(AtomicU64::new(0));
         let handle = self.cookie_actor_handle.clone();
         let cookie = self.cookie.clone();
@@ -359,7 +355,7 @@ impl ClaudeCodeState {
             {
                 match parsed {
                     crate::types::claude::StreamEvent::MessageDelta { usage: Some(u), .. } => {
-                        osum.fetch_add(u.output_tokens as u64, Ordering::Relaxed);
+                        osum.fetch_add(u64::from(u.output_tokens), Ordering::Relaxed);
                     }
                     crate::types::claude::StreamEvent::MessageStop => {
                         // on stream completion, persist totals asynchronously
@@ -404,7 +400,7 @@ impl ClaudeCodeState {
         let usage = Self::extract_usage_from_bytes(&bytes);
 
         let mut builder = http::Response::builder().status(status);
-        for (key, value) in headers.iter() {
+        for (key, value) in &headers {
             builder = builder.header(key, value);
         }
         let response =
@@ -437,7 +433,7 @@ impl ClaudeCodeState {
         if let Ok(parsed) =
             serde_json::from_slice::<crate::types::claude::CreateMessageResponse>(bytes)
         {
-            let output_tokens = parsed.count_tokens() as u64;
+            let output_tokens = u64::from(parsed.count_tokens());
             // Input tokens already computed earlier and present in self.usage; only estimate output here
             return Some((0, output_tokens));
         }
@@ -497,7 +493,7 @@ impl ClaudeCodeState {
 
         let tracked = |flag: Option<bool>| flag == Some(true);
         let unknown = |flag: Option<bool>| flag.is_none();
-        let due = |ts: Option<i64>| ts.map(|t| now >= t).unwrap_or(false);
+        let due = |ts: Option<i64>| ts.is_some_and(|t| now >= t);
 
         let session_tracked = tracked(cookie.session_has_reset);
         let weekly_tracked = tracked(cookie.weekly_has_reset);

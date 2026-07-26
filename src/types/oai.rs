@@ -5,7 +5,7 @@ use tiktoken_rs::o200k_base;
 use super::claude::{CreateMessageParams as ClaudeCreateMessageParams, *};
 use crate::types::claude::{ImageSource, Message};
 
-/// Convert OAI ImageUrl to Claude Image format
+/// Convert OAI `ImageUrl` to Claude Image format
 fn normalize_block(block: ContentBlock) -> Option<ContentBlock> {
     match block {
         ContentBlock::Text { .. } => Some(block),
@@ -199,7 +199,7 @@ impl CreateMessageParams {
             .messages
             .iter()
             .map(|msg| match msg.content {
-                MessageContent::Text { ref content } => content.to_string(),
+                MessageContent::Text { ref content } => content.clone(),
                 MessageContent::Blocks { ref content } => content
                     .iter()
                     .map(|block| match block {

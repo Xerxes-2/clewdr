@@ -40,7 +40,7 @@ pub struct ClewdrUpdater {
 }
 
 impl ClewdrUpdater {
-    /// Creates a new ClewdrUpdater instance
+    /// Creates a new `ClewdrUpdater` instance
     ///
     /// # Returns
     /// * `Result<Self, ClewdrError>` - A new updater instance or an error

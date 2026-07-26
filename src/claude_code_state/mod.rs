@@ -34,13 +34,13 @@ pub struct ClaudeCodeState {
 }
 
 impl ClaudeCodeState {
-    /// Create a new ClaudeCodeState instance
+    /// Create a new `ClaudeCodeState` instance
     pub fn new(cookie_actor_handle: CookieActorHandle) -> Self {
         ClaudeCodeState {
             cookie_actor_handle,
             cookie: None,
             cookie_header_value: HeaderValue::from_static(""),
-            proxy: CLEWDR_CONFIG.load().wreq_proxy.to_owned(),
+            proxy: CLEWDR_CONFIG.load().wreq_proxy.clone(),
             endpoint: CLEWDR_CONFIG.load().endpoint(),
             client: SUPER_CLIENT.to_owned(),
             api_format: ClaudeApiFormat::Claude,
@@ -50,7 +50,7 @@ impl ClaudeCodeState {
         }
     }
 
-    /// Build a ClaudeCodeState initialized with an existing cookie snapshot
+    /// Build a `ClaudeCodeState` initialized with an existing cookie snapshot
     pub fn from_cookie(
         cookie_actor_handle: CookieActorHandle,
         cookie: CookieStatus,
@@ -114,10 +114,10 @@ impl ClaudeCodeState {
             .cookie_actor_handle
             .request(self.system_prompt_hash)
             .await?;
-        self.cookie = Some(res.to_owned());
+        self.cookie = Some(res.clone());
         self.cookie_header_value = HeaderValue::from_str(res.cookie.to_string().as_str())?;
         // Always pull latest proxy/endpoint before building the client
-        self.proxy = CLEWDR_CONFIG.load().wreq_proxy.to_owned();
+        self.proxy = CLEWDR_CONFIG.load().wreq_proxy.clone();
         self.endpoint = CLEWDR_CONFIG.load().endpoint();
         self.client = build_http_client(self.proxy.as_ref()).context(WreqSnafu {
             msg: "Failed to build client with new cookie",

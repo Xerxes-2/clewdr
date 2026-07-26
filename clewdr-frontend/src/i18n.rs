@@ -77,7 +77,7 @@ impl I18n {
     pub fn tf(&self, key: &str, args: &[(&str, &str)]) -> String {
         let mut s = self.t(key);
         for (k, v) in args {
-            s = s.replace(&format!("{{{{{}}}}}", k), v);
+            s = s.replace(&format!("{{{{{k}}}}}"), v);
         }
         s
     }

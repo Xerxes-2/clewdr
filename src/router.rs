@@ -18,7 +18,7 @@ use crate::{
     services::cookie_actor::CookieActorHandle,
 };
 
-/// RouterBuilder for the application
+/// `RouterBuilder` for the application
 pub struct RouterBuilder {
     claude_providers: ClaudeProviders,
     cookie_actor_handle: CookieActorHandle,
@@ -26,7 +26,7 @@ pub struct RouterBuilder {
 }
 
 impl RouterBuilder {
-    /// Creates a blank RouterBuilder instance
+    /// Creates a blank `RouterBuilder` instance
     /// Initializes the router with the provided application state
     ///
     /// # Arguments
@@ -43,7 +43,7 @@ impl RouterBuilder {
         }
     }
 
-    /// Creates a new RouterBuilder instance
+    /// Creates a new `RouterBuilder` instance
     /// Sets up routes for API endpoints and static file serving
     pub fn with_default_setup(self) -> Self {
         self.route_claude_code_endpoints()
@@ -96,7 +96,7 @@ impl RouterBuilder {
         let cookie_router = Router::new()
             .route("/cookies", get(api_get_cookies))
             .route("/cookie", delete(api_delete_cookie).post(api_post_cookie))
-            .with_state(self.cookie_actor_handle.to_owned());
+            .with_state(self.cookie_actor_handle.clone());
         let admin_router = Router::new()
             .route("/auth", get(api_auth))
             .route("/config", get(api_get_config).post(api_post_config));

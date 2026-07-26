@@ -25,12 +25,12 @@ pub async fn api_post_config(
     let c: ClewdrConfig = ClewdrConfig::from(c).validate();
     CLEWDR_CONFIG.rcu(|old_c| {
         let mut new_c = ClewdrConfig::clone(&c);
-        new_c.cookie_array = old_c.cookie_array.to_owned();
-        new_c.wasted_cookie = old_c.wasted_cookie.to_owned();
+        new_c.cookie_array = old_c.cookie_array.clone();
+        new_c.wasted_cookie = old_c.wasted_cookie.clone();
         new_c
     });
     if let Err(e) = CLEWDR_CONFIG.load().save().await {
-        return Err(ApiError::internal(format!("Failed to save config: {}", e)));
+        return Err(ApiError::internal(format!("Failed to save config: {e}")));
     }
 
     Ok(Json(json!({

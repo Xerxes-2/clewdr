@@ -84,7 +84,7 @@ pub struct CookieStatus {
     #[serde(default)]
     pub weekly_opus_resets_at: Option<i64>,
 
-    /// Last time we probed Anthropic console for resets_at
+    /// Last time we probed Anthropic console for `resets_at`
     #[serde(default)]
     pub resets_last_checked_at: Option<i64>,
 
@@ -127,14 +127,14 @@ impl PartialOrd for CookieStatus {
 }
 
 impl CookieStatus {
-    /// Creates a new CookieStatus instance
+    /// Creates a new `CookieStatus` instance
     ///
     /// # Arguments
     /// * `cookie` - Cookie string
     /// * `reset_time` - Optional timestamp when the cookie can be reused
     ///
     /// # Returns
-    /// A new CookieStatus instance
+    /// A new `CookieStatus` instance
     pub fn new(cookie: &str, reset_time: Option<i64>) -> Result<Self, ClewdrError> {
         let cookie = ClewdrCookie::from_str(cookie)?;
         Ok(Self {
@@ -164,7 +164,7 @@ impl CookieStatus {
     /// If the reset time has passed, sets it to None so the cookie becomes valid again
     ///
     /// # Returns
-    /// The same CookieStatus with potentially updated reset_time
+    /// The same `CookieStatus` with potentially updated `reset_time`
     pub fn reset(self) -> Self {
         if let Some(t) = self.reset_time
             && t < chrono::Utc::now().timestamp()
@@ -363,7 +363,7 @@ impl ClewdrCookie {
         if len > 20 {
             format!("{}...", &self.inner[..20])
         } else {
-            self.inner.to_owned()
+            self.inner.clone()
         }
     }
 }

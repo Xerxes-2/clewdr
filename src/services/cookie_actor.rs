@@ -24,7 +24,7 @@ pub struct CookieStatusInfo {
     pub invalid: Vec<UselessCookie>,
 }
 
-/// Messages that the CookieActor can handle
+/// Messages that the `CookieActor` can handle
 #[derive(Debug)]
 enum CookieActorMessage {
     /// Return a Cookie
@@ -41,7 +41,7 @@ enum CookieActorMessage {
     Delete(CookieStatus, RpcReplyPort<Result<(), ClewdrError>>),
 }
 
-/// CookieActor state - manages collections of cookies
+/// `CookieActor` state - manages collections of cookies
 #[derive(Debug)]
 struct CookieActorState {
     valid: VecDeque<CookieStatus>,
@@ -72,7 +72,7 @@ impl CookieActor {
         tokio::spawn(async move {
             let result = CLEWDR_CONFIG.load().save().await;
             match result {
-                Ok(_) => info!("Configuration saved successfully"),
+                Ok(()) => info!("Configuration saved successfully"),
                 Err(e) => error!("Save task panicked: {}", e),
             }
         });
@@ -104,7 +104,7 @@ impl CookieActor {
             return;
         }
         // 将重置的 cookies 放回 valid，并进行增量 upsert
-        for c in reset_cookies.into_iter() {
+        for c in reset_cookies {
             state.valid.push_back(c.clone());
         }
         Self::log(state);
@@ -120,7 +120,7 @@ impl CookieActor {
             window_secs: i64,
             now: i64,
         ) -> bool {
-            if has_reset == Some(true) && resets_at.map(|ts| now >= ts).unwrap_or(false) {
+            if has_reset == Some(true) && resets_at.is_some_and(|ts| now >= ts) {
                 *usage = UsageBreakdown::default();
                 *resets_at = Some(now + window_secs);
                 return true;
@@ -156,7 +156,7 @@ impl CookieActor {
             cookie_changed
         };
 
-        for cookie in state.valid.iter_mut() {
+        for cookie in &mut state.valid {
             changed |= apply_resets(cookie);
         }
 
@@ -399,14 +399,14 @@ impl Actor for CookieActor {
     }
 }
 
-/// Handle for interacting with the CookieActor
+/// Handle for interacting with the `CookieActor`
 #[derive(Clone)]
 pub struct CookieActorHandle {
     actor_ref: ActorRef<CookieActorMessage>,
 }
 
 impl CookieActorHandle {
-    /// Create a new CookieActor and return a handle to it
+    /// Create a new `CookieActor` and return a handle to it
     pub async fn start() -> Result<Self, ractor::SpawnErr> {
         let (actor_ref, _join_handle) = Actor::spawn(None, CookieActor, ()).await?;
 

@@ -31,14 +31,14 @@ impl TokenInfo {
     ) -> Self {
         let expires_at = Utc::now() + raw.expires_in().unwrap_or_default();
         Self {
-            access_token: raw.access_token().secret().to_string(),
+            access_token: raw.access_token().secret().clone(),
             expires_in: raw.expires_in().unwrap_or_default(),
             organization: Organization {
                 uuid: organization_uuid,
             },
             refresh_token: raw
                 .refresh_token()
-                .map_or_else(Default::default, |rt| rt.secret().to_string()),
+                .map_or_else(Default::default, |rt| rt.secret().clone()),
             expires_at,
         }
     }

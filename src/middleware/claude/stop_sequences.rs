@@ -14,7 +14,7 @@ fn stop_stream(
     sequences: Vec<String>,
     stream: impl Stream<Item = EventResult<SourceEvent>>,
 ) -> impl Stream<Item = EventResult<Event>> {
-    let trie = trie_rs::map::Trie::from_iter(sequences.into_iter().map(|s| (s.to_owned(), s)));
+    let trie = trie_rs::map::Trie::from_iter(sequences.into_iter().map(|s| (s.clone(), s)));
     try_stream!({
         let mut searches = vec![trie.inc_search()];
         for await event in stream {
@@ -45,13 +45,13 @@ fn stop_stream(
             let input = text.into_bytes();
             for i in 0..input.len() {
                 let mut next_searches = vec![trie.inc_search()];
-                for mut s in searches.into_iter() {
+                for mut s in searches {
                     match s.query(&input[i]) {
                         // match found, return
                         Some(a) if a.is_match() => {
                             let seq = s.value().unwrap();
                             // stop sequence found
-                            let result = String::from_utf8_lossy(&input[..i + 1]).to_string();
+                            let result = String::from_utf8_lossy(&input[..=i]).to_string();
                             let event = StreamEvent::ContentBlockDelta {
                                 delta: ContentBlockDelta::TextDelta { text: result },
                                 index,
@@ -60,7 +60,7 @@ fn stop_stream(
                             let message_delta = StreamEvent::MessageDelta {
                                 delta: MessageDeltaContent {
                                     stop_reason: Some(StopReason::StopSequence),
-                                    stop_sequence: Some(seq.to_string()),
+                                    stop_sequence: Some(seq.clone()),
                                 },
                                 usage: None,
                             };

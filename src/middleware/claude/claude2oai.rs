@@ -13,13 +13,13 @@ struct StreamEventData {
 }
 
 impl StreamEventData {
-    /// Creates a new StreamEventData with the given content
+    /// Creates a new `StreamEventData` with the given content
     ///
     /// # Arguments
     /// * `content` - The event content to include
     ///
     /// # Returns
-    /// A new StreamEventData instance with the content wrapped in choices array
+    /// A new `StreamEventData` instance with the content wrapped in choices array
     fn new(content: EventContent) -> Self {
         Self {
             choices: vec![StreamEventDelta { delta: content }],
