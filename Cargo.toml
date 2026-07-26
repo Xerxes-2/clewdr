@@ -30,7 +30,10 @@ async-stream = "0.3"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros"] }
 axum-auth = "0.8"
-base64 = "0.23"
+# Held one minor behind: oauth2, tiktoken-rs and axum-auth all pull base64
+# 0.22, and 0.23 is a semver-incompatible second copy for no gain here. Bump
+# once those three have moved.
+base64 = "0.22"
 bytes = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
@@ -55,7 +58,9 @@ self-replace = { version = "1", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_with = { version = "3", features = ["chrono_0_4"] }
-sha2 = "0.11"
+# Held one minor behind to share oauth2's copy; 0.11 drags in a parallel
+# digest/block-buffer/crypto-common stack. Bump once oauth2 has moved.
+sha2 = "0.10"
 snafu = { version = "0.9", features = ["futures", "rust_1_81"] }
 strum = { version = "0.28", features = ["derive"] }
 tempfile = { version = "3", optional = true }
