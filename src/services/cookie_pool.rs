@@ -11,7 +11,10 @@ use serde::Serialize;
 use tracing::{error, info, warn};
 
 use crate::{
-    config::{CLEWDR_CONFIG, ClewdrConfig, CookieStatus, Reason, UsageBreakdown, UselessCookie},
+    config::{
+        CLEWDR_CONFIG, CookieSnapshot, CookieStatus, Reason, UsageBreakdown, UselessCookie,
+        take_global_cookies,
+    },
     error::ClewdrError,
 };
 
@@ -40,22 +43,17 @@ struct PoolState {
 }
 
 impl PoolState {
-    /// Builds the initial pool from the persisted configuration
+    /// Builds the initial pool by taking ownership of the config's cookies
     fn from_config() -> Self {
-        let config = CLEWDR_CONFIG.load();
-        let valid = config
-            .cookie_array
-            .iter()
-            .filter(|c| c.reset_time.is_none())
-            .cloned()
-            .collect::<VecDeque<_>>();
-        let exhausted = config
-            .cookie_array
-            .iter()
-            .filter(|c| c.reset_time.is_some())
-            .cloned()
-            .collect::<HashSet<_>>();
-        let invalid = config.wasted_cookie.iter().cloned().collect::<HashSet<_>>();
+        let loaded = take_global_cookies();
+        // A cookie with a reset time is still cooling down; the rest are usable.
+        let (usable, cooling): (Vec<_>, Vec<_>) = loaded
+            .cookies
+            .into_iter()
+            .partition(|c| c.reset_time.is_none());
+        let valid = VecDeque::from(usable);
+        let exhausted = cooling.into_iter().collect::<HashSet<_>>();
+        let invalid = loaded.wasted;
 
         let moka = Cache::builder()
             .max_capacity(1000)
@@ -70,26 +68,28 @@ impl PoolState {
         }
     }
 
-    /// Mirrors the pool into the global config and persists it in the background
-    fn save(&self) {
-        CLEWDR_CONFIG.rcu(|config| {
-            let mut config = ClewdrConfig::clone(config);
-            config.cookie_array = self
+    /// The pool's cookies in the shape the config file expects
+    fn snapshot(&self) -> CookieSnapshot {
+        CookieSnapshot {
+            cookies: self
                 .valid
                 .iter()
                 .chain(self.exhausted.iter())
                 .cloned()
-                .collect();
-            config.wasted_cookie.clone_from(&self.invalid);
-            config
-        });
+                .collect(),
+            wasted: self.invalid.clone(),
+        }
+    }
 
-        // Persist config file/DB config row only（不再全量重写 cookies）
+    /// Persists the pool alongside the current settings, in the background.
+    ///
+    /// Spawned rather than awaited because callers hold the pool lock, which
+    /// must not be held across file I/O.
+    fn save(&self) {
+        let cookies = self.snapshot();
         tokio::spawn(async move {
-            let result = CLEWDR_CONFIG.load().save().await;
-            match result {
-                Ok(()) => info!("Configuration saved successfully"),
-                Err(e) => error!("Save task panicked: {}", e),
+            if let Err(e) = CLEWDR_CONFIG.load().save(&cookies).await {
+                error!("Failed to save config: {}", e);
             }
         });
     }
@@ -367,6 +367,13 @@ impl CookiePool {
     /// Adds a new cookie. Duplicates are ignored with a warning.
     pub fn submit(&self, cookie: CookieStatus) {
         self.lock().accept(cookie);
+    }
+
+    /// The pool's cookies in the shape the config file expects, for callers
+    /// that need to persist the config without owning the cookies themselves.
+    #[must_use]
+    pub fn snapshot(&self) -> CookieSnapshot {
+        self.lock().snapshot()
     }
 
     /// Snapshot of every cookie the pool knows about

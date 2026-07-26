@@ -1,10 +1,15 @@
-use axum::Json;
+use std::sync::Arc;
+
+use axum::{Json, extract::State};
 use axum_auth::AuthBearer;
 use clewdr_types::ConfigApi;
 use serde_json::json;
 
 use super::error::ApiError;
-use crate::config::{CLEWDR_CONFIG, ClewdrConfig};
+use crate::{
+    config::{CLEWDR_CONFIG, ClewdrConfig},
+    services::cookie_pool::CookiePool,
+};
 
 /// Return the current configuration, with secrets already elided by the
 /// [`ConfigApi`] conversion.
@@ -22,13 +27,14 @@ pub async fn api_get_config(AuthBearer(t): AuthBearer) -> Result<Json<ConfigApi>
 
 /// Replace the configuration and persist it.
 ///
-/// The cookie collections are carried over from the old config rather than
-/// taken from the request, so saving settings cannot clobber them.
+/// Cookies are unaffected: they belong to the pool, and are only recombined
+/// with the settings when the file is written.
 ///
 /// # Errors
 /// [`ApiError::unauthorized`] if the bearer token is not the admin password,
 /// or [`ApiError::internal`] if the new config cannot be written to disk.
 pub async fn api_post_config(
+    State(pool): State<CookiePool>,
     AuthBearer(t): AuthBearer,
     Json(c): Json<ConfigApi>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
@@ -36,13 +42,8 @@ pub async fn api_post_config(
         return Err(ApiError::unauthorized());
     }
     let c: ClewdrConfig = ClewdrConfig::from(c).validate();
-    CLEWDR_CONFIG.rcu(|old_c| {
-        let mut new_c = ClewdrConfig::clone(&c);
-        new_c.cookie_array.clone_from(&old_c.cookie_array);
-        new_c.wasted_cookie.clone_from(&old_c.wasted_cookie);
-        new_c
-    });
-    if let Err(e) = CLEWDR_CONFIG.load().save().await {
+    CLEWDR_CONFIG.store(Arc::new(c.clone()));
+    if let Err(e) = CLEWDR_CONFIG.load().save(&pool.snapshot()).await {
         return Err(ApiError::internal(format!("Failed to save config: {e}")));
     }
 

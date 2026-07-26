@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fmt::{Debug, Display},
     hash::Hash,
     ops::Deref,
@@ -14,9 +15,23 @@ use snafu::{GenerateImplicitData, Location};
 use tracing::info;
 
 use crate::{
-    config::{PLACEHOLDER_COOKIE, TokenInfo},
+    config::{PLACEHOLDER_COOKIE, TokenInfo, UselessCookie},
     error::ClewdrError,
 };
+
+/// The cookies as they appear in the config file.
+///
+/// The pool owns the live cookies; this is the shape they take on disk, where
+/// live and cooling-down cookies share one list. It exists so the pool can
+/// hand its cookies to the config writer without either side reaching into
+/// the other's state.
+#[derive(Debug, Default, Clone)]
+pub struct CookieSnapshot {
+    /// Usable and cooling-down cookies, i.e. everything not retired
+    pub cookies: HashSet<CookieStatus>,
+    /// Cookies retired for a specific reason
+    pub wasted: HashSet<UselessCookie>,
+}
 
 /// Model family for usage bucketing
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]

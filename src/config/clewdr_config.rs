@@ -21,7 +21,24 @@ use tracing::error;
 use url::Url;
 use wreq::Proxy;
 
-use super::{CONFIG_PATH, ENDPOINT_URL};
+use super::{CLEWDR_CONFIG, CONFIG_PATH, CookieSnapshot, ENDPOINT_URL};
+
+/// Moves the cookies out of the global config and returns them.
+///
+/// Call once, from the cookie pool's constructor: afterwards the pool is their
+/// sole owner and [`CLEWDR_CONFIG`] carries empty cookie sets. Calling it twice
+/// would hand the second caller nothing.
+pub fn take_global_cookies() -> CookieSnapshot {
+    let mut taken = CookieSnapshot::default();
+    CLEWDR_CONFIG.rcu(|config| {
+        let mut config = ClewdrConfig::clone(config);
+        // May run more than once under contention, but each attempt re-reads
+        // the live config, which still holds the cookies until a swap lands.
+        taken = config.take_cookies();
+        config
+    });
+    taken
+}
 
 /// Serializes writers to [`CONFIG_PATH`]. Held across the whole
 /// write-flush-rename sequence, so two concurrent savers cannot interleave and
@@ -95,11 +112,15 @@ fn generate_password() -> String {
 )]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ClewdrConfig {
-    // key configurations
+    // Cookies are owned by the cookie pool at runtime; these fields only carry
+    // them between deserialization and `take_cookies`, and are re-filled from a
+    // `CookieSnapshot` when writing the file. Outside that window they are
+    // empty, which is why they are private -- reading them would silently
+    // yield nothing.
     #[serde(default)]
-    pub cookie_array: HashSet<CookieStatus>,
+    cookie_array: HashSet<CookieStatus>,
     #[serde(default)]
-    pub wasted_cookie: HashSet<UselessCookie>,
+    wasted_cookie: HashSet<UselessCookie>,
 
     // Server settings, cannot hot reload
     #[serde(default = "default_ip")]
@@ -389,8 +410,11 @@ impl ClewdrConfig {
         let config = config.validate();
         if !config.no_fs {
             let config_clone = config.clone();
+            // The pool has not started yet, so the config still holds the
+            // cookies it just loaded.
+            let cookies = config.cookies();
             spawn(async move {
-                config_clone.save().await.unwrap_or_else(|e| {
+                config_clone.save(&cookies).await.unwrap_or_else(|e| {
                     error!("Failed to save config: {}", e);
                 });
             });
@@ -431,7 +455,43 @@ impl ClewdrConfig {
         SocketAddr::new(self.ip, self.port)
     }
 
-    /// Save the configuration to a file
+    /// Renders the on-disk form: these settings with `cookies` written in.
+    ///
+    /// Whatever the config is carrying in its own cookie fields is discarded,
+    /// since the pool is the authority once it has started.
+    fn to_toml(&self, cookies: &CookieSnapshot) -> Result<String, ClewdrError> {
+        let mut to_write = self.clone();
+        to_write.cookie_array.clone_from(&cookies.cookies);
+        to_write.wasted_cookie.clone_from(&cookies.wasted);
+        Ok(toml::ser::to_string_pretty(&to_write)?)
+    }
+
+    /// The cookies this config is currently carrying.
+    ///
+    /// Only meaningful before the pool has taken ownership of them.
+    #[must_use]
+    pub fn cookies(&self) -> CookieSnapshot {
+        CookieSnapshot {
+            cookies: self.cookie_array.clone(),
+            wasted: self.wasted_cookie.clone(),
+        }
+    }
+
+    /// Moves the cookies out of this config, leaving it with none.
+    ///
+    /// Called once, when the pool starts and becomes their sole owner.
+    pub fn take_cookies(&mut self) -> CookieSnapshot {
+        CookieSnapshot {
+            cookies: std::mem::take(&mut self.cookie_array),
+            wasted: std::mem::take(&mut self.wasted_cookie),
+        }
+    }
+
+    /// Save the configuration to a file, with `cookies` written into it.
+    ///
+    /// Cookies are passed in rather than read from `self` because the pool owns
+    /// them; this is the one point where the two halves are recombined into the
+    /// on-disk format.
     ///
     /// The new contents go to a sibling temporary file which is flushed and
     /// then renamed over the target, so a concurrent reader or an interrupted
@@ -443,11 +503,11 @@ impl ClewdrConfig {
     /// # Errors
     /// If the config directory cannot be created, the config cannot be
     /// serialized, or the file cannot be written or renamed.
-    pub async fn save(&self) -> Result<(), ClewdrError> {
+    pub async fn save(&self, cookies: &CookieSnapshot) -> Result<(), ClewdrError> {
         if self.no_fs {
             return Ok(());
         }
-        let data = toml::ser::to_string_pretty(self)?;
+        let data = self.to_toml(cookies)?;
         let path = CONFIG_PATH.as_path();
 
         let _guard = SAVE_LOCK.lock().await;
@@ -498,7 +558,7 @@ impl ClewdrConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{super::Reason, *};
 
     /// `main` prints the config with `println!`, and a `Display` impl that
     /// returns `Err` makes that panic rather than fail gracefully. The URLs are
@@ -510,6 +570,64 @@ mod tests {
         let rendered = config.to_string();
         assert!(rendered.contains("Web Admin Endpoint"));
         assert!(rendered.contains("Claude Code"));
+    }
+
+    /// A distinct, well-formed cookie per `tag`.
+    fn test_cookie(tag: char) -> CookieStatus {
+        let raw = format!(
+            "sk-ant-sid01-{}-{}AA",
+            tag.to_string().repeat(86),
+            tag.to_string().repeat(6)
+        );
+        CookieStatus::new(&raw, None).expect("valid test cookie")
+    }
+
+    /// The pool owns the cookies at runtime, so the config must hand them over
+    /// exactly once and keep none behind.
+    #[test]
+    fn take_cookies_moves_them_out() {
+        let mut config = ClewdrConfig::default();
+        config.cookie_array.insert(test_cookie('a'));
+        config
+            .wasted_cookie
+            .insert(UselessCookie::new(test_cookie('b').cookie, Reason::Null));
+
+        let taken = config.take_cookies();
+        assert_eq!(taken.cookies.len(), 1);
+        assert_eq!(taken.wasted.len(), 1);
+
+        assert!(config.cookie_array.is_empty());
+        assert!(config.wasted_cookie.is_empty());
+        // A second caller must not receive a stale duplicate.
+        let again = config.take_cookies();
+        assert!(again.cookies.is_empty() && again.wasted.is_empty());
+    }
+
+    /// Saving settings used to clobber the cookies unless the caller manually
+    /// copied them across. The written file must come from the pool's
+    /// snapshot, never from whatever the config happens to still hold.
+    #[test]
+    fn written_config_takes_cookies_from_the_snapshot() {
+        let stale = test_cookie('a');
+        let live = test_cookie('c');
+
+        let mut config = ClewdrConfig::default();
+        config.cookie_array.insert(stale.clone());
+
+        let snapshot = CookieSnapshot {
+            cookies: std::iter::once(live.clone()).collect(),
+            wasted: HashSet::new(),
+        };
+        let rendered = config.to_toml(&snapshot).expect("serialize");
+
+        assert!(
+            rendered.contains(live.cookie.to_string().trim_start_matches("sessionKey=")),
+            "the pool's cookie should be written"
+        );
+        assert!(
+            !rendered.contains(stale.cookie.to_string().trim_start_matches("sessionKey=")),
+            "the config's stale cookie should not be written"
+        );
     }
 
     /// Unique scratch directory, removed on drop.

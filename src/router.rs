@@ -107,7 +107,8 @@ impl RouterBuilder {
             .with_state(self.cookie_pool.clone());
         let admin_router = Router::new()
             .route("/auth", get(api_auth))
-            .route("/config", get(api_get_config).post(api_post_config));
+            .route("/config", get(api_get_config).post(api_post_config))
+            .with_state(self.cookie_pool.clone());
         let router = Router::new()
             .nest(
                 "/api",
