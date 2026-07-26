@@ -81,14 +81,17 @@ tracing-subscriber = { version = "0.3", features = [
 trie-rs = "0.4"
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
-wreq = { version = "6.0.0-rc.29", features = [
+# Held at rc.29's predecessor: rc.29 swapped the TLS backend from boring2 to
+# btls, whose vendored BoringSSL cannot be built for musl in the Docker image.
+# See the comment above the backend-builder stage in Dockerfile.
+wreq = { version = "6.0.0-rc.28", features = [
   "cookies",
   "json",
   "multipart",
   "socks",
   "stream",
 ] }
-wreq-util = "3.0.0-rc.14"
+wreq-util = "3.0.0-rc.10"
 zip = { version = "8", default-features = false, features = [
   "deflate",
 ], optional = true }

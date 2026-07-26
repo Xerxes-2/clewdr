@@ -9,6 +9,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "ahash"
+version = "0.8.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
+dependencies = [
+ "cfg-if",
+ "once_cell",
+ "version_check",
+ "zerocopy",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -31,12 +43,6 @@ checksum = "0e76a019e91224d279006ff972f1e984179a6e9feb050adba6ce8274aef23195"
 dependencies = [
  "alloc-no-stdlib",
 ]
-
-[[package]]
-name = "allocator-api2"
-version = "0.2.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "android_system_properties"
@@ -434,6 +440,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "boring-sys2"
+version = "5.0.0-alpha.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "455d79965f5155dcc88a7abce112c3590883889131b799beda10bf9a813ed669"
+dependencies = [
+ "bindgen",
+ "cmake",
+ "fs_extra",
+ "fslock",
+]
+
+[[package]]
+name = "boring2"
+version = "5.0.0-alpha.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "183ccc3854411c035410dcdbffafca62084f3a6c33f013c77e83c025d2a08a28"
+dependencies = [
+ "bitflags",
+ "boring-sys2",
+ "foreign-types",
+ "libc",
+ "openssl-macros",
+]
+
+[[package]]
 name = "brotli"
 version = "8.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -472,31 +503,6 @@ dependencies = [
  "memchr",
  "regex-automata",
  "serde_core",
-]
-
-[[package]]
-name = "btls"
-version = "0.5.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c5e60b8c8d282c86360cab651ded04ab0335a7b5390c8d34145cbeab8cacf5f"
-dependencies = [
- "bitflags",
- "btls-sys",
- "foreign-types",
- "libc",
- "openssl-macros",
-]
-
-[[package]]
-name = "btls-sys"
-version = "0.5.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b1b8638a2e1c38a5ae4efa90ae57e643baec35a30d03fc5b399b893adc4954b"
-dependencies = [
- "bindgen",
- "cmake",
- "fs_extra",
- "fslock",
 ]
 
 [[package]]
@@ -761,7 +767,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1231,7 +1237,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1338,12 +1344,6 @@ name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
-
-[[package]]
-name = "foldhash"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "foreign-types"
@@ -1641,6 +1641,12 @@ checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 
 [[package]]
 name = "hashbrown"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43a3c133739dddd0d2990f9a4bdf8eb4b21ef50e4851ca85ab661199821d510e"
+
+[[package]]
+name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
@@ -1650,11 +1656,6 @@ name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
-dependencies = [
- "allocator-api2",
- "equivalent",
- "foldhash",
-]
 
 [[package]]
 name = "hdrhistogram"
@@ -1739,6 +1740,7 @@ dependencies = [
  "futures-sink",
  "http",
  "indexmap 2.14.0",
+ "parking_lot",
  "slab",
  "smallvec",
  "tokio",
@@ -2318,15 +2320,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "936de6c22f08e7135a921f8ada907acd0d88880c4f42b5591f634b9f1dd8e07f"
 dependencies = [
  "fid-rs",
-]
-
-[[package]]
-name = "lru"
-version = "0.18.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b6180140927ee907000b0aa540091f6ea512ead4447c92b8fc35bc72788a5a6"
-dependencies = [
- "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -3077,7 +3070,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3159,6 +3152,17 @@ dependencies = [
  "ref-cast",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "schnellru"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "356285bbf17bea63d9e52e96bd18f039672ac92b55b8cb997d6162a2a37d1649"
+dependencies = [
+ "ahash",
+ "cfg-if",
+ "hashbrown 0.13.2",
 ]
 
 [[package]]
@@ -3667,7 +3671,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3816,12 +3820,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "tokio-btls"
-version = "0.5.6"
+name = "tokio-boring2"
+version = "5.0.0-alpha.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e1fd638ec35427faf3b8f412e0fdd6fae76591d79dba40f38fa667d22bc44dd"
+checksum = "0f81df1210d791f31d72d840de8fbd80b9c3cb324956523048b1413e2bd55756"
 dependencies = [
- "btls",
+ "boring2",
  "tokio",
 ]
 
@@ -4478,7 +4482,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4648,14 +4652,17 @@ dependencies = [
 
 [[package]]
 name = "wreq"
-version = "6.0.0-rc.29"
+version = "6.0.0-rc.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f0eba5f5814a94e5f1a99156f187133464e525b66bdbc69a9627d46530af2e1"
+checksum = "f79937f6c4df65b3f6f78715b9de2977afe9ee3b3436483c7949a24511e25935"
 dependencies = [
- "btls",
- "btls-sys",
+ "ahash",
+ "boring2",
+ "brotli",
  "bytes",
  "cookie",
+ "flate2",
+ "futures-channel",
  "futures-util",
  "http",
  "http-body",
@@ -4664,67 +4671,34 @@ dependencies = [
  "httparse",
  "ipnet",
  "libc",
- "lru",
  "mime_guess",
  "percent-encoding",
  "pin-project-lite",
+ "schnellru",
  "serde",
  "serde_json",
+ "smallvec",
  "socket2",
  "sync_wrapper",
  "tokio",
- "tokio-btls",
+ "tokio-boring2",
  "tokio-socks",
  "tokio-util",
  "tower",
  "url",
- "webpki-root-certs",
- "wreq-proto",
- "wreq-rt",
-]
-
-[[package]]
-name = "wreq-proto"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a43942f024bb303f1042c9aa3c87fa1d9149f507c65db6e5220a11ccdb207387"
-dependencies = [
- "bytes",
- "futures-channel",
- "futures-util",
- "http",
- "http-body",
- "http2",
- "httparse",
- "pin-project-lite",
- "smallvec",
- "tokio",
- "tokio-util",
  "want",
-]
-
-[[package]]
-name = "wreq-rt"
-version = "0.2.2-rc.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99e9bce67a3fa3dd3f1503f066d86661c9caf399a763d3bd184da7afaf886c8b"
-dependencies = [
- "pin-project-lite",
- "tokio",
- "wreq-proto",
+ "webpki-root-certs",
+ "zstd",
 ]
 
 [[package]]
 name = "wreq-util"
-version = "3.0.0-rc.14"
+version = "3.0.0-rc.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d8d73c75be86fbde675988dbe5cb15f02567025c13f6ffab910361ad1ba6c89"
+checksum = "6c6bbe24d28beb9ceb58b514bd6a613c759d3b706f768b9d2950d5d35b543c04"
 dependencies = [
- "brotli",
- "flate2",
  "typed-builder",
  "wreq",
- "zstd",
 ]
 
 [[package]]
