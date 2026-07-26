@@ -276,6 +276,12 @@ fn render_boundary(epoch: Option<i64>) -> Value {
 /// the wrong type fails all of it.
 fn cookie_api_value(cookie: &CookieStatus) -> Value {
     let mut value = serde_json::to_value(cookie).unwrap_or_else(|_| json!({}));
+    // CookieStatus carries the OAuth access and refresh tokens. CookieStatusApi
+    // has no field for them, so the frontend drops them on arrival and they
+    // only ever travel over the wire and through browser buffers for nothing.
+    if let Some(obj) = value.as_object_mut() {
+        obj.remove("token");
+    }
     value["session_resets_at"] = render_boundary(cookie.session_resets_at);
     value["seven_day_resets_at"] = render_boundary(cookie.weekly_resets_at);
     value["seven_day_sonnet_resets_at"] = render_boundary(cookie.weekly_sonnet_resets_at);
@@ -435,6 +441,55 @@ mod tests {
     use clewdr_types::CookieStatusApi;
 
     use super::*;
+
+    /// The same cookie, carrying an OAuth token as a live one would.
+    fn cookie_with_token() -> CookieStatus {
+        use crate::config::{Organization, TokenInfo};
+
+        let mut cookie = cookie_with_boundaries();
+        cookie.add_token(TokenInfo {
+            access_token: "sk-ant-oat01-SECRET-ACCESS".to_string(),
+            expires_in: std::time::Duration::from_hours(1),
+            organization: Organization {
+                uuid: "org-uuid".to_string(),
+            },
+            refresh_token: "sk-ant-ort01-SECRET-REFRESH".to_string(),
+            expires_at: chrono::Utc::now(),
+        });
+        cookie
+    }
+
+    /// `CookieStatusApi` has no token field, so nothing reads these; sending
+    /// them only widens where the credentials can be observed or logged.
+    #[test]
+    fn the_listing_does_not_carry_oauth_tokens() {
+        let value = cookie_api_value(&cookie_with_token());
+
+        assert!(
+            value.get("token").is_none(),
+            "the cookie listing must not expose the OAuth token: {value}"
+        );
+
+        let serialized = value.to_string();
+        assert!(
+            !serialized.contains("SECRET-ACCESS") && !serialized.contains("SECRET-REFRESH"),
+            "no part of the token may survive anywhere in the response: {serialized}"
+        );
+    }
+
+    /// Dropping the token must not disturb the fields the page does read.
+    #[test]
+    fn removing_the_token_leaves_the_rest_of_the_listing_intact() {
+        let value = cookie_api_value(&cookie_with_token());
+
+        let parsed: CookieStatusApi =
+            serde_json::from_value(value).expect("the API type must still accept the cookie");
+
+        assert_eq!(
+            parsed.session_resets_at.as_deref(),
+            Some("2026-07-26T17:40:57Z")
+        );
+    }
 
     /// A well-formed cookie whose windows all carry a known boundary.
     fn cookie_with_boundaries() -> CookieStatus {
