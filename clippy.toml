@@ -1,0 +1,11 @@
+# Proper nouns that appear in prose in doc comments. Without these,
+# `clippy::doc_markdown` reads them as code identifiers and asks for backticks,
+# which is wrong: these are product and vendor names, not types.
+#
+# `..` extends clippy's built-in list rather than replacing it.
+doc-valid-idents = [
+    "..",
+    "ClewdR",
+    "OpenAI",
+    "SillyTavern",
+]

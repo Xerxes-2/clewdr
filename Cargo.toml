@@ -8,6 +8,15 @@ license = "AGPL-3.0"
 [workspace]
 members = [".", "clewdr-types", "clewdr-frontend"]
 
+# Lint policy for every member. Deliberately has no `allow` entries: where a
+# pedantic lint genuinely does not apply, the exception goes at the site with a
+# comment explaining why, so it stays visible in review.
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+
+[lints]
+workspace = true
+
 [lib]
 path = "src/lib.rs"
 
