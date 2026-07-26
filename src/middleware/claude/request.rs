@@ -17,9 +17,8 @@ use crate::{
     error::ClewdrError,
     middleware::claude::{ClaudeApiFormat, ClaudeContext},
     types::{
-        claude::{
-            ContentBlock, CreateMessageParams, Message, MessageContent, Role, Thinking, Usage,
-        },
+        claude::{ContentBlock, CreateMessageParams, Message, MessageContent, Role, Usage},
+        model::{ModelTraits, split_thinking_suffix},
         oai::CreateMessageParams as OaiCreateMessageParams,
     },
 };
@@ -251,9 +250,17 @@ where
             // Trim whitespace and drop empty assistant turns when enabled.
             body.messages = sanitize_messages(body.messages);
         }
-        if body.model.ends_with("-thinking") {
-            body.model = body.model.trim_end_matches("-thinking").to_string();
-            body.thinking.get_or_insert(Thinking::new(4096));
+        let (base_model, wants_thinking) = split_thinking_suffix(&body.model);
+        let traits = ModelTraits::of(base_model);
+        if wants_thinking {
+            body.model = base_model.to_string();
+            if let Some(traits) = traits {
+                body.thinking.get_or_insert_with(|| traits.thinking_for_suffix());
+            }
+        }
+        // Rewrite parameters the target model would reject outright.
+        if let Some(traits) = traits {
+            traits.sanitize(&mut body);
         }
         drop_empty_system(&mut body);
         Ok(Self(body, format))
@@ -318,10 +325,6 @@ where
 
     async fn from_request(req: Request, _: &S) -> Result<Self, Self::Rejection> {
         let NormalizeRequest(mut body, format) = NormalizeRequest::from_request(req, &()).await?;
-        // Handle thinking mode by modifying the model name
-        if body.temperature.is_some() {
-            body.top_p = None; // temperature and top_p cannot be used together in Opus-4.x
-        }
 
         // Check for test messages and respond appropriately
         if !body.stream.unwrap_or_default()

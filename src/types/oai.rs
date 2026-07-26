@@ -40,13 +40,52 @@ fn normalize_message(msg: Message) -> Option<Message> {
     })
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+/// OpenAI-style `reasoning_effort`.
+///
+/// Claude expresses the same idea two different ways depending on the model:
+/// `output_config.effort` on Opus 4.5 and later, and a legacy thinking budget
+/// on everything else. Both are derived here and [`crate::types::model`] drops
+/// whichever one the target model does not accept.
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum Effort {
-    Low = 256,
+    /// OpenAI's `minimal`/`none`; Claude has no rung below `low`.
+    #[serde(alias = "none")]
+    Minimal,
+    Low,
     #[default]
-    Medium = 256 * 8,
-    High = 256 * 8 * 8,
+    Medium,
+    High,
+    #[serde(rename = "xhigh")]
+    XHigh,
+    Max,
+}
+
+impl Effort {
+    /// The matching rung on Claude's effort ladder.
+    pub fn output_effort(self) -> OutputEffort {
+        match self {
+            Self::Minimal | Self::Low => OutputEffort::Low,
+            Self::Medium => OutputEffort::Medium,
+            Self::High => OutputEffort::High,
+            Self::XHigh => OutputEffort::XHigh,
+            Self::Max => OutputEffort::Max,
+        }
+    }
+
+    /// Equivalent budget for models that only understand extended thinking.
+    ///
+    /// Never below the API floor of 1024 tokens.
+    pub fn budget_tokens(self) -> u64 {
+        match self {
+            Self::Minimal => 1024,
+            Self::Low => 2048,
+            Self::Medium => 4096,
+            Self::High => 16384,
+            Self::XHigh => 32768,
+            Self::Max => 65536,
+        }
+    }
 }
 
 impl From<CreateMessageParams> for ClaudeCreateMessageParams {
@@ -78,9 +117,11 @@ impl From<CreateMessageParams> for ClaudeCreateMessageParams {
             context_management: None,
             mcp_servers: None,
             stop_sequences: params.stop,
-            thinking: params
-                .thinking
-                .or_else(|| params.reasoning_effort.map(|e| Thinking::new(e as u64))),
+            thinking: params.thinking.or_else(|| {
+                params
+                    .reasoning_effort
+                    .map(|e| Thinking::new(e.budget_tokens()))
+            }),
             temperature: params.temperature,
             stream: params.stream,
             top_k: params.top_k,
@@ -88,7 +129,10 @@ impl From<CreateMessageParams> for ClaudeCreateMessageParams {
             tools: params.tools,
             tool_choice: params.tool_choice,
             metadata: params.metadata,
-            output_config: None,
+            output_config: params.reasoning_effort.map(|e| OutputConfig {
+                effort: Some(e.output_effort()),
+                format: None,
+            }),
             output_format: None,
             service_tier: None,
             n: params.n,

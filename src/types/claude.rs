@@ -22,12 +22,17 @@ pub struct OutputConfig {
     pub format: Option<OutputFormat>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+/// Effort rungs, ordered from cheapest to most capable.
+///
+/// `xhigh` sits between `high` and `max` and only exists from Claude 4.7 on;
+/// see [`crate::types::model`] for which models accept which rungs.
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputEffort {
     Low,
     Medium,
     High,
+    XHigh,
     Max,
 }
 
@@ -163,8 +168,19 @@ pub enum Thinking {
 }
 
 impl Thinking {
+    /// Legacy extended thinking with an explicit budget.
     pub fn new(budget_tokens: u64) -> Self {
         Self::Enabled { budget_tokens }
+    }
+
+    /// Adaptive thinking with the reasoning summary returned to the client.
+    ///
+    /// `display` defaults to `omitted` on the newest models, so it has to be
+    /// requested explicitly for the client to see any thinking text.
+    pub fn adaptive_summarized() -> Self {
+        Self::Adaptive {
+            display: Some("summarized".to_string()),
+        }
     }
 }
 
