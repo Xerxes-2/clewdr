@@ -93,8 +93,8 @@ fn start_backend(release: bool) -> Result<std::process::Child, String> {
     command
         .args(&args)
         .current_dir(workspace_root())
-        // Config comes from figment with a CLEWDR_ prefix, so this overrides
-        // whatever port clewdr.toml happens to set.
+        // Environment variables carry a CLEWDR_ prefix and take precedence
+        // over the file, so this overrides whatever port clewdr.toml sets.
         .env("CLEWDR_PORT", DEV_BACKEND_PORT.to_string());
     command
         .spawn()

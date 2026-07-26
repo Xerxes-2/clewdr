@@ -43,7 +43,7 @@ Read the passwords from the container:
 docker logs clewdr | grep Password
 ```
 
-Or set them yourself, which is easier to automate. Any config key can be set as an environment variable by upper-casing it and prefixing `CLEWDR_`; nested keys use a double underscore.
+Or set them yourself, which is easier to automate. Any config key can be set as an environment variable by upper-casing it and prefixing `CLEWDR_`; the value is read as the type that key holds, so `CLEWDR_PASSWORD=12345` is the string `12345`. Booleans accept `true`/`false`, `yes`/`no`, `on`/`off` and `1`/`0` in any case.
 
 ```bash
 docker run -d --name clewdr \

@@ -9,18 +9,17 @@ use std::{
 use axum::http::{Uri, uri::Scheme};
 use clap::Parser;
 use colored::Colorize;
-use figment::{
-    Figment,
-    providers::{Env, Format, Toml},
-};
 use http::uri::Authority;
 use serde::{Deserialize, Serialize};
 use tokio::{io::AsyncWriteExt, spawn};
-use tracing::error;
+use tracing::{error, warn};
 use url::Url;
 use wreq::Proxy;
 
-use super::{CLEWDR_CONFIG, CONFIG_PATH, CookieSnapshot, ENDPOINT_URL};
+use super::{
+    CLEWDR_CONFIG, CONFIG_PATH, CookieSnapshot, ENDPOINT_URL,
+    loader::{merge_sources, parse_each},
+};
 
 /// Moves the cookies out of the global config and returns them.
 ///
@@ -416,22 +415,56 @@ impl ClewdrConfig {
             .to_string()
     }
 
-    /// Loads configuration from files and environment variables
-    /// Combines settings from config.toml, clewdr.toml, and environment variables
-    /// Also loads cookies from a file if specified
+    /// Builds a config from the text of the config file and the environment.
+    ///
+    /// Split out from [`Self::new`] so the merge can be exercised without a
+    /// filesystem or a process-wide environment to set up.
+    ///
+    /// Nothing here is fatal. A field that cannot be read is reported and left
+    /// at its default, because the alternative -- refusing to start -- strands
+    /// a long-running proxy over a setting it may not even use.
+    fn from_sources<K, V>(toml_text: &str, env: impl IntoIterator<Item = (K, V)>) -> Self
+    where
+        K: AsRef<str>,
+        V: Into<String>,
+    {
+        // The struct's own serialized form is the source of truth for what
+        // type each key holds, which is what lets an environment string be
+        // read as the field's type rather than guessed at from its text.
+        let template = toml::Table::try_from(Self::default()).unwrap_or_default();
+        let merged = merge_sources(toml_text, env, &template);
+
+        let mut config: Self = merged
+            .settings
+            .try_into()
+            .inspect_err(|e| error!("Failed to load config: {e}"))
+            .unwrap_or_default();
+
+        // Parsed after the rest, one at a time: a cookie the user let expire
+        // should cost them that cookie, not their whole configuration.
+        config.cookie_array = parse_each(merged.cookie_array, "cookie_array");
+        config.wasted_cookie = parse_each(merged.wasted_cookie, "wasted_cookie");
+        config
+    }
+
+    /// Loads configuration from the config file and the environment.
+    ///
+    /// Also loads cookies from a file if one was named on the command line.
     ///
     /// # Returns
     /// * Config instance
     pub fn new() -> Self {
         // Load config from TOML then override with environment variables.
-        // Use double underscore "__" to map nested keys.
-        let mut config: ClewdrConfig = Figment::from(Toml::file(CONFIG_PATH.as_path()))
-            .admerge(Env::prefixed("CLEWDR_").split("__"))
-            .extract_lossy()
-            .inspect_err(|e| {
-                error!("Failed to load config: {}", e);
-            })
-            .unwrap_or_default();
+        let toml_text = std::fs::read_to_string(CONFIG_PATH.as_path()).unwrap_or_else(|e| {
+            warn!("Could not read {}: {e}", CONFIG_PATH.display());
+            String::new()
+        });
+        // `vars_os` rather than `vars`, which panics on a variable that is not
+        // UTF-8; one such variable elsewhere in the environment is no reason
+        // to refuse to start.
+        let env = std::env::vars_os()
+            .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)));
+        let mut config = Self::from_sources(&toml_text, env);
         if let Some(ref f) = Args::try_parse().ok().and_then(|a| a.file) {
             // load cookies from file
             if f.exists() {
@@ -600,6 +633,141 @@ impl ClewdrConfig {
 mod tests {
     use super::{super::Reason, *};
 
+    /// A syntactically valid cookie, distinct per `seed`.
+    fn cookie_text(seed: char) -> String {
+        format!(
+            "sk-ant-sid01-{}-bbbbbbAA",
+            str::repeat(&seed.to_string(), 90)
+        )
+    }
+
+    fn load(toml_text: &str, env: &[(&str, &str)]) -> ClewdrConfig {
+        ClewdrConfig::from_sources(toml_text, env.iter().copied())
+    }
+
+    #[test]
+    fn settings_come_from_the_file() {
+        let config = load("port = 7777\npassword = \"filepw\"", &[]);
+
+        assert_eq!(config.port(), 7777);
+        assert_eq!(config.password(), "filepw");
+    }
+
+    #[test]
+    fn the_environment_wins_over_the_file() {
+        let config = load(
+            "port = 7777\npassword = \"filepw\"",
+            &[("CLEWDR_PORT", "6666"), ("CLEWDR_PASSWORD", "envpw")],
+        );
+
+        assert_eq!(config.port(), 6666);
+        assert_eq!(config.password(), "envpw");
+    }
+
+    /// An all-digits password used to be swallowed, leaving the user with a
+    /// generated one they had never seen. The README tells people to set this
+    /// variable, so it has to take any value they choose.
+    #[test]
+    fn a_numeric_password_is_accepted() {
+        let config = load("", &[("CLEWDR_PASSWORD", "12345")]);
+
+        assert_eq!(config.password(), "12345");
+    }
+
+    /// `CLEWDR_CHECK_UPDATE=FALSE` is set by the repo's own Dockerfile.
+    #[test]
+    fn the_dockerfile_environment_is_honoured() {
+        let config = load(
+            "",
+            &[
+                ("CLEWDR_IP", "0.0.0.0"),
+                ("CLEWDR_PORT", "8484"),
+                ("CLEWDR_CHECK_UPDATE", "FALSE"),
+                ("CLEWDR_AUTO_UPDATE", "FALSE"),
+            ],
+        );
+
+        assert_eq!(config.ip().to_string(), "0.0.0.0");
+        assert_eq!(config.port(), 8484);
+        assert!(!config.check_update);
+        assert!(!config.auto_update);
+    }
+
+    /// Cookies accumulate over months and expire; one that no longer parses
+    /// used to abort the whole load, silently resetting the port and password
+    /// and generating a new admin password.
+    #[test]
+    fn one_bad_cookie_does_not_discard_the_rest_of_the_config() {
+        let toml_text = format!(
+            "port = 7777\npassword = \"filepw\"\n\
+             [[cookie_array]]\ncookie = \"{}\"\n\
+             [[cookie_array]]\ncookie = \"not-a-cookie\"\n",
+            cookie_text('a')
+        );
+
+        let config = load(&toml_text, &[]);
+
+        assert_eq!(config.port(), 7777, "the port must survive a bad cookie");
+        assert_eq!(config.password(), "filepw");
+        assert_eq!(config.cookies().cookies.len(), 1, "the good cookie is kept");
+    }
+
+    /// The environment is the only way to configure a host whose config file
+    /// cannot be edited, so a corrupt file must not silence it.
+    #[test]
+    fn the_environment_survives_a_corrupt_file() {
+        let config = load(
+            "this is not [[[ valid toml",
+            &[("CLEWDR_PASSWORD", "envpw")],
+        );
+
+        assert_eq!(config.password(), "envpw");
+    }
+
+    /// Cookies can be supplied entirely through the environment, which is how
+    /// the container and Hugging Face deployments do it.
+    #[test]
+    fn cookies_can_come_from_the_environment() {
+        let value = format!(
+            "[{{cookie=\"{}\"}},{{cookie=\"{}\"}}]",
+            cookie_text('a'),
+            cookie_text('c')
+        );
+
+        let config = load("", &[("CLEWDR_COOKIE_ARRAY", &value)]);
+
+        assert_eq!(config.cookies().cookies.len(), 2);
+    }
+
+    /// Every `Option` field is string-shaped, which is what makes the "absent
+    /// from the template means string" fallback in the loader correct. A new
+    /// `Option<u16>` would break that silently, so it is asserted here.
+    #[test]
+    fn optional_fields_are_all_settable_from_the_environment() {
+        let config = load(
+            "",
+            &[
+                ("CLEWDR_PROXY", "http://proxy.test:8080"),
+                ("CLEWDR_RPROXY", "https://rproxy.test/"),
+                ("CLEWDR_CUSTOM_H", "H"),
+                ("CLEWDR_CUSTOM_A", "A"),
+                ("CLEWDR_CUSTOM_SYSTEM", "SYS"),
+                ("CLEWDR_CLAUDE_CODE_CLIENT_ID", "cid"),
+            ],
+        );
+
+        assert_eq!(config.proxy.as_deref(), Some("http://proxy.test:8080"));
+        assert_eq!(
+            config.rproxy.as_ref().map(url::Url::as_str),
+            Some("https://rproxy.test/")
+        );
+        assert_eq!(config.custom_h.as_deref(), Some("H"));
+        assert_eq!(config.custom_a.as_deref(), Some("A"));
+        assert_eq!(config.custom_system.as_deref(), Some("SYS"));
+        assert_eq!(config.claude_code_client_id.as_deref(), Some("cid"));
+    }
+
+    /// The password is the only thing standing in front of the admin API, so
     /// its length is a security property, not a cosmetic one.
     #[test]
     fn a_generated_password_has_the_advertised_length() {
@@ -607,6 +775,8 @@ mod tests {
         assert_eq!(password.chars().count(), PASSWORD_LENGTH);
     }
 
+    /// Rejection sampling loops until the buffer yields enough acceptable
+    /// bytes; an off-by-one in the cutoff would let a byte outside the
     /// alphabet through and index out of bounds, or spin forever.
     #[test]
     fn a_generated_password_only_uses_the_alphabet() {
@@ -619,6 +789,7 @@ mod tests {
         }
     }
 
+    /// The alphabet deliberately omits glyphs that are misread when a password
     /// is copied off one screen and typed into another.
     #[test]
     fn the_alphabet_excludes_confusable_characters() {
@@ -631,6 +802,7 @@ mod tests {
         }
     }
 
+    /// A generator that returned the same password twice would hand every
     /// deployment the same admin credential.
     #[test]
     fn generated_passwords_differ() {
@@ -639,6 +811,10 @@ mod tests {
         assert_ne!(first, second);
     }
 
+    /// The point of rejecting bytes instead of folding them: across the byte
+    /// values that are kept, every character of the alphabet comes up exactly
+    /// as often as every other. Checked exhaustively rather than statistically
+    /// -- plain `byte % 56` would give the first 32 characters five byte values
     /// each and the remaining 24 only four, and this counts that directly.
     #[test]
     fn every_character_is_equally_likely() {
@@ -675,6 +851,7 @@ mod tests {
         assert_eq!(password_from_bytes(rejected.into_iter(), 64), "");
     }
 
+    /// A run of rejections must not cut the password short; sampling continues
     /// until the full length is reached.
     #[test]
     fn rejected_bytes_do_not_shorten_the_password() {

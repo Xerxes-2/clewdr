@@ -64,10 +64,13 @@ https://3v4pyve7-clewdr.hf.space/v1
 简单配置
 
 ```env
-CLEWDR_COOKIE_ARRAY=[[cookie1],[cookie2]]
+CLEWDR_COOKIE_ARRAY=[{cookie="sk-ant-sid01-xxx"},{cookie="sk-ant-sid01-yyy"}]
 CLEWDR_PASSWORD=your_secure_password
 CLEWDR_ADMIN_PASSWORD=your_admin_password
 ```
+
+> `CLEWDR_COOKIE_ARRAY` 是一段 TOML 数组，每个元素写成 `{cookie="..."}`。
+> 写错格式的单条 cookie 会被跳过并在日志里告警，不影响其他配置。
 
 由于此cookie多个添加方法有些不同，可以使用js来批量处理(浏览器F12控制台运行)，可处理多行和`,`分割的格式
 

@@ -43,7 +43,7 @@ docker run -d --name clewdr \
 docker logs clewdr | grep Password
 ```
 
-也可以自行指定，更便于自动化。任意配置项都可以通过环境变量设置：键名大写并加 `CLEWDR_` 前缀，嵌套键用双下划线分隔。
+也可以自行指定，更便于自动化。任意配置项都可以通过环境变量设置：键名大写并加 `CLEWDR_` 前缀。值会按该配置项自身的类型解析，因此 `CLEWDR_PASSWORD=12345` 就是字符串 `12345`。布尔项接受 `true`/`false`、`yes`/`no`、`on`/`off`、`1`/`0`，大小写不限。
 
 ```bash
 docker run -d --name clewdr \

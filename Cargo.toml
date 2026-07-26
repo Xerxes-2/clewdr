@@ -42,7 +42,6 @@ colored = "3"
 console-subscriber = { version = "0.5", optional = true }
 etcetera = { version = "0.11", optional = true }
 eventsource-stream = "0.2"
-figment = { version = "0.10", features = ["env", "toml"] }
 futures = "0.3"
 # Already in the tree under uuid; taking it directly costs no new crates and
 # saves pulling a second RNG stack just to generate the admin password.
