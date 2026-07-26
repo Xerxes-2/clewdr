@@ -1,7 +1,21 @@
-use serde::{Deserialize, Serialize, de};
+use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
-use serde_with::{DefaultOnError, serde_as};
 use tiktoken_rs::o200k_base;
+
+/// Deserialize a field, falling back to `None` when it does not parse.
+///
+/// `thinking` is an optional hint, so a client that sends a shape we do not
+/// recognise should still get an answer instead of a 422 for the whole request.
+fn none_on_error<'de, T, D>(de: D) -> Result<Option<T>, D::Error>
+where
+    T: de::DeserializeOwned,
+    D: Deserializer<'de>,
+{
+    // Buffered through Value because a failed `T` leaves the deserializer
+    // mid-value, with no way to skip the rest of it.
+    let value = Value::deserialize(de)?;
+    Ok(serde_json::from_value(value).unwrap_or(None))
+}
 
 #[derive(Debug)]
 pub struct RequiredMessageParams {
@@ -62,7 +76,6 @@ pub struct McpServer {
     pub tool_configuration: Option<serde_json::Value>,
 }
 /// Parameters for creating a message
-#[serde_as]
 #[derive(Debug, Deserialize, Serialize, Default, Clone)]
 pub struct CreateMessageParams {
     /// Maximum number of tokens to generate
@@ -94,8 +107,7 @@ pub struct CreateMessageParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
     /// Thinking mode configuration
-    #[serde(default)]
-    #[serde_as(deserialize_as = "DefaultOnError")]
+    #[serde(default, deserialize_with = "none_on_error")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<Thinking>,
     /// Top-k sampling
@@ -1084,6 +1096,72 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    /// `thinking` is an optional hint. A client sending a shape we do not
+    /// recognise should still get an answer, so it degrades to `None` instead
+    /// of failing the whole request.
+    #[test]
+    fn an_unrecognised_thinking_value_degrades_to_none() {
+        for bad in [
+            json!("enabled"),
+            json!(42),
+            json!({ "type": "no_such_mode" }),
+            json!({ "type": "enabled" }),
+            json!([]),
+        ] {
+            let body = json!({
+                "max_tokens": 1024,
+                "messages": [{ "role": "user", "content": "hi" }],
+                "model": "claude-sonnet-4-20250514",
+                "thinking": bad,
+            });
+
+            let parsed: CreateMessageParams = serde_json::from_value(body)
+                .expect("a bad thinking value must not fail the request");
+            assert!(parsed.thinking.is_none());
+        }
+    }
+
+    /// The fallback must not swallow values that are actually valid.
+    #[test]
+    fn a_valid_thinking_value_is_preserved() {
+        let body = json!({
+            "max_tokens": 1024,
+            "messages": [{ "role": "user", "content": "hi" }],
+            "model": "claude-sonnet-4-20250514",
+            "thinking": { "type": "enabled", "budget_tokens": 2048 },
+        });
+
+        let parsed: CreateMessageParams = serde_json::from_value(body).unwrap();
+
+        assert!(matches!(
+            parsed.thinking,
+            Some(Thinking::Enabled {
+                budget_tokens: 2048
+            })
+        ));
+    }
+
+    /// An explicit null and an absent field both mean "no preference".
+    #[test]
+    fn an_absent_or_null_thinking_value_is_none() {
+        for body in [
+            json!({
+                "max_tokens": 1024,
+                "messages": [{ "role": "user", "content": "hi" }],
+                "model": "claude-sonnet-4-20250514",
+            }),
+            json!({
+                "max_tokens": 1024,
+                "messages": [{ "role": "user", "content": "hi" }],
+                "model": "claude-sonnet-4-20250514",
+                "thinking": null,
+            }),
+        ] {
+            let parsed: CreateMessageParams = serde_json::from_value(body).unwrap();
+            assert!(parsed.thinking.is_none());
+        }
+    }
 
     #[test]
     fn deserializes_claude_code_builtin_tools_without_input_schema() {
