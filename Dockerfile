@@ -46,7 +46,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends upx-ucl \
 COPY --from=planner /build/recipe.json recipe.json
 
 # Build dependencies - this is the caching Docker layer.
-RUN cargo chef cook --release \
+# --bin clewdr matches the build below, so the frontend's native dependencies
+# are not cooked here. Its wasm build happens in the frontend stage.
+RUN cargo chef cook --release --bin clewdr \
     --no-default-features --features embed-resource,xdg \
     --recipe-path recipe.json
 

@@ -236,14 +236,14 @@ jobs:
             export RUSTFLAGS="-C target-feature=+crt-static"
           fi
           if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --release --target ${{ steps.target.outputs.triple }} $FEATURE_ARGS
+            cross build --release -p clewdr --target ${{ steps.target.outputs.triple }} $FEATURE_ARGS
           else
-            cargo build --release --target ${{ steps.target.outputs.triple }} $FEATURE_ARGS
+            cargo build --release -p clewdr --target ${{ steps.target.outputs.triple }} $FEATURE_ARGS
           fi
 
       - name: Build with Android NDK
         if: ${{ matrix.os == 'android' }}
-        run: cargo ndk --target ${{ steps.target.outputs.triple }} build --release $FEATURE_ARGS
+        run: cargo ndk --target ${{ steps.target.outputs.triple }} build --release -p clewdr $FEATURE_ARGS
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
@@ -304,7 +304,7 @@ jobs:
           path: static
 
       - name: Build
-        run: cargo build --release --no-default-features --features embed-resource,portable
+        run: cargo build --release -p clewdr --no-default-features --features embed-resource,portable
 
   release:
     name: Create Release
