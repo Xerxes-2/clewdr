@@ -59,9 +59,7 @@ struct ClaudeSharedState {
 
 impl ClaudeSharedState {
     fn new(cookie_pool: CookiePool) -> Self {
-        Self {
-            cookie_pool,
-        }
+        Self { cookie_pool }
     }
 }
 

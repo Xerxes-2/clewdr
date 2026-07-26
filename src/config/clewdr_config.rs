@@ -43,8 +43,7 @@ pub fn take_global_cookies() -> CookieSnapshot {
 /// Serializes writers to [`CONFIG_PATH`]. Held across the whole
 /// write-flush-rename sequence, so two concurrent savers cannot interleave and
 /// the file always reflects one of them in full.
-static SAVE_LOCK: LazyLock<tokio::sync::Mutex<()>> =
-    LazyLock::new(|| tokio::sync::Mutex::new(()));
+static SAVE_LOCK: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
 
 /// Writes `data` to `tmp`, flushes it to disk, then renames it over `dst`.
 ///
@@ -742,6 +741,10 @@ mod tests {
             .expect("write");
 
         let mode = std::fs::metadata(&dst).expect("stat").permissions().mode();
-        assert_eq!(mode & 0o777, 0o600, "config should be owner read/write only");
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "config should be owner read/write only"
+        );
     }
 }

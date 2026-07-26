@@ -53,10 +53,7 @@ impl ClaudeCodeState {
     ///
     /// # Errors
     /// If the HTTP client cannot be built for the configured proxy.
-    pub fn from_cookie(
-        cookie_pool: CookiePool,
-        cookie: CookieStatus,
-    ) -> Result<Self, ClewdrError> {
+    pub fn from_cookie(cookie_pool: CookiePool, cookie: CookieStatus) -> Result<Self, ClewdrError> {
         let mut state = Self::new(cookie_pool);
         state.cookie = Some(cookie);
         let cookie_value = state

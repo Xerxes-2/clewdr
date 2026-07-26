@@ -208,7 +208,10 @@ impl PoolState {
             self.moka.insert(hash, cookie.clone());
             return Ok(cookie);
         }
-        let cookie = self.valid.pop_front().ok_or(ClewdrError::NoCookieAvailable)?;
+        let cookie = self
+            .valid
+            .pop_front()
+            .ok_or(ClewdrError::NoCookieAvailable)?;
         self.valid.push_back(cookie.clone());
         if let Some(hash) = hash {
             self.moka.insert(hash, cookie.clone());
