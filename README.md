@@ -22,7 +22,39 @@ It runs as one static executable on Linux, macOS, Windows and Android, with a Do
    ```bash
    ./clewdr
    ```
-3. Open `http://127.0.0.1:8484` and enter the admin password shown in the console (or container logs if using Docker).
+3. Open `http://127.0.0.1:8484` and enter the admin password printed to the console.
+
+### With Docker
+
+```bash
+docker run -d --name clewdr \
+  -p 8484:8484 \
+  -v clewdr-data:/etc/clewdr \
+  ghcr.io/xerxes-2/clewdr:latest
+```
+
+Images are published for `linux/amd64` and `linux/arm64`. Use `:latest`, or pin a release with `:v0.13.1`.
+
+Mount something at `/etc/clewdr`, or the generated passwords are lost on every recreate. The config lives there as `clewdr.toml`, with logs under `log/`.
+
+Read the passwords from the container:
+
+```bash
+docker logs clewdr | grep Password
+```
+
+Or set them yourself, which is easier to automate. Any config key can be set as an environment variable by upper-casing it and prefixing `CLEWDR_`; nested keys use a double underscore.
+
+```bash
+docker run -d --name clewdr \
+  -p 8484:8484 \
+  -v clewdr-data:/etc/clewdr \
+  -e CLEWDR_PASSWORD=your-api-password \
+  -e CLEWDR_ADMIN_PASSWORD=your-admin-password \
+  ghcr.io/xerxes-2/clewdr:latest
+```
+
+The image already sets `CLEWDR_IP=0.0.0.0` so the port is reachable, and disables the update checks, since an image cannot replace its own binary.
 
 ## Adding Cookies
 

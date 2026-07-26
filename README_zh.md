@@ -22,7 +22,39 @@ ClewdR 是面向 Claude（Claude.ai 与 Claude Code）的 Rust 代理，用单�
    ```bash
    ./clewdr
    ```
-3. 打开 `http://127.0.0.1:8484`，使用控制台（或 Docker 容器日志）显示的管理员密码登录。
+3. 打开 `http://127.0.0.1:8484`，使用控制台显示的管理员密码登录。
+
+### 使用 Docker
+
+```bash
+docker run -d --name clewdr \
+  -p 8484:8484 \
+  -v clewdr-data:/etc/clewdr \
+  ghcr.io/xerxes-2/clewdr:latest
+```
+
+镜像提供 `linux/amd64` 与 `linux/arm64` 两种架构。可用 `:latest`，或用 `:v0.13.1` 锁定版本。
+
+务必挂载 `/etc/clewdr`，否则每次重建容器都会丢失已生成的密码。配置文件为该目录下的 `clewdr.toml`，日志在 `log/`。
+
+从容器日志读取密码：
+
+```bash
+docker logs clewdr | grep Password
+```
+
+也可以自行指定，更便于自动化。任意配置项都可以通过环境变量设置：键名大写并加 `CLEWDR_` 前缀，嵌套键用双下划线分隔。
+
+```bash
+docker run -d --name clewdr \
+  -p 8484:8484 \
+  -v clewdr-data:/etc/clewdr \
+  -e CLEWDR_PASSWORD=your-api-password \
+  -e CLEWDR_ADMIN_PASSWORD=your-admin-password \
+  ghcr.io/xerxes-2/clewdr:latest
+```
+
+镜像已预设 `CLEWDR_IP=0.0.0.0` 以保证端口可访问，并关闭了更新检查——镜像无法替换自身的二进制文件。
 
 ## 添加 Cookie
 
