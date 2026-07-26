@@ -164,7 +164,7 @@ impl ClaudeCodeState {
             redirect_json["redirect_uri"]
                 .as_str()
                 .ok_or_else(|| ClewdrError::Whatever {
-                    message: format!("No reditect_uri found"),
+                    message: "No reditect_uri found".to_string(),
                     source: None,
                 })?;
         let redirect_url = Url::from_str(redirect_uri).context(UrlSnafu {
