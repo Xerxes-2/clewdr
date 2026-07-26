@@ -184,7 +184,11 @@ impl Display for ClewdrConfig {
         let web_url = Uri::builder()
             .scheme(Scheme::HTTP)
             .authority(authority.to_string())
-            .path_and_query("")
+            // Must be "/", not "": http rejects an empty path-and-query with
+            // InvalidUri(Empty), which surfaces as a panic in the `println!`
+            // that prints this config at startup. Both render as a trailing
+            // slash, so the output is unchanged.
+            .path_and_query("/")
             .build()
             .map_err(|_| std::fmt::Error)?;
         write!(
@@ -426,5 +430,22 @@ impl ClewdrConfig {
                 .ok()
         });
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `main` prints the config with `println!`, and a `Display` impl that
+    /// returns `Err` makes that panic rather than fail gracefully. The URLs are
+    /// built through `http`, which rejects some inputs that look harmless --
+    /// an empty `path_and_query` among them.
+    #[test]
+    fn display_never_fails() {
+        let config = ClewdrConfig::default();
+        let rendered = config.to_string();
+        assert!(rendered.contains("Web Admin Endpoint"));
+        assert!(rendered.contains("Claude Code"));
     }
 }
