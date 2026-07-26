@@ -96,6 +96,42 @@ Cursor:
 }
 ```
 
+## Building from Source
+
+The frontend compiles to WebAssembly and Trunk writes it into `static/`, which
+the server then serves. That directory is gitignored, so the frontend has to be
+built first — `cargo run` on a fresh clone otherwise starts a server with no UI.
+`cargo xtask` handles the ordering:
+
+```bash
+cargo xtask check     # report on the required toolchain pieces
+cargo xtask build     # release build of the frontend and the server
+cargo xtask dev       # both, with frontend hot reload, on :3000
+cargo xtask lint      # clippy over every valid feature combination
+cargo xtask fmt       # format (always via nightly)
+cargo xtask ci        # everything CI runs
+```
+
+No extra tooling is needed to run `cargo xtask` itself. Building the frontend
+additionally needs:
+
+```bash
+rustup target add wasm32-unknown-unknown
+cargo binstall trunk
+```
+
+`cargo xtask dev` serves the app on <http://127.0.0.1:3000> and proxies `/api`
+to the backend on `:8484`. Frontend edits rebuild and reload automatically;
+backend edits need a restart.
+
+Two notes if you build by hand instead:
+
+- Formatting must go through **nightly** (`cargo +nightly fmt`). `.rustfmt.toml`
+  uses nightly-only options that stable silently ignores.
+- `--all-features` does not work. `embed-resource`/`external-resource` and
+  `portable`/`xdg` are mutually exclusive pairs enforced in `build.rs`, so
+  enabling everything fails the build.
+
 ## Resources
 
 - Wiki: <https://github.com/Xerxes-2/clewdr/wiki>  

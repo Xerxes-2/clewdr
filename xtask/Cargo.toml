@@ -1,0 +1,12 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Deliberately dependency-free: xtask runs before anything else is built, so it
+# has to compile in about a second. Argument parsing is a `match` on argv.
+[dependencies]
+
+[lints]
+workspace = true

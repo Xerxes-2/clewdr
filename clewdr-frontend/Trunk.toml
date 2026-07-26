@@ -5,3 +5,9 @@ dist = "../static"
 [serve]
 addresses = ["127.0.0.1"]
 port = 3000
+
+# The app calls the API with relative paths (/api/version and friends), so
+# without this every request would hit Trunk's dev server instead of the
+# backend. `cargo xtask dev` pins the backend to this port.
+[[proxy]]
+backend = "http://127.0.0.1:8484/api"

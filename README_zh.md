@@ -95,6 +95,38 @@ Cursor：
 }
 ```
 
+## 从源码构建
+
+前端会编译成 WebAssembly，由 Trunk 输出到 `static/`，再由后端提供服务。该目录
+在 `.gitignore` 中，因此必须先构建前端 —— 否则新克隆的仓库直接 `cargo run` 起来
+的服务是没有界面的。`cargo xtask` 负责处理这个顺序依赖：
+
+```bash
+cargo xtask check     # 检查所需的工具链组件
+cargo xtask build     # release 构建前端和后端
+cargo xtask dev       # 同时启动，前端热重载，监听 :3000
+cargo xtask lint      # 对所有有效的 feature 组合跑 clippy
+cargo xtask fmt       # 格式化（始终使用 nightly）
+cargo xtask ci        # CI 跑的全部检查
+```
+
+运行 `cargo xtask` 本身不需要安装任何额外工具。构建前端则还需要：
+
+```bash
+rustup target add wasm32-unknown-unknown
+cargo binstall trunk
+```
+
+`cargo xtask dev` 在 <http://127.0.0.1:3000> 提供服务，并把 `/api` 代理到 `:8484`
+上的后端。改前端代码会自动重建并刷新；改后端代码需要重启。
+
+如果你手动构建，有两点需要注意：
+
+- 格式化必须走 **nightly**（`cargo +nightly fmt`）。`.rustfmt.toml` 里用了
+  nightly 专属选项，stable 会静默跳过。
+- `--all-features` 用不了。`embed-resource`/`external-resource` 和
+  `portable`/`xdg` 是两组互斥 feature，由 `build.rs` 强制校验，全开会直接编译失败。
+
 ## 资源
 
 - Wiki：<https://github.com/Xerxes-2/clewdr/wiki>  

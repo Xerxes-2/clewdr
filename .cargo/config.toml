@@ -1,3 +1,6 @@
+[alias]
+xtask = "run --package xtask --release --quiet --"
+
 [target.wasm32-unknown-unknown]
 rustflags = ['--cfg=web_sys_unstable_apis', '--cfg=getrandom_backend="wasm_js"']
 

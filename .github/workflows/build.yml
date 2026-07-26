@@ -22,6 +22,37 @@ permissions:
   contents: write
 
 jobs:
+  check:
+    name: Format, lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # rustfmt comes from nightly because .rustfmt.toml uses nightly-only
+      # options; stable silently ignores them, so a stable-only check would
+      # pass while leaving imports unformatted.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+
+      - name: Install nightly rustfmt
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ env.APT_PACKAGES }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Same entry point developers use, so the two cannot drift apart.
+      - name: Run checks
+        run: cargo xtask ci
+
   build-frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
