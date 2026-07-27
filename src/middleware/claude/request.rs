@@ -5,11 +5,11 @@ use std::{
     vec,
 };
 
+use anthropic_wire::{ContentBlock, CreateMessageParams, Message, MessageContent, Role, Usage};
 use axum::{
     Json,
     extract::{FromRequest, Request},
 };
-use clewdr_anthropic::{ContentBlock, CreateMessageParams, Message, MessageContent, Role, Usage};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -409,7 +409,7 @@ mod tests {
                 Role::User,
                 vec![
                     ContentBlock::Image {
-                        source: clewdr_anthropic::ImageSource::Url {
+                        source: anthropic_wire::ImageSource::Url {
                             url: "https://example.com/a.png".to_string(),
                         },
                         cache_control: None,

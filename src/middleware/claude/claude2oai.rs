@@ -1,5 +1,5 @@
+use anthropic_wire::{ContentBlockDelta, CreateMessageResponse, StopReason, StreamEvent};
 use axum::response::sse::Event;
-use clewdr_anthropic::{ContentBlockDelta, CreateMessageResponse, StopReason, StreamEvent};
 use futures::{Stream, TryStreamExt};
 use serde::Serialize;
 use serde_json::Value;
@@ -100,7 +100,7 @@ pub fn transforms_json(input: &CreateMessageResponse) -> Value {
         .content
         .iter()
         .filter_map(|block| match block {
-            clewdr_anthropic::ContentBlock::Text { text, .. } => Some(text.clone()),
+            anthropic_wire::ContentBlock::Text { text, .. } => Some(text.clone()),
             _ => None,
         })
         .collect::<String>();

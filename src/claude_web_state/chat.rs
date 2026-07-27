@@ -1,4 +1,4 @@
-use clewdr_anthropic::CreateMessageParams;
+use anthropic_wire::CreateMessageParams;
 use colored::Colorize;
 use futures::TryFutureExt;
 use serde_json::json;

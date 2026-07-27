@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Instant};
 
+use anthropic_wire::CreateMessageParams;
 use axum::response::Response;
-use clewdr_anthropic::CreateMessageParams;
 use colored::Colorize;
 use tracing::info;
 

@@ -1,0 +1,33 @@
+[package]
+name = "anthropic-wire"
+version = "0.1.0"
+edition = "2024"
+authors = ["Xerxes-2 <dspxue@gmail.com>", "LeenHawk <leenhawk@leenhawk.com>"]
+license = "AGPL-3.0"
+description = "Serde types for the Anthropic Messages API wire format, written for proxies rather than clients: unknown shapes round-trip unchanged, and every type both serializes and deserializes."
+repository = "https://github.com/Xerxes-2/clewdr"
+readme = "README.md"
+keywords = ["anthropic", "claude", "serde", "proxy", "llm"]
+categories = ["api-bindings", "encoding"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+
+# Only pulled in for the local token estimates, which are clewdr's accounting
+# rather than part of the wire format. Kept behind a feature so the BPE tables
+# are not a cost anyone else pays to depend on these types.
+tiktoken-rs = { version = "0.12", optional = true }
+
+[features]
+default = []
+token-count = ["dep:tiktoken-rs"]
+
+# Without this docs.rs builds with default features, which would leave
+# `count_tokens` undocumented -- the one item whose availability is conditional.
+[package.metadata.docs.rs]
+all-features = true
+
+[lints]
+workspace = true

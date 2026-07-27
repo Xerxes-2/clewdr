@@ -98,6 +98,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "anthropic-wire"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tiktoken-rs",
+ "uuid",
+]
+
+[[package]]
 name = "any_spawner"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -538,6 +548,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 name = "clewdr"
 version = "0.13.2"
 dependencies = [
+ "anthropic-wire",
  "arc-swap",
  "async-stream",
  "async-trait",
@@ -547,7 +558,6 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
- "clewdr-anthropic",
  "clewdr-types",
  "colored",
  "console-subscriber",
@@ -582,16 +592,6 @@ dependencies = [
  "wreq",
  "wreq-util",
  "zip",
-]
-
-[[package]]
-name = "clewdr-anthropic"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "tiktoken-rs",
- "uuid",
 ]
 
 [[package]]

@@ -1,12 +1,12 @@
+use anthropic_wire::{
+    CountMessageTokensResponse, CreateMessageParams, CreateMessageResponse, Message, Role,
+};
 use async_stream::try_stream;
 use axum::{
     BoxError, Json,
     response::{IntoResponse, Sse, sse::Event as SseEvent},
 };
 use bytes::Bytes;
-use clewdr_anthropic::{
-    CountMessageTokensResponse, CreateMessageParams, CreateMessageResponse, Message, Role,
-};
 use eventsource_stream::{EventStream, Eventsource};
 use futures::{Stream, TryStreamExt};
 use serde::Deserialize;
@@ -127,11 +127,11 @@ impl ClaudeWebState {
                     ).await.map(u64::from);
                 }
                 let out = out.unwrap_or_else(|| {
-                    let usage = clewdr_anthropic::Usage {
+                    let usage = anthropic_wire::Usage {
                         input_tokens: u32::try_from(input_tokens).unwrap_or(u32::MAX),
                         output_tokens: 0,
                     };
-                    let resp = clewdr_anthropic::CreateMessageResponse::text(acc.clone(), String::default(), usage);
+                    let resp = anthropic_wire::CreateMessageResponse::text(acc.clone(), String::default(), usage);
                     u64::from(resp.count_tokens())
                 });
                 if let Some(mut c) = cookie.clone() {

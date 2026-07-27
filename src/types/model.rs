@@ -25,7 +25,7 @@
 //! rewrites the request to the nearest shape the target model accepts instead
 //! of forwarding a request that is guaranteed to fail.
 
-use clewdr_anthropic::{CreateMessageParams, OutputEffort, Thinking};
+use anthropic_wire::{CreateMessageParams, OutputEffort, Thinking};
 
 /// Budget used when a request has to be expressed in legacy extended-thinking
 /// terms.
@@ -331,7 +331,7 @@ pub fn split_thinking_suffix(model: &str) -> (&str, bool) {
 
 #[cfg(test)]
 mod tests {
-    use clewdr_anthropic::{Message, OutputConfig, Role};
+    use anthropic_wire::{Message, OutputConfig, Role};
 
     use super::*;
 

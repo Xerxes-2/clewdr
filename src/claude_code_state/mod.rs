@@ -2,7 +2,7 @@ mod chat;
 mod exchange;
 pub mod oauth;
 mod organization;
-use clewdr_anthropic::Usage;
+use anthropic_wire::Usage;
 use http::{
     HeaderValue, Method,
     header::{COOKIE, ORIGIN, REFERER, USER_AGENT},

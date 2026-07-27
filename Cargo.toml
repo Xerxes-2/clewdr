@@ -4,13 +4,17 @@ version = "0.13.2"
 edition = "2024"
 authors = ["Xerxes-2 <dspxue@gmail.com>", "LeenHawk <leenhawk@leenhawk.com>"]
 license = "AGPL-3.0"
+# The binary is not a library anyone installs from the registry, and an
+# accidental `cargo publish` from the workspace root would be hard to undo.
+# anthropic-wire is the only member left publishable.
+publish = false
 
 [workspace]
-members = [".", "clewdr-anthropic", "clewdr-types", "clewdr-frontend", "xtask"]
+members = [".", "anthropic-wire", "clewdr-types", "clewdr-frontend", "xtask"]
 # xtask is a build tool, not part of the product: keeping it out of the default
 # set means a bare `cargo build` still builds only what ships. `--workspace`
 # still picks it up, so it is linted and formatted along with everything else.
-default-members = [".", "clewdr-anthropic", "clewdr-types", "clewdr-frontend"]
+default-members = [".", "anthropic-wire", "clewdr-types", "clewdr-frontend"]
 
 # Lint policy for every member. Deliberately has no `allow` entries: where a
 # pedantic lint genuinely does not apply, the exception goes at the site with a
@@ -37,7 +41,7 @@ base64 = "0.22"
 bytes = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
-clewdr-anthropic = { path = "clewdr-anthropic", features = ["token-count"] }
+anthropic-wire = { path = "anthropic-wire", features = ["token-count"] }
 clewdr-types = { path = "clewdr-types", features = ["display"] }
 colored = "3"
 console-subscriber = { version = "0.5", optional = true }
@@ -64,7 +68,7 @@ snafu = { version = "0.9", features = ["futures", "rust_1_81"] }
 strum = { version = "0.28", features = ["derive"] }
 tempfile = { version = "3", optional = true }
 # Still needed directly for the OpenAI-side token estimate; the Anthropic-side
-# one lives behind clewdr-anthropic's `token-count` feature and shares this
+# one lives behind anthropic-wire's `token-count` feature and shares this
 # copy.
 tiktoken-rs = "0.12"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }

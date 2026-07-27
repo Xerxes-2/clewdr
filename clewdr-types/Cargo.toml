@@ -2,6 +2,9 @@
 name = "clewdr-types"
 version = "0.1.0"
 edition = "2024"
+# Internal to clewdr: shared with the frontend over a path dependency, with no
+# meaning outside this workspace.
+publish = false
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

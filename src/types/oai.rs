@@ -1,4 +1,4 @@
-use clewdr_anthropic::{
+use anthropic_wire::{
     ContentBlock, CreateMessageParams as ClaudeCreateMessageParams, ImageSource, Message,
     MessageContent, Metadata, OutputConfig, OutputEffort, Role, Thinking, Tool, ToolChoice,
     default_max_tokens,

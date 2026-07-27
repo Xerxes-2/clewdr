@@ -3,8 +3,8 @@ mod request;
 mod response;
 mod stop_sequences;
 
+use anthropic_wire::Usage;
 pub(crate) use claude2oai::*;
-use clewdr_anthropic::Usage;
 pub use request::*;
 pub use response::*;
 pub use stop_sequences::*;

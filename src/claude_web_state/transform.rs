@@ -1,9 +1,9 @@
 use std::{fmt::Write, mem};
 
-use base64::{Engine, prelude::BASE64_STANDARD};
-use clewdr_anthropic::{
+use anthropic_wire::{
     ContentBlock, CreateMessageParams, ImageSource, Message, MessageContent, Role,
 };
+use base64::{Engine, prelude::BASE64_STANDARD};
 use futures::{StreamExt, stream};
 use serde_json::Value;
 use tracing::warn;

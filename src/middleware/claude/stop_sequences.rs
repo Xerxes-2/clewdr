@@ -1,6 +1,6 @@
+use anthropic_wire::{ContentBlockDelta, MessageDeltaContent, StopReason, StreamEvent};
 use async_stream::try_stream;
 use axum::response::{IntoResponse, Response, Sse, sse::Event};
-use clewdr_anthropic::{ContentBlockDelta, MessageDeltaContent, StopReason, StreamEvent};
 use eventsource_stream::{Event as SourceEvent, Eventsource};
 use futures::Stream;
 

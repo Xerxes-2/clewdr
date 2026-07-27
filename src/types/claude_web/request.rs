@@ -1,4 +1,4 @@
-use clewdr_anthropic::ImageSource;
+use anthropic_wire::ImageSource;
 use serde::{Deserialize, Serialize};
 
 /// Claude.ai attachment

@@ -1,9 +1,9 @@
+use anthropic_wire::{CreateMessageResponse, StreamEvent};
 use axum::{
     Json,
     body::{self, Body},
     response::{IntoResponse, Response, Sse},
 };
-use clewdr_anthropic::{CreateMessageResponse, StreamEvent};
 use eventsource_stream::Eventsource;
 use futures::TryStreamExt;
 use http::header::CONTENT_TYPE;
