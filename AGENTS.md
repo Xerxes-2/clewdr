@@ -3,8 +3,31 @@
 ## Version control
 
 This repo is jj, colocated with git. Both `.jj/` and `.git/` exist, so git
-tooling can read the state, but every mutation goes through jj — a stray
-`git commit` or `git checkout` desynchronises the operation log.
+tooling can read the state, but **no git command may write.** Reading is fine:
+`git log`, `git status`, `git diff`, `git show`, `git blame`. Everything else
+is jj's:
+
+| not this            | this                                  |
+| ------------------- | ------------------------------------- |
+| `git mv a b`        | `mv a b`                              |
+| `git rm f`          | `rm f`                                |
+| `git add`           | nothing — jj snapshots automatically  |
+| `git commit`        | `jj commit -m "..."`                  |
+| `git checkout`      | `jj new` / `jj edit`                  |
+| `git reset`         | `jj undo`                             |
+| `git restore f`     | `jj restore f`                        |
+| `git stash`         | `jj new` — the working copy is a commit |
+| `git rebase`        | `jj rebase`                           |
+| `git pull` / `push` | `jj git fetch` / `jj git push`        |
+
+The trap is not `git commit`; that one announces itself as version control.
+It is `git mv` and `git rm` — operations that feel like touching files rather
+than touching history, and so never prompt the thought "check how this repo
+does VCS". Those are the ones that actually slip through. Note what the first
+two rows are saying: there is no `jj mv`, because jj snapshots the working copy
+on every command and detects renames by content afterwards. Plain `mv` is not a
+workaround, it is the whole procedure, and it is shorter than the git spelling
+you were reaching for.
 
 End a unit of work with a single command:
 
