@@ -3,16 +3,14 @@ use axum::{
     body::{self, Body},
     response::{IntoResponse, Response, Sse},
 };
+use clewdr_anthropic::{CreateMessageResponse, StreamEvent};
 use eventsource_stream::Eventsource;
 use futures::TryStreamExt;
 use http::header::CONTENT_TYPE;
 use tracing::warn;
 
 use super::{ClaudeApiFormat, transform_stream};
-use crate::{
-    middleware::claude::{ClaudeContext, transforms_json},
-    types::claude::{CreateMessageResponse, StreamEvent},
-};
+use crate::middleware::claude::{ClaudeContext, transforms_json};
 
 async fn parse_response<T>(resp: Response) -> Result<T, Response>
 where

@@ -1,12 +1,10 @@
 use async_stream::try_stream;
 use axum::response::{IntoResponse, Response, Sse, sse::Event};
+use clewdr_anthropic::{ContentBlockDelta, MessageDeltaContent, StopReason, StreamEvent};
 use eventsource_stream::{Event as SourceEvent, Eventsource};
 use futures::Stream;
 
-use crate::{
-    middleware::claude::ClaudeContext,
-    types::claude::{ContentBlockDelta, MessageDeltaContent, StopReason, StreamEvent},
-};
+use crate::middleware::claude::ClaudeContext;
 
 type EventResult<T> = Result<T, eventsource_stream::EventStreamError<axum::Error>>;
 

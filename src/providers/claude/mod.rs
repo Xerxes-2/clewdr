@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Instant};
 
 use axum::response::Response;
+use clewdr_anthropic::CreateMessageParams;
 use colored::Colorize;
 use tracing::info;
 
@@ -11,7 +12,6 @@ use crate::{
     error::ClewdrError,
     middleware::claude::{ClaudeApiFormat, ClaudeContext},
     services::cookie_pool::CookiePool,
-    types::claude::CreateMessageParams,
     utils::{enabled, print_out_json},
 };
 

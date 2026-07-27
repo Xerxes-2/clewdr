@@ -1,6 +1,7 @@
 use std::sync::LazyLock;
 
 use axum::http::{HeaderValue, header::COOKIE};
+use clewdr_anthropic::{CreateMessageParams, Usage};
 use serde_json::Value;
 use snafu::ResultExt;
 use tracing::warn;
@@ -15,7 +16,6 @@ use crate::{
     error::{ClewdrError, WreqSnafu},
     middleware::claude::ClaudeApiFormat,
     services::cookie_pool::CookiePool,
-    types::claude::{CreateMessageParams, Usage},
     utils::build_http_client,
 };
 

@@ -1,6 +1,5 @@
+use clewdr_anthropic::ImageSource;
 use serde::{Deserialize, Serialize};
-
-use crate::types::claude::ImageSource;
 
 /// Claude.ai attachment
 #[derive(Deserialize, Serialize, Debug)]

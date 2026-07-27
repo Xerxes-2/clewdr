@@ -4,6 +4,9 @@ use axum::{
     response::{IntoResponse, Sse, sse::Event as SseEvent},
 };
 use bytes::Bytes;
+use clewdr_anthropic::{
+    CountMessageTokensResponse, CreateMessageParams, CreateMessageResponse, Message, Role,
+};
 use eventsource_stream::{EventStream, Eventsource};
 use futures::{Stream, TryStreamExt};
 use serde::Deserialize;
@@ -14,10 +17,6 @@ use crate::{
     claude_code_state::ClaudeCodeState,
     claude_web_state::ClaudeWebState,
     error::{CheckClaudeErr, ClewdrError},
-    types::claude::{
-        ContentBlock, CountMessageTokensResponse, CreateMessageParams, CreateMessageResponse,
-        Message, Role,
-    },
     utils::print_out_text,
 };
 
@@ -48,22 +47,6 @@ pub async fn merge_sse(
         })
         .try_collect()
         .await?)
-}
-
-impl<S> From<S> for Message
-where
-    S: Into<String>,
-{
-    /// Converts a string into a Message with assistant role
-    ///
-    /// # Arguments
-    /// * `str` - The text content for the message
-    ///
-    /// # Returns
-    /// * `Message` - A message with assistant role and text content
-    fn from(str: S) -> Self {
-        Message::new_blocks(Role::Assistant, vec![ContentBlock::text(str.into())])
-    }
 }
 
 impl ClaudeWebState {
@@ -144,11 +127,11 @@ impl ClaudeWebState {
                     ).await.map(u64::from);
                 }
                 let out = out.unwrap_or_else(|| {
-                    let usage = crate::types::claude::Usage {
+                    let usage = clewdr_anthropic::Usage {
                         input_tokens: u32::try_from(input_tokens).unwrap_or(u32::MAX),
                         output_tokens: 0,
                     };
-                    let resp = crate::types::claude::CreateMessageResponse::text(acc.clone(), String::default(), usage);
+                    let resp = clewdr_anthropic::CreateMessageResponse::text(acc.clone(), String::default(), usage);
                     u64::from(resp.count_tokens())
                 });
                 if let Some(mut c) = cookie.clone() {

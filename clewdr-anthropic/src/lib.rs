@@ -1,5 +1,23 @@
+//! Anthropic Messages API wire format.
+//!
+//! These types exist to sit in the middle of a conversation between someone
+//! else's client and Anthropic, which makes them stricter about round-tripping
+//! than a client SDK needs to be:
+//!
+//! - Shapes we do not recognise survive. [`ContentBlock::Unknown`],
+//!   [`Tool::Raw`] and the `extra` maps on [`CustomTool`]/[`KnownTool`] keep
+//!   unmodelled JSON so a request can be forwarded unchanged.
+//! - Fields that are only hints degrade instead of failing. An unparseable
+//!   `thinking` yields `None` rather than rejecting the whole request.
+//! - Every type is both [`Serialize`] and [`Deserialize`], because a proxy
+//!   both reads and writes each side of the exchange.
+//!
+//! Nothing here knows about accounts, transport or routing; that all lives in
+//! clewdr proper.
+
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
+#[cfg(feature = "token-count")]
 use tiktoken_rs::o200k_base;
 
 /// Deserialize a field, falling back to `None` when it does not parse.
@@ -24,7 +42,8 @@ pub struct RequiredMessageParams {
     pub max_tokens: u32,
 }
 
-pub(super) fn default_max_tokens() -> u32 {
+#[must_use]
+pub fn default_max_tokens() -> u32 {
     8192
 }
 
@@ -38,8 +57,9 @@ pub struct OutputConfig {
 
 /// Effort rungs, ordered from cheapest to most capable.
 ///
-/// `xhigh` sits between `high` and `max` and only exists from Claude 4.7 on;
-/// see [`crate::types::model`] for which models accept which rungs.
+/// `xhigh` sits between `high` and `max` and only exists from Claude 4.7 on.
+/// Which models accept which rungs is a routing concern, so it is not decided
+/// here.
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputEffort {
@@ -139,6 +159,7 @@ pub struct CreateMessageParams {
     pub n: Option<u32>,
 }
 
+#[cfg(feature = "token-count")]
 impl CreateMessageParams {
     /// Estimate the prompt's token count with the `o200k_base` encoding.
     ///
@@ -512,10 +533,14 @@ impl ImageSource {
         }
     }
 
-    /// Parse a data URI into an `ImageSource`
-    /// Supports format: data:<`media_type`>[;params];base64,<data>
-    /// e.g., data:image/png;base64,iVBORw0KGgo...
-    /// e.g., data:image/png;name=foo;base64,iVBORw0KGgo...
+    /// Parse a data URI into an `ImageSource`.
+    ///
+    /// Accepts `data:<media_type>[;params];base64,<data>`, for example:
+    ///
+    /// ```text
+    /// data:image/png;base64,iVBORw0KGgo...
+    /// data:image/png;name=foo;base64,iVBORw0KGgo...
+    /// ```
     #[must_use]
     pub fn from_data_url(url: &str) -> Option<Self> {
         let url = url.trim();
@@ -877,6 +902,7 @@ pub struct CreateMessageResponse {
     pub usage: Option<Usage>,
 }
 
+#[cfg(feature = "token-count")]
 impl CreateMessageResponse {
     /// Estimate the response's token count with the `o200k_base` encoding.
     ///

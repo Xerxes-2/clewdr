@@ -1,12 +1,11 @@
+use clewdr_anthropic::{
+    ContentBlock, CreateMessageParams as ClaudeCreateMessageParams, ImageSource, Message,
+    MessageContent, Metadata, OutputConfig, OutputEffort, Role, Thinking, Tool, ToolChoice,
+    default_max_tokens,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tiktoken_rs::o200k_base;
-
-use super::claude::{
-    ContentBlock, CreateMessageParams as ClaudeCreateMessageParams, Metadata, OutputConfig,
-    OutputEffort, Role, Thinking, Tool, ToolChoice, default_max_tokens,
-};
-use crate::types::claude::{ImageSource, Message, MessageContent};
 
 /// Convert OAI `ImageUrl` to Claude Image format
 fn normalize_block(block: ContentBlock) -> Option<ContentBlock> {

@@ -1,9 +1,8 @@
 use axum::response::sse::Event;
+use clewdr_anthropic::{ContentBlockDelta, CreateMessageResponse, StopReason, StreamEvent};
 use futures::{Stream, TryStreamExt};
 use serde::Serialize;
 use serde_json::Value;
-
-use crate::types::claude::{ContentBlockDelta, CreateMessageResponse, StopReason, StreamEvent};
 
 /// Represents the data structure for streaming events in OpenAI API format
 /// Contains a choices array with deltas of content
@@ -101,7 +100,7 @@ pub fn transforms_json(input: &CreateMessageResponse) -> Value {
         .content
         .iter()
         .filter_map(|block| match block {
-            crate::types::claude::ContentBlock::Text { text, .. } => Some(text.clone()),
+            clewdr_anthropic::ContentBlock::Text { text, .. } => Some(text.clone()),
             _ => None,
         })
         .collect::<String>();

@@ -1,3 +1,4 @@
+use clewdr_anthropic::CreateMessageParams;
 use colored::Colorize;
 use futures::TryFutureExt;
 use serde_json::json;
@@ -9,7 +10,6 @@ use super::ClaudeWebState;
 use crate::{
     config::CLEWDR_CONFIG,
     error::{CheckClaudeErr, ClewdrError, WreqSnafu},
-    types::claude::CreateMessageParams,
     utils::print_out_json,
 };
 

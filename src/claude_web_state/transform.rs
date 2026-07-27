@@ -1,6 +1,9 @@
 use std::{fmt::Write, mem};
 
 use base64::{Engine, prelude::BASE64_STANDARD};
+use clewdr_anthropic::{
+    ContentBlock, CreateMessageParams, ImageSource, Message, MessageContent, Role,
+};
 use futures::{StreamExt, stream};
 use serde_json::Value;
 use tracing::warn;
@@ -9,10 +12,7 @@ use wreq::multipart::{Form, Part};
 use crate::{
     claude_web_state::ClaudeWebState,
     config::CLEWDR_CONFIG,
-    types::{
-        claude::{ContentBlock, CreateMessageParams, ImageSource, Message, MessageContent, Role},
-        claude_web::request::{Attachment, Tool, WebRequestBody},
-    },
+    types::claude_web::request::{Attachment, Tool, WebRequestBody},
     utils::{TIME_ZONE, print_out_text},
 };
 

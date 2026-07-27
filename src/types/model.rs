@@ -25,7 +25,7 @@
 //! rewrites the request to the nearest shape the target model accepts instead
 //! of forwarding a request that is guaranteed to fail.
 
-use crate::types::claude::{CreateMessageParams, OutputEffort, Thinking};
+use clewdr_anthropic::{CreateMessageParams, OutputEffort, Thinking};
 
 /// Budget used when a request has to be expressed in legacy extended-thinking
 /// terms.
@@ -331,8 +331,9 @@ pub fn split_thinking_suffix(model: &str) -> (&str, bool) {
 
 #[cfg(test)]
 mod tests {
+    use clewdr_anthropic::{Message, OutputConfig, Role};
+
     use super::*;
-    use crate::types::claude::{Message, OutputConfig, Role};
 
     fn params(model: &str) -> CreateMessageParams {
         CreateMessageParams {

@@ -2,6 +2,7 @@ use axum::{
     Json,
     response::{IntoResponse, Sse, sse::Event as SseEvent},
 };
+use clewdr_anthropic::{CountMessageTokensResponse, CreateMessageParams};
 use colored::Colorize;
 use eventsource_stream::Eventsource;
 use futures::TryStreamExt;
@@ -15,7 +16,6 @@ use crate::{
     config::{CLAUDE_CODE_USER_AGENT, CLEWDR_CONFIG, ModelFamily},
     error::{CheckClaudeErr, ClewdrError, WreqSnafu},
     services::cookie_pool::CookiePool,
-    types::claude::{CountMessageTokensResponse, CreateMessageParams},
 };
 
 pub(super) const CLAUDE_BETA_BASE: &str = "oauth-2025-04-20";
@@ -373,14 +373,12 @@ impl ClaudeCodeState {
         let osum = output_sum.clone();
         let stream = response.bytes_stream().eventsource().map_ok(move |event| {
             // accumulate output tokens from message_delta usage if present
-            if let Ok(parsed) =
-                serde_json::from_str::<crate::types::claude::StreamEvent>(&event.data)
-            {
+            if let Ok(parsed) = serde_json::from_str::<clewdr_anthropic::StreamEvent>(&event.data) {
                 match parsed {
-                    crate::types::claude::StreamEvent::MessageDelta { usage: Some(u), .. } => {
+                    clewdr_anthropic::StreamEvent::MessageDelta { usage: Some(u), .. } => {
                         osum.fetch_add(u64::from(u.output_tokens), Ordering::Relaxed);
                     }
-                    crate::types::claude::StreamEvent::MessageStop => {
+                    clewdr_anthropic::StreamEvent::MessageStop => {
                         // on stream completion, persist totals asynchronously
                         if let (Some(cookie), handle) = (cookie.clone(), handle.clone()) {
                             let total_out = osum.load(Ordering::Relaxed);
@@ -455,8 +453,7 @@ impl ClaudeCodeState {
         }
 
         // Fallback: estimate output tokens from the Claude response content
-        if let Ok(parsed) =
-            serde_json::from_slice::<crate::types::claude::CreateMessageResponse>(bytes)
+        if let Ok(parsed) = serde_json::from_slice::<clewdr_anthropic::CreateMessageResponse>(bytes)
         {
             let output_tokens = u64::from(parsed.count_tokens());
             // Input tokens already computed earlier and present in self.usage; only estimate output here

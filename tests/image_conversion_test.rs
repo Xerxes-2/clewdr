@@ -12,12 +12,10 @@
 
 #[cfg(test)]
 mod tests {
-    use clewdr::types::{
-        claude::{
-            ContentBlock, CreateMessageParams as ClaudeCreateMessageParams, ImageSource, ImageUrl,
-            Message, MessageContent, Role,
-        },
-        oai::CreateMessageParams as OaiCreateMessageParams,
+    use clewdr::types::oai::CreateMessageParams as OaiCreateMessageParams;
+    use clewdr_anthropic::{
+        ContentBlock, CreateMessageParams as ClaudeCreateMessageParams, ImageSource, ImageUrl,
+        Message, MessageContent, Role,
     };
 
     #[test]

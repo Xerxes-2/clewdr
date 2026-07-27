@@ -547,6 +547,7 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
+ "clewdr-anthropic",
  "clewdr-types",
  "colored",
  "console-subscriber",
@@ -581,6 +582,16 @@ dependencies = [
  "wreq",
  "wreq-util",
  "zip",
+]
+
+[[package]]
+name = "clewdr-anthropic"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tiktoken-rs",
+ "uuid",
 ]
 
 [[package]]

@@ -9,6 +9,7 @@ use axum::{
     Json,
     extract::{FromRequest, Request},
 };
+use clewdr_anthropic::{ContentBlock, CreateMessageParams, Message, MessageContent, Role, Usage};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -17,7 +18,6 @@ use crate::{
     error::ClewdrError,
     middleware::claude::{ClaudeApiFormat, ClaudeContext},
     types::{
-        claude::{ContentBlock, CreateMessageParams, Message, MessageContent, Role, Usage},
         model::{ModelTraits, split_thinking_suffix},
         oai::CreateMessageParams as OaiCreateMessageParams,
     },
@@ -409,7 +409,7 @@ mod tests {
                 Role::User,
                 vec![
                     ContentBlock::Image {
-                        source: crate::types::claude::ImageSource::Url {
+                        source: clewdr_anthropic::ImageSource::Url {
                             url: "https://example.com/a.png".to_string(),
                         },
                         cache_control: None,
