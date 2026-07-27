@@ -84,8 +84,13 @@ jobs:
 
       - uses: cargo-bins/cargo-binstall@main
 
+      # --locked matters for the source fallback, which binstall takes silently
+      # whenever the prebuilt download times out. Without it `cargo install`
+      # re-resolves from scratch and picks up whatever the ecosystem published
+      # since the release, which is how a green build turns red without anyone
+      # touching this repo.
       - name: Install trunk
-        run: cargo binstall trunk --no-confirm
+        run: cargo binstall trunk --no-confirm --locked
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -199,12 +204,12 @@ jobs:
       - name: Install cross
         if: ${{ matrix.cross }}
         run: |
-          cargo binstall cross --no-confirm
+          cargo binstall cross --no-confirm --locked
           echo "CROSS_NO_DEFAULT_TOOLCHAIN=1" >> $GITHUB_ENV
 
       - name: Install cargo-ndk
         if: ${{ matrix.os == 'android' }}
-        run: cargo binstall cargo-ndk --no-confirm
+        run: cargo binstall cargo-ndk --no-confirm --locked
 
       - uses: Swatinem/rust-cache@v2
         with:

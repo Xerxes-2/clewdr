@@ -15,7 +15,10 @@ COPY clewdr-frontend/ clewdr-frontend/
 COPY anthropic-wire/ anthropic-wire/
 COPY xtask/ xtask/
 COPY .cargo/ .cargo/
-RUN cargo binstall trunk --no-confirm && \
+# --locked so the source fallback, which binstall takes silently when the
+# prebuilt download fails, builds trunk's own locked dependencies instead of
+# re-resolving to whatever is newest.
+RUN cargo binstall trunk --no-confirm --locked && \
     cd clewdr-frontend && trunk build --release
 
 FROM docker.io/lukemathwalker/cargo-chef:latest-rust-trixie AS chef
