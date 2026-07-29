@@ -139,6 +139,16 @@ impl From<CreateMessageParams> for ClaudeCreateMessageParams {
             output_format: None,
             service_tier: None,
             n: params.n,
+            // Anthropic-only, with nothing on the OpenAI side to map from. The
+            // literal is left exhaustive on purpose: a new field upstream
+            // should fail this build so the mapping gets considered, rather
+            // than defaulting to None unnoticed.
+            cache_control: None,
+            inference_geo: None,
+            speed: None,
+            diagnostics: None,
+            fallbacks: None,
+            fallback_credit_token: None,
         }
     }
 }
