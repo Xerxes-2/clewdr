@@ -9,6 +9,10 @@ repository = "https://github.com/Xerxes-2/clewdr"
 readme = "README.md"
 keywords = ["anthropic", "claude", "serde", "proxy", "llm"]
 categories = ["api-bindings", "encoding"]
+# Unpublished: gproxy-protocol already occupies this niche with wider coverage
+# under MIT. The metadata above is kept because it describes the crate
+# accurately, not because this is going back to the registry.
+publish = false
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
