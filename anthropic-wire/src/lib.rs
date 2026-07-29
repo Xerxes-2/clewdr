@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
 #[cfg(feature = "token-count")]
-use tiktoken_rs::o200k_base;
+use tiktoken_rs::o200k_base_singleton;
 
 /// Deserialize `Option<Option<T>>` so that an absent field and an explicit
 /// `null` stay distinguishable.
@@ -299,12 +299,12 @@ impl CreateMessageParams {
     /// This is an approximation: Anthropic does not publish its tokenizer, so
     /// the count only informs local accounting.
     ///
-    /// # Panics
-    /// If the bundled `o200k_base` encoding fails to load, which would mean
-    /// the tiktoken data compiled into the binary is corrupt.
+    /// The encoder is a process-wide singleton. Building one takes ~60ms
+    /// against ~0.04ms to encode a typical message, so constructing it per
+    /// call put the entire cost in the wrong place.
     #[must_use]
     pub fn count_tokens(&self) -> u32 {
-        let bpe = o200k_base().expect("Failed to get encoding");
+        let bpe = o200k_base_singleton();
         let systems = match self.system {
             Some(Value::String(ref s)) => s.clone(),
             Some(Value::Array(ref arr)) => arr.iter().filter_map(|v| v["text"].as_str()).collect(),
@@ -1042,12 +1042,12 @@ impl CreateMessageResponse {
     /// This is an approximation: Anthropic does not publish its tokenizer, so
     /// the count only informs local accounting.
     ///
-    /// # Panics
-    /// If the bundled `o200k_base` encoding fails to load, which would mean
-    /// the tiktoken data compiled into the binary is corrupt.
+    /// The encoder is a process-wide singleton. Building one takes ~60ms
+    /// against ~0.04ms to encode a typical message, so constructing it per
+    /// call put the entire cost in the wrong place.
     #[must_use]
     pub fn count_tokens(&self) -> u32 {
-        let bpe = o200k_base().expect("Failed to get encoding");
+        let bpe = o200k_base_singleton();
         let content = self
             .content
             .iter()
