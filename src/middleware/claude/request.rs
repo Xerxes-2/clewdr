@@ -311,6 +311,8 @@ pub struct ClaudeCodeContext {
     pub(super) api_format: ClaudeApiFormat,
     /// The hash of the system messages for caching purposes
     pub(super) system_prompt_hash: Option<u64>,
+    /// Client-supplied Anthropic beta tokens to forward upstream
+    pub(super) anthropic_beta: Option<String>,
     // Usage information for the request
     pub(super) usage: Usage,
 }
@@ -324,6 +326,11 @@ where
     type Rejection = ClewdrError;
 
     async fn from_request(req: Request, _: &S) -> Result<Self, Self::Rejection> {
+        let anthropic_beta = req
+            .headers()
+            .get("anthropic-beta")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
         let NormalizeRequest(mut body, format) = NormalizeRequest::from_request(req, &()).await?;
 
         // Check for test messages and respond appropriately
@@ -378,6 +385,7 @@ where
             stream,
             api_format: format,
             system_prompt_hash,
+            anthropic_beta,
             usage: Usage {
                 input_tokens,
                 output_tokens: 0, // Placeholder for output token count
