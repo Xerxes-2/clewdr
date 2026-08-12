@@ -2,28 +2,22 @@
 
 ## Fixes
 
-- The cookie status page failed to load, showing `invalid type: integer ... expected a string` and a total of 0 cookies. Reset boundaries are held as timestamps internally, and were sent that way whenever the live usage lookup did not answer, where the interface expects the written-out form. The page reads the whole listing as one piece, so a single cookie the lookup could not reach hid every other cookie with it. Boundaries that are already known are now shown even when the lookup fails, instead of the field going blank.
+- Beta features a client asked for were dropped on the way through. ClewdR sent its own `anthropic-beta` header and discarded whatever the client had set, so anything gated behind a beta flag the client requested — context management among them — never reached Anthropic. The client's flags are now merged with ClewdR's own and passed on, without duplicates.
 
-- A non-ASCII admin password left the web interface blank. The saved token is shortened for display by keeping a few characters at each end, but the length it was checked against was measured in bytes, so a password of four Chinese characters looked long enough to shorten and the cut landed inside a character. The page went down as it loaded, and because the token is read back from browser storage, reloading did not help. Shortening now counts characters throughout.
+- Streamed responses failed to parse when citations were enabled. The list of delta types a response could contain was missing `citations_delta` and `compaction_delta`, both of which the API sends today, and had no fallback for anything unrecognised. The failure landed mid-response, after the reply had started arriving, where nothing already sent could be taken back. Both are now understood, and a delta type ClewdR does not know is passed through untouched rather than ending the response.
 
-- The configuration file could be truncated when two saves overlapped. It was rewritten in place, so anything reading it — including ClewdR's own startup — could catch it after it had been emptied and before it was filled again. Saves now write a temporary file and rename it into place, which cannot be observed half-finished, and the file is created with owner-only permissions rather than having them applied after the contents are already on disk.
+- Six request fields were accepted and then silently dropped: `cache_control`, `inference_geo`, `speed`, `diagnostics`, `fallbacks` and `fallback_credit_token`. A client setting any of them got a reply that ignored it, with nothing to indicate why. They are forwarded now, checked field by field against Anthropic's own SDK.
 
-- A cookie whose cooldown had expired was returned to rotation without being recorded, so restarting in that window listed it as exhausted until the next request moved it back.
+- The cookie listing sent OAuth access and refresh tokens to the browser. The tokens were serialized along with the rest of each cookie's status, and the page discarded them on arrival — so they crossed the wire, sat in browser buffers and any proxy log on the path, and were never read. The endpoint requires the admin password, so this was not a way in for anyone unauthenticated; what it changed is how much an intercepted admin session gives up. They are removed before the response is built.
 
-## Docker
+## Performance
 
-- The image builds against wreq 6.0.0-rc.29 again. 0.13.1 had to hold it at rc.28, because rc.29 changed its TLS backend to one that carries BoringSSL as C++ and the image had no C++ compiler for musl. What was wanted then was a musl toolchain that CI could reach; it turned out to already exist as a published image, so the build now starts from one that carries a complete musl GCC.
-
-- Image builds reuse cached layers between runs. Caching had been switched off, so every build recompiled all dependencies, BoringSSL included.
-
-- Pull requests build the image for both architectures but no longer publish it. Builds from forks failed at the registry login, which cannot succeed for a fork, and every other pull request was pushing an image nobody asked for.
+- Every request spent about 60ms building a tokenizer it then used for 0.04ms of work. Token counting rebuilt the 200,000-entry encoding table from scratch on each call rather than keeping it, and both request and response counting did this, so a request that counted input and output tokens paid it twice. The table is now built once per process. Counts are unchanged.
 
 ## Development
 
-- Replaced the cookie actor with a mutex-guarded pool, removing the `ractor` dependency. None of the actor's handlers ever awaited, so the framework was supplying serialized access to shared state and nothing more.
+- The Anthropic request and response types live in their own crate, `anthropic-wire`, instead of sitting inside the server. Nothing about the protocol depends on ClewdR, and separating them means the compiler enforces that. It also surfaced a conversion broad enough to turn any string into an assistant message, which had gone unnoticed while everything shared one crate.
 
-- The pool now owns the cookies outright. They used to be copied back into the global configuration on every change, which is why saving settings had to carry them across by hand to avoid wiping them.
+- Eight direct dependencies are gone: `oauth2`, `figment`, `moka`, `serde_with`, `itertools`, `trie-rs`, `passwords` and `const_format`. Each was doing something small enough to write directly — two OAuth grants, a config merge, two caches, three serde adapters, one message fold, a stop-sequence match, a password generator, one string concatenation. The lockfile is down from 453 packages to 389.
 
-- Dropped `struct_iterable`, `rustls` and `aws-lc-rs`, none of which were used. The latter two were left behind by the removal of Gemini support; HTTP goes through wreq, which brings its own TLS.
-
-- Pull requests no longer cross-compile the full release matrix. Nine binaries were built, uploaded and discarded a day later on every pull request. A single host build now covers the release profile and the embedded frontend, and the matrix runs on tags, where the artifacts are actually used.
+- Release builds no longer compile the frontend for the host on top of the target build, and CI installs its tools with `--locked`. A prebuilt binary download that timed out was falling back to building from source with freshly resolved dependencies, which picked up an incompatible pair and failed the frontend job on a commit that had not touched the frontend.
