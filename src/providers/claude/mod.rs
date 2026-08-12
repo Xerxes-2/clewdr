@@ -166,6 +166,7 @@ impl LLMProvider for ClaudeCodeProvider {
         state.api_format = request.context.api_format();
         state.stream = request.context.is_stream();
         state.system_prompt_hash = request.context.system_prompt_hash();
+        state.anthropic_beta = request.context.anthropic_beta().map(str::to_owned);
         state.usage = request.context.usage().to_owned();
         let ClaudeInvocation {
             params,

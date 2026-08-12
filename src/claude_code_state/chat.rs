@@ -22,6 +22,22 @@ pub(super) const CLAUDE_BETA_BASE: &str = "oauth-2025-04-20";
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 pub(super) const CLAUDE_API_VERSION: &str = "2023-06-01";
 
+fn claude_beta_header(client_beta: Option<&str>) -> String {
+    let mut betas = vec![CLAUDE_BETA_BASE];
+    if let Some(client_beta) = client_beta {
+        for beta in client_beta
+            .split(',')
+            .map(str::trim)
+            .filter(|beta| !beta.is_empty())
+        {
+            if !betas.contains(&beta) {
+                betas.push(beta);
+            }
+        }
+    }
+    betas.join(",")
+}
+
 impl ClaudeCodeState {
     /// Attempts to send a chat message to Claude API with retry mechanism
     ///
@@ -144,7 +160,10 @@ impl ClaudeCodeState {
             )
             .bearer_auth(access_token)
             .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
-            .header("anthropic-beta", CLAUDE_BETA_BASE)
+            .header(
+                "anthropic-beta",
+                claude_beta_header(self.anthropic_beta.as_deref()),
+            )
             .header("anthropic-version", CLAUDE_API_VERSION)
             .json(body)
             .send()
@@ -478,7 +497,10 @@ impl ClaudeCodeState {
             )
             .bearer_auth(access_token)
             .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
-            .header("anthropic-beta", CLAUDE_BETA_BASE)
+            .header(
+                "anthropic-beta",
+                claude_beta_header(self.anthropic_beta.as_deref()),
+            )
             .header("anthropic-version", CLAUDE_API_VERSION)
             .json(body)
             .send()
