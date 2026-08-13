@@ -6,7 +6,7 @@
 //! when part of the input is unusable -- and those rules are worth reading and
 //! testing without the several hundred lines of accessors next to them.
 
-use std::{collections::HashSet, hash::Hash};
+use std::{borrow::Cow, collections::HashSet, hash::Hash};
 
 use serde::de::DeserializeOwned;
 use toml::{Table, Value};
@@ -109,6 +109,49 @@ fn strip_prefix(name: &str) -> Option<String> {
         .map(|_| name[ENV_PREFIX.len()..].to_ascii_lowercase())
 }
 
+/// Unwraps a value that is written as a quoted string, leaving anything else
+/// untouched.
+///
+/// Compose files and `.env` files hand the quotes through as data, unlike a
+/// shell, so `CLEWDR_PASSWORD="12345"` arrives here with them attached and
+/// almost never means a password with quotes in it. The previous loader
+/// absorbed this and people wrote it that way for years; #157 is what removing
+/// that did.
+///
+/// Parsing is delegated to TOML rather than trimming the first and last byte,
+/// so a value that merely begins and ends with a quote -- `"a" "b"` -- is not
+/// mistaken for one string, and escapes inside a real one are honoured.
+/// Single quotes are left alone: the old loader did not strip them, and
+/// treating them as syntax now would break the reverse case.
+fn unquote(raw: &str) -> Cow<'_, str> {
+    let trimmed = raw.trim();
+    if !(trimmed.len() >= 2 && trimmed.starts_with('"') && trimmed.ends_with('"')) {
+        // Also what the old loader did. Trimming a secret is not obviously
+        // right, but it is what 0.13.2 shipped: anyone whose value picked up
+        // stray whitespace from a compose file has been using the trimmed
+        // form, and changing that now locks them out the same way #157 did.
+        // Whitespace that is meant to be there can be quoted.
+        return Cow::Borrowed(trimmed);
+    }
+    let inner = &trimmed[1..trimmed.len() - 1];
+    // Where the quotes were the only decoration, the inside is the answer and
+    // nothing needs allocating. An inner quote or a backslash means it may not
+    // be one string at all, so TOML decides -- and if it is not, the value
+    // stays exactly as the user wrote it.
+    if inner.contains('"') || inner.contains('\\') {
+        return match parse_toml_fragment(trimmed) {
+            Some(Value::String(s)) => Cow::Owned(s),
+            _ => Cow::Borrowed(raw),
+        };
+    }
+    Cow::Borrowed(inner)
+}
+
+/// Reads `raw` as a TOML value, or `None` if it is not one.
+fn parse_toml_fragment(raw: &str) -> Option<Value> {
+    format!("v = {raw}").parse::<Table>().ok()?.remove("v")
+}
+
 /// Reads `raw` as the same type as `target`, or `None` if it does not fit.
 ///
 /// The environment gives us nothing but strings, so the target's type is what
@@ -116,6 +159,10 @@ fn strip_prefix(name: &str) -> Option<String> {
 /// replaced -- silently discarded `CLEWDR_PASSWORD=12345`, because a value that
 /// parsed as a number could no longer be taken as the string the field wanted.
 fn coerce(raw: &str, target: &Value) -> Option<Value> {
+    // A quoted value is unwrapped first, so the type below sees what the user
+    // meant rather than the quoting they wrote it with.
+    let raw = unquote(raw);
+    let raw = raw.as_ref();
     match target {
         Value::String(_) => Some(Value::String(raw.to_owned())),
         Value::Boolean(_) => parse_bool(raw).map(Value::Boolean),
@@ -123,10 +170,7 @@ fn coerce(raw: &str, target: &Value) -> Option<Value> {
         Value::Float(_) => raw.trim().parse().ok().map(Value::Float),
         // Structured values arrive as TOML fragments, which is how a cookie
         // list has always been written into a single variable.
-        Value::Array(_) | Value::Table(_) | Value::Datetime(_) => {
-            let wrapped = format!("v = {raw}");
-            wrapped.parse::<Table>().ok()?.remove("v")
-        }
+        Value::Array(_) | Value::Table(_) | Value::Datetime(_) => parse_toml_fragment(raw),
     }
 }
 
@@ -205,25 +249,87 @@ mod tests {
         assert_eq!(merged.settings["password"], Value::String("12345".into()));
     }
 
-    /// A deliberate break with the previous loader, and the one case where a
-    /// user could notice. Wrapping the value in quotes used to be the way to
-    /// force a numeric password through, because the quotes were read as TOML
-    /// syntax and stripped. A string field now takes its value literally, so
-    /// the quotes are part of the password; anyone who applied that workaround
-    /// should drop the quotes. The workaround only existed to route around the
-    /// bug fixed by `a_numeric_password_stays_a_string`.
+    /// Reported as #157: `CLEWDR_ADMIN_PASSWORD="12345"` locked an admin out
+    /// after 0.13.3, because the quotes became part of the password.
+    ///
+    /// Compose files and `.env` files do not strip quotes the way a shell
+    /// does, so writing them is an easy habit and the old loader silently
+    /// absorbed it. That absorption was independent of the numeric-password
+    /// bug below, which is where the previous version of this test went
+    /// wrong: it assumed anyone using quotes was working around that bug, so
+    /// fixing the bug made the quotes unnecessary. They are two rules, and
+    /// only one of them was worth changing.
     #[test]
-    fn quotes_are_part_of_the_value_not_syntax() {
-        let merged = merge("", &[("CLEWDR_PASSWORD", "\"12345\"")]);
+    fn a_quoted_value_is_unwrapped() {
+        for (raw, want) in [
+            ("\"12345\"", "12345"),
+            ("\"hello world\"", "hello world"),
+            ("\"true\"", "true"),
+            ("\"a,b\"", "a,b"),
+            ("\"\"", ""),
+            // Escapes inside a quoted value are TOML's, as they were before.
+            ("\"a\\\"b\"", "a\"b"),
+        ] {
+            let merged = merge("", &[("CLEWDR_PASSWORD", raw)]);
+            assert_eq!(
+                merged.settings["password"],
+                Value::String(want.into()),
+                "{raw:?} should unwrap to {want:?}"
+            );
+        }
+    }
+
+    /// Only a value that is *entirely* one quoted string is unwrapped. A
+    /// password that merely contains quotes keeps every character, which is
+    /// also what the old loader did.
+    #[test]
+    fn a_value_that_is_not_one_quoted_string_is_literal() {
+        for raw in [
+            "say \"hi\"",  // quotes inside
+            "\"a\" \"b\"", // two of them
+            "\"12345",     // unbalanced
+            "\"\"\"",      // not a string literal
+            "'12345'",     // single quotes were never stripped
+            "\"",
+        ] {
+            let merged = merge("", &[("CLEWDR_PASSWORD", raw)]);
+            assert_eq!(
+                merged.settings["password"],
+                Value::String(raw.into()),
+                "{raw:?} should have been left alone"
+            );
+        }
+    }
+
+    /// Unquoting happens before the value is typed, so it reaches the other
+    /// field types too -- as it did when figment parsed the environment.
+    #[test]
+    fn a_quoted_value_still_types_correctly() {
         assert_eq!(
-            merged.settings["password"],
-            Value::String("\"12345\"".into())
+            merge("", &[("CLEWDR_PORT", "\"6666\"")]).settings["port"],
+            Value::Integer(6666)
+        );
+        assert_eq!(
+            merge("", &[("CLEWDR_CHECK_UPDATE", "\"false\"")]).settings["check_update"],
+            Value::Boolean(false)
         );
     }
 
-    /// Values that happen to look like other types are equally not special.
+    /// Surrounding whitespace is dropped, as it was before; quote the value to
+    /// keep it. Everything else about an unquoted value survives, including
+    /// text that happens to look like another type.
     #[test]
-    fn other_type_shaped_strings_survive() {
+    fn an_unquoted_value_keeps_everything_but_its_padding() {
+        let merged = merge("", &[("CLEWDR_PASSWORD", "  spaced  ")]);
+        assert_eq!(merged.settings["password"], Value::String("spaced".into()));
+
+        let merged = merge("", &[("CLEWDR_PASSWORD", "\"  padded  \"")]);
+        assert_eq!(
+            merged.settings["password"],
+            Value::String("  padded  ".into()),
+            "quoting is how padding is kept"
+        );
+
         for raw in ["true", "1.5", "-5", "007", "[a,b]", "0x1f", ""] {
             let merged = merge("", &[("CLEWDR_PASSWORD", raw)]);
             assert_eq!(
@@ -375,5 +481,58 @@ mod tests {
             parsed,
             HashSet::from(["keep me".to_string(), "me too".to_string()])
         );
+    }
+}
+
+#[cfg(test)]
+mod figment_parity {
+    use super::*;
+
+    /// Every string case measured against figment 0.10 before this loader
+    /// replaced it, so the comparison is recorded rather than remembered.
+    /// `None` marks the inputs figment dropped -- it typed them as a number,
+    /// bool or array, which then would not deserialize into a String, and the
+    /// field silently kept its default. Those are the bug this loader fixed;
+    /// everything else is behaviour it has to keep.
+    #[test]
+    fn matches_figment_except_where_figment_dropped_the_value() {
+        let cases: &[(&str, Option<&str>)] = &[
+            (r#""12345""#, Some("12345")),
+            (r#""hello""#, Some("hello")),
+            ("hello", Some("hello")),
+            ("'12345'", Some("'12345'")),
+            (r#""hello world""#, Some("hello world")),
+            (r#""true""#, Some("true")),
+            (r#""a,b""#, Some("a,b")),
+            (r#""""#, Some("")),
+            ("", Some("")),
+            (r#""12345"#, Some(r#""12345"#)),
+            (r#"say "hi""#, Some(r#"say "hi""#)),
+            (r#""a" "b""#, Some(r#""a" "b""#)),
+            (r#"""""#, Some(r#"""""#)),
+            (r#"" ""#, Some(" ")),
+            (r#""a\"b""#, Some(r#"a"b"#)),
+            ("  spaced  ", Some("spaced")),
+            (r#"  "  padded  "  "#, Some("  padded  ")),
+            // figment dropped these; we keep them.
+            ("12345", None),
+            ("true", None),
+            ("[a,b]", None),
+        ];
+
+        let mut t = Table::new();
+        t.insert("password".into(), Value::String(String::new()));
+
+        for (raw, figment) in cases {
+            let merged = merge_sources("", [("CLEWDR_PASSWORD", *raw)], &t);
+            let ours = match &merged.settings["password"] {
+                Value::String(s) => s.clone(),
+                other => panic!("{raw:?} became {other:?}"),
+            };
+            match figment {
+                Some(want) => assert_eq!(&ours, want, "{raw:?} diverges from figment"),
+                None => assert_eq!(&ours, raw, "{raw:?} should now survive verbatim"),
+            }
+        }
     }
 }

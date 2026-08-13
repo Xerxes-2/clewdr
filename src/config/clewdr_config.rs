@@ -664,6 +664,23 @@ mod tests {
         assert_eq!(config.password(), "envpw");
     }
 
+    /// #157: quoting the value in a compose file locked the admin out, because
+    /// the quotes ended up in the password. Both passwords are set this way in
+    /// the wild, so both are checked here rather than only the one reported.
+    #[test]
+    fn a_quoted_password_arrives_without_its_quotes() {
+        let config = load(
+            "",
+            &[
+                ("CLEWDR_ADMIN_PASSWORD", "\"12345\""),
+                ("CLEWDR_PASSWORD", "\"abc def\""),
+            ],
+        );
+
+        assert_eq!(config.admin_password(), "12345");
+        assert_eq!(config.password(), "abc def");
+    }
+
     /// An all-digits password used to be swallowed, leaving the user with a
     /// generated one they had never seen. The README tells people to set this
     /// variable, so it has to take any value they choose.
