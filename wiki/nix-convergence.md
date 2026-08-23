@@ -692,3 +692,70 @@ should be handed over as an exported store path, not left to substitution.
    (`softprops/action-gh-release` with `fail_on_unmatched_files: true`) has
    never run against the nine nix + native artifacts. Dry-run with a
    throwaway tag before trusting a real release.
+
+## 7.4 Binary caching in CI: measured, then declined
+
+Three CI runs made it clear that nothing was being reused between runs. The
+evidence, from run 32625720144:
+
+| job | built | uploaded |
+|---|---|---|
+| Format, lint and test | new deps artifact | 385 paths / 633 s |
+| each of 5 build jobs | 718 derivations | **0 paths** |
+| docker | 718 derivations | **0 paths** |
+
+`magic-nix-cache` logged no warning in either case. The repository's Actions
+cache stood at **10.65 GB against a 10 GB ceiling**, 4879 entries
+(`gh api repos/OWNER/REPO/actions/cache/usage`), so entries were evicting one
+another. Two runs on the *same commit* (32624239965 and 32624907882)
+recompiled everything, which is the "android keeps rebuilding btls"
+symptom: not duplication within a run, but zero reuse across runs.
+
+Determinate Systems have [end-of-lifed the free tier of the Magic Nix
+Cache](https://determinate.systems/blog/magic-nix-cache-free-tier-eol/)
+("will stop working unless you're on GitHub Enterprise Server").
+
+### What we would need to store
+
+Measured on this repo (`du -sc` on the store paths, per commit-state):
+
+| what | size | changes when |
+|---|---|---|
+| 5 cross dependency artifacts | 5 × 188 MB = 940 MB | Cargo.lock, Cargo.toml, flake env |
+| checks dependency artifact | 335 MB (616 MB before dropping dep debug info) | same |
+| frontend dependency artifact | 64 MB | frontend deps |
+| 5 binaries + 2 images + static | ~75 MB | any source change |
+| **per commit-state** | **≈ 1.4 GB** | |
+| rust-overlay toolchains (stable, nightly, per-target std) | 3.07 GB | only the pins |
+| 766 vendored crate paths | 0.41 GB | Cargo.lock |
+
+The dependency artifacts are also *not* bit-reproducible
+(`nix-store -r --check` reports the target tarball differs; cargo fingerprints
+carry timestamps), so each rebuild is a fresh multi-hundred-MB path rather
+than a content-addressed no-op. Final binaries *are* reproducible
+(sha256 7833006… across rebuilds); only the cache seed churns.
+
+### Options, priced
+
+- **Cachix free**: 5 GB, LRU eviction, unlimited bandwidth
+  ([pricing](https://www.cachix.org/pricing)). Fits 3.5 GB of pins plus
+  exactly one commit-state; the second Cargo.lock bump thrashes it. Viable
+  only in explicit-push mode (`cachix push` on the deps and binary paths
+  alone, ~200 MB/job), which leaves the 3.07 GB of toolchains uncached and
+  costs every job 1–2 minutes of unpacking rustc.
+- **FlakeHub Cache**: no free tier, $20 per organisation member per month;
+  open source projects can request a free account by mail.
+- **Cloudflare R2 + nix's native S3 store**: 10 GB free, egress free, no
+  server to run (`nix copy --to 's3://…?endpoint=…&region=auto'`). Fits
+  everything (4.9 GB) with room for several generations. Costs three secrets,
+  a nix signing key, and a public read domain for substitution — and would
+  also serve local developers.
+- **No cache** (chosen): build jobs sit at 5–7 minutes, which is what they
+  already cost with the cache broken, minus the upload time and the eviction
+  churn.
+
+The frontend is still handed between jobs as an exported store path
+(`nix-store --export` → artifact → `nix-store --import`), which is not a
+binary cache and saves 4 minutes per job; see §7.3.
+
+Revisit R2 if the build jobs stop being tolerable, or if the matrix grows.
