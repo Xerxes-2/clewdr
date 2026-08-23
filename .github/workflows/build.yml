@@ -74,8 +74,7 @@ jobs:
           retention-days: 1
 
   # The non-linux rows of the old matrix: windows and macos. Linux and android
-  # moved to `build-linux`, which cross-builds them all on one ubuntu runner
-  # via nix.
+  # moved to `build-linux`, one nix job per target.
   build:
     name: Build binary
     needs: build-frontend
@@ -167,14 +166,34 @@ jobs:
           path: ${{ env.BIN_NAME }}-${{ matrix.os }}-${{matrix.target_arch}}.zip
           retention-days: 1
 
-  # The four linux targets plus android, cross-built by nix on one ubuntu
-  # runner. This replaces the linux-gnu (native arm runner), musllinux (cross +
-  # docker) and android (NDK + cargo-ndk) matrix rows, plus the
-  # CXX/RUSTFLAGS/CFLAGS env hacks they carried.
+  # The four linux targets plus android, cross-built by nix. One job per
+  # target: the release profile is `lto = true` with `codegen-units = 1`, so
+  # the final link is essentially single-threaded (measured: 57s on 4 cores vs
+  # 55s on 32), and building all five in one job just serialises five
+  # single-threaded links. This replaces the linux-gnu (native arm runner),
+  # musllinux (cross + docker) and android (NDK + cargo-ndk) matrix rows,
+  # plus the CXX/RUSTFLAGS/CFLAGS env hacks they carried.
+  #
+  # `needs: build-frontend` is for the nix cache, not for artifacts: it lets
+  # these jobs fetch the frontend derivation instead of each rebuilding it.
   build-linux:
-    name: Build linux + android binaries (nix)
+    name: Build ${{ matrix.name }} (nix)
     needs: build-frontend
     if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            attr: clewdr-gnu-x86_64
+          - name: musllinux-x86_64
+            attr: clewdr-musl-x86_64
+          - name: linux-aarch64
+            attr: clewdr-gnu-aarch64
+          - name: musllinux-aarch64
+            attr: clewdr-musl-aarch64
+          - name: android-aarch64
+            attr: clewdr-android-aarch64
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -183,46 +202,25 @@ jobs:
 
       - uses: DeterminateSystems/magic-nix-cache-action@v14
 
-      # One nix build for all targets (maximum parallelism), then per-target
-      # out-links. `-o` is a single-value option: repeating it in one
-      # invocation silently keeps only the last one and suffixes the rest.
-      - name: Build all targets
+      - name: Build ${{ matrix.attr }}
+        run: nix build -L -o out .#${{ matrix.attr }}
+
+      # Artifact names match what the release job's glob expects. The android
+      # output carries libc++_shared.so beside the binary (rpath is $ORIGIN),
+      # so the whole bin/ directory goes in. zip comes from the runner image,
+      # as it did for the old linux matrix rows.
+      - name: Package artifact
         run: |
           set -euo pipefail
-          nix build -L --no-link \
-            .#clewdr-gnu-x86_64 .#clewdr-musl-x86_64 \
-            .#clewdr-gnu-aarch64 .#clewdr-musl-aarch64 \
-            .#clewdr-android-aarch64
-          mkdir -p out
-          for pair in "gnu-x86_64 clewdr-gnu-x86_64" "musl-x86_64 clewdr-musl-x86_64" \
-                      "gnu-aarch64 clewdr-gnu-aarch64" "musl-aarch64 clewdr-musl-aarch64" \
-                      "android-aarch64 clewdr-android-aarch64"; do
-            set -- $pair
-            nix build --no-warn-dirty -o "out/$1" ".#$2"
-          done
+          mkdir -p pkg
+          cp out/bin/* pkg/
+          (cd pkg && zip -r "../${{ env.BIN_NAME }}-${{ matrix.name }}.zip" .)
 
-      # Same artifact names the release job's glob expects. The android output
-      # carries libc++_shared.so beside the binary (rpath is $ORIGIN), so the
-      # whole bin/ directory goes into the zip. zip comes from the runner
-      # image, as it did for the old linux matrix rows.
-      - name: Package artifacts
-        run: |
-          set -euo pipefail
-          cd out
-          for pair in "gnu-x86_64 linux-x86_64" "musl-x86_64 musllinux-x86_64" \
-                      "gnu-aarch64 linux-aarch64" "musl-aarch64 musllinux-aarch64" \
-                      "android-aarch64 android-aarch64"; do
-            set -- $pair
-            mkdir -p "pkg-$2"
-            cp "$1"/bin/* "pkg-$2/"
-            (cd "pkg-$2" && zip -r "../${{ env.BIN_NAME }}-$2.zip" .)
-          done
-
-      - name: Upload artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: linux-binaries
-          path: out/clewdr-*.zip
+          name: ${{ env.BIN_NAME }}-${{ matrix.name }}
+          path: ${{ env.BIN_NAME }}-${{ matrix.name }}.zip
           retention-days: 1
 
   # Stands in for the release builds on pull requests and master pushes.
