@@ -161,7 +161,49 @@ fn lint() -> Result<(), String> {
         ));
     }
 
+    // The workflows are the one part of the build that cannot be reproduced
+    // locally, so the little of it that *is* checkable statically is worth
+    // checking. actionlint bundles shellcheck for the `run:` blocks.
+    if toolchain.actionlint {
+        let workflows = workflow_files();
+        if workflows.is_empty() {
+            warn("skipping the workflow lint; no workflow files found");
+        } else {
+            step("Actionlint [workflows]");
+            let mut args = vec!["-no-color".to_string()];
+            args.extend(workflows);
+            run("actionlint", &args, &workspace_root())
+                .map_err(|_| "workflow lint failed".to_string())?;
+        }
+    } else {
+        warn("skipping the workflow lint; actionlint is not on PATH");
+    }
+
     Ok(())
+}
+
+/// The workflow files, relative to the workspace root.
+///
+/// Listed explicitly rather than letting actionlint discover them: its own
+/// discovery walks up to a `.git` directory, which the nix sandbox has no copy
+/// of, and it fails outright when it finds none.
+fn workflow_files() -> Vec<String> {
+    let dir = workspace_root().join(".github/workflows");
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<String> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|ext| ext == "yml" || ext == "yaml")
+        })
+        .filter_map(|path| path.to_str().map(str::to_string))
+        .collect();
+    // Sorted, so the lint reports in the same order everywhere.
+    files.sort();
+    files
 }
 
 /// Format the workspace.
@@ -229,6 +271,10 @@ fn test() -> Result<(), String> {
 // ---------------------------------------------------------------------------
 
 /// Which optional pieces of the toolchain are present.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "a detection report: one independent flag per optional tool, which is the point of grouping them"
+)]
 struct Toolchain {
     /// `wasm32-unknown-unknown` is installed.
     wasm_target: bool,
@@ -236,6 +282,8 @@ struct Toolchain {
     trunk: bool,
     /// A nightly toolchain is installed.
     nightly: bool,
+    /// The `actionlint` binary is on `PATH`.
+    actionlint: bool,
 }
 
 impl Toolchain {
@@ -248,6 +296,7 @@ impl Toolchain {
             nightly: probe("rustup", &["toolchain", "list"])
                 .is_some_and(|out| out.contains("nightly"))
                 || nightly_cargo().is_some(),
+            actionlint: probe("actionlint", &["-version"]).is_some(),
         }
     }
 
@@ -278,8 +327,9 @@ impl Toolchain {
         println!("{} {WASM_TARGET}", mark(self.wasm_target));
         println!("{} trunk", mark(self.trunk));
         println!("{} nightly toolchain (needed by `fmt`)", mark(self.nightly));
+        println!("{} actionlint (workflow lint)", mark(self.actionlint));
 
-        if self.wasm_target && self.trunk && self.nightly {
+        if self.wasm_target && self.trunk && self.nightly && self.actionlint {
             println!("\nEverything needed is installed.");
             return Ok(());
         }
@@ -292,6 +342,9 @@ impl Toolchain {
         }
         if !self.nightly {
             println!("    rustup toolchain install nightly");
+        }
+        if !self.actionlint {
+            println!("    cargo binstall actionlint    (or: nix develop)");
         }
         Err("some prerequisites are missing".to_string())
     }

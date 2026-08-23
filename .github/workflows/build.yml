@@ -134,7 +134,7 @@ jobs:
       - name: Compute target triple
         shell: bash
         id: target
-        run: echo "triple=${{ matrix.target_arch }}-${{matrix.target_vendor_sys_env}}" >> $GITHUB_OUTPUT
+        run: echo "triple=${{ matrix.target_arch }}-${{matrix.target_vendor_sys_env}}" >> "$GITHUB_OUTPUT"
 
       # Pinned instead of `rustup update`, which floats. rust-cache keys on the
       # rustc version, so every new stable release used to invalidate all nine
@@ -159,11 +159,6 @@ jobs:
         with:
           key: ${{ steps.target.outputs.triple }}
 
-      - name: Prepare build env
-        shell: bash
-        run: |
-          echo "FEATURE_ARGS=--no-default-features --features embed-resource,portable" >> $GITHUB_ENV
-
       - name: Download static files
         uses: actions/download-artifact@v8
         with:
@@ -176,7 +171,9 @@ jobs:
           if [ ${{ matrix.os }} == "windows" ]; then
             export RUSTFLAGS="-C target-feature=+crt-static"
           fi
-          cargo build --release -p clewdr --target ${{ steps.target.outputs.triple }} $FEATURE_ARGS
+          cargo build --release -p clewdr \
+            --target ${{ steps.target.outputs.triple }} \
+            --no-default-features --features embed-resource,portable
 
       - name: Move artifact to work dir and zip
         shell: bash
@@ -186,7 +183,7 @@ jobs:
           mv ${{ env.BIN_NAME }} release-package/
           cd release-package
           if [ ${{ matrix.os }} == "windows" ]; then
-            7z a -tzip ../${{ env.BIN_NAME }}-${{ matrix.os }}-${{matrix.target_arch}}.zip *
+            7z a -tzip "../${{ env.BIN_NAME }}-${{ matrix.os }}-${{matrix.target_arch}}.zip" ./*
           else
             zip -r ../${{ env.BIN_NAME }}-${{ matrix.os }}-${{matrix.target_arch}}.zip .
           fi

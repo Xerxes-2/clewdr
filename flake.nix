@@ -22,22 +22,35 @@
       # frontend also ships html/css/ico assets that trunk needs, so the
       # source is filtered with crane's common cargo sources plus web assets
       # (the same set as crane's own trunk example).
+      cargoAndAssets = pkgsNative.lib.fileset.unions [
+        (nativeLib.fileset.commonCargoSources ./.)
+        (pkgsNative.lib.fileset.fileFilter (
+          file:
+          pkgsNative.lib.any file.hasExt [
+            "html"
+            "css"
+            "js"
+            "ico"
+            "png"
+            "svg"
+            "json"
+          ]
+        ) ./.)
+      ];
       src = pkgsNative.lib.fileset.toSource {
         root = ./.;
+        fileset = cargoAndAssets;
+      };
+      # The checks lint the workflows too, so they need to be in *their*
+      # source. The build derivations' source deliberately leaves them out, or
+      # editing a workflow would rebuild five targets.
+      srcWithWorkflows = pkgsNative.lib.fileset.toSource {
+        root = ./.;
         fileset = pkgsNative.lib.fileset.unions [
-          (nativeLib.fileset.commonCargoSources ./.)
+          cargoAndAssets
           (pkgsNative.lib.fileset.fileFilter (
-            file:
-            pkgsNative.lib.any file.hasExt [
-              "html"
-              "css"
-              "js"
-              "ico"
-              "png"
-              "svg"
-              "json"
-            ]
-          ) ./.)
+            file: pkgsNative.lib.any file.hasExt [ "yml" "yaml" ]
+          ) ./.github)
         ];
       };
 
@@ -357,7 +370,7 @@
       # Shared by the check derivation and its dependency build.
       checksArgs = {
         inherit version;
-        inherit src;
+        src = srcWithWorkflows;
         cargoLock = ./Cargo.lock;
         strictDeps = true;
         # Mirrors xtask's ensure_static_dir: the embed-resource combinations
@@ -366,7 +379,12 @@
           mkdir -p static
           echo '<!doctype html><title>ClewdR</title>' > static/index.html
         '';
-        nativeBuildInputs = buildToolsFrom pkgsNative ++ [ pkgsNative.rustPlatform.bindgenHook ];
+        # actionlint is part of the lint step, so the checks derivation is
+        # where the workflows actually get linted; without it xtask skips them.
+        nativeBuildInputs = buildToolsFrom pkgsNative ++ [
+          pkgsNative.rustPlatform.bindgenHook
+          pkgsNative.actionlint
+        ];
         LIBCLANG_PATH = "${pkgsNative.llvmPackages.libclang.lib}/lib";
       };
 
@@ -442,6 +460,7 @@
           pkgsNative.binaryen
           pkgsNative.dart-sass
           wasmBindgenCli
+          pkgsNative.actionlint
         ] ++ buildToolsFrom pkgsNative;
         env = {
           LIBCLANG_PATH = "${pkgsNative.llvmPackages.libclang.lib}/lib";
