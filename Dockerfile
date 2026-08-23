@@ -45,6 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends upx-ucl \
     && rm -rf /var/lib/apt/lists/* \
     && curl -L --proto '=https' --tlsv1.2 -sSf \
        https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash \
+    && rustup update \
     && cargo binstall cargo-chef --no-confirm
 
 COPY --from=planner /build/recipe.json recipe.json
