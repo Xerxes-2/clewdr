@@ -13,13 +13,15 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  APT_PACKAGES: "build-essential cmake perl pkg-config libclang-dev"
+  # Only the windows/macos matrix rows need these now: linux, android, the
+  # checks and the images all come from flake.nix.
   # pkgconfiglite package is broken upstream (404), skip to keep Windows builds green
   CHOCOLATEY_PACKAGES: "cmake strawberryperl llvm nasm"
   HOMEBREW_PACKAGES: "llvm"
   BIN_NAME: "clewdr"
 permissions:
   contents: write
+  packages: write
 
 # A new push to a branch makes the previous run's results irrelevant, and the
 # matrix is expensive enough that leaving superseded runs going is the single
@@ -34,42 +36,22 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  # `cargo xtask ci` (fmt --check, lint, test) inside one cached nix
+  # derivation — same entry point developers run locally via `nix develop`.
+  # The nix store is the cache (magic-nix-cache), so there is no rust-cache
+  # step: a flake input change is the only thing that invalidates it.
   check:
     name: Format, lint and test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      # Order matters. Each of these sets the toolchain it installs as the
-      # default, and xtask reaches nightly explicitly via `rustup run nightly`
-      # for formatting only. Installing nightly last would leave it the
-      # default for everything else, and `cargo clippy` would then resolve to
-      # a toolchain with no clippy component.
+      - uses: DeterminateSystems/nix-installer-action@v22
 
-      # rustfmt comes from nightly because .rustfmt.toml uses nightly-only
-      # options; stable silently ignores them, so a stable-only check would
-      # pass while leaving imports unformatted.
-      - name: Install nightly rustfmt
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-          components: clippy
-
-      - name: Install system packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ${{ env.APT_PACKAGES }}
-
-      - uses: Swatinem/rust-cache@v2
-
-      # Same entry point developers use, so the two cannot drift apart.
       - name: Run checks
-        run: cargo xtask ci
+        run: nix build -L .#checks.x86_64-linux.ci
 
   build-frontend:
     name: Build Frontend
@@ -77,81 +59,42 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
+      - uses: DeterminateSystems/nix-installer-action@v22
 
-      - uses: cargo-bins/cargo-binstall@main
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
 
-      # --locked matters for the source fallback, which binstall takes silently
-      # whenever the prebuilt download times out. Without it `cargo install`
-      # re-resolves from scratch and picks up whatever the ecosystem published
-      # since the release, which is how a green build turns red without anyone
-      # touching this repo.
-      - name: Install trunk
-        run: cargo binstall trunk --no-confirm --locked
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: clewdr-frontend
-
-      - name: Build frontend
-        run: |
-          cd clewdr-frontend
-          trunk build --release
+      - name: Build frontend (trunk, sandboxed, tools pinned by the flake)
+        run: nix build -L -o static-out .#static
 
       - name: Upload static directory
         uses: actions/upload-artifact@v7
         with:
           name: static-files
-          path: static/
+          path: static-out/
           retention-days: 1
 
-  # This matrix exists to produce release artifacts, so it runs when a release
-  # is being made. On pull requests it was building nine cross-platform
-  # binaries, zipping them, uploading them, and discarding them a day later.
-  # Those runs get the `smoke` job below instead.
+  # The non-linux rows of the old matrix: windows and macos. Linux and android
+  # moved to `build-linux`, which cross-builds them all on one ubuntu runner
+  # via nix.
   build:
     name: Build binary
     needs: build-frontend
     if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
     strategy:
       matrix:
-        os: [linux, musllinux, android, windows, macos]
+        os: [windows, macos]
         target_arch: [x86_64, aarch64]
         include:
           # rust target vendor + system + environment
-          - os: android
-            target_vendor_sys_env: linux-android
           - os: macos
             target_vendor_sys_env: apple-darwin
-          - os: linux
-            target_vendor_sys_env: unknown-linux-gnu
-          - os: musllinux
-            target_vendor_sys_env: unknown-linux-musl
           - os: windows
             target_vendor_sys_env: pc-windows-msvc
           # runner
-          - os: linux
-            target_arch: x86_64
-            runner: ubuntu-latest
-          - os: linux
-            target_arch: aarch64
-            runner: ubuntu-24.04-arm
-          - os: android
-            runner: ubuntu-latest
           - os: windows
             runner: windows-latest
           - os: macos
             runner: macos-latest
-          # musl packages
-          - os: musllinux
-            cross: true
-            runner: ubuntu-latest
-        exclude:
-          - os: android
-            target_arch: x86_64
 
     runs-on: ${{ matrix.runner }}
     steps:
@@ -170,19 +113,6 @@ jobs:
         with:
           targets: ${{ steps.target.outputs.triple }}
 
-      - uses: nttld/setup-ndk@v1
-        if: ${{ matrix.os == 'android' }}
-        id: setup-ndk
-        with:
-          ndk-version: r27c
-          add-to-path: true
-
-      - name: Install APT packages
-        if: contains(matrix.runner, 'ubuntu')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ${{ env.APT_PACKAGES }}
-
       - name: Install Chocolatey Packages
         if: matrix.os == 'windows'
         run: |
@@ -193,23 +123,6 @@ jobs:
         run: |
           brew update
           brew install ${{ env.HOMEBREW_PACKAGES }}
-
-      # Downloads a prebuilt binary, falling back to a source build only if no
-      # release matches. `cargo install cross` ran ahead of the cache step
-      # below, so it had nothing to restore from and recompiled cross from
-      # source on every musllinux run.
-      - uses: cargo-bins/cargo-binstall@main
-        if: ${{ matrix.cross || matrix.os == 'android' }}
-
-      - name: Install cross
-        if: ${{ matrix.cross }}
-        run: |
-          cargo binstall cross --no-confirm --locked
-          echo "CROSS_NO_DEFAULT_TOOLCHAIN=1" >> $GITHUB_ENV
-
-      - name: Install cargo-ndk
-        if: ${{ matrix.os == 'android' }}
-        run: cargo binstall cargo-ndk --no-confirm --locked
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -227,31 +140,12 @@ jobs:
           path: static
 
       - name: Build ${{ steps.target.outputs.triple }}
-        if: ${{ matrix.os != 'android' }}
         shell: bash
         run: |
-          if [ ${{ matrix.os }} == "musllinux" ] && [ "${{ matrix.cross }}" != "true" ]; then
-            export CXX=${{ matrix.target_arch }}-linux-gnu-g++
-            if [ ${{ matrix.target_arch }} == "aarch64" ]; then
-              export RUSTFLAGS='-C link-arg=-Wl,--allow-shlib-undefined'
-              export CFLAGS="-D_FILE_OFFSET_BITS=64"
-            fi
-          fi
           if [ ${{ matrix.os }} == "windows" ]; then
             export RUSTFLAGS="-C target-feature=+crt-static"
           fi
-          if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --release -p clewdr --target ${{ steps.target.outputs.triple }} $FEATURE_ARGS
-          else
-            cargo build --release -p clewdr --target ${{ steps.target.outputs.triple }} $FEATURE_ARGS
-          fi
-
-      - name: Build with Android NDK
-        if: ${{ matrix.os == 'android' }}
-        run: cargo ndk --target ${{ steps.target.outputs.triple }} build --release -p clewdr $FEATURE_ARGS
-        env:
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          cargo build --release -p clewdr --target ${{ steps.target.outputs.triple }} $FEATURE_ARGS
 
       - name: Move artifact to work dir and zip
         shell: bash
@@ -259,9 +153,6 @@ jobs:
           mv target/${{ steps.target.outputs.triple }}/release/${{ env.BIN_NAME }} .
           mkdir -p release-package
           mv ${{ env.BIN_NAME }} release-package/
-          if [ ${{ matrix.os }} == "android" ]; then
-            mv ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/${{ matrix.target_arch }}-linux-android/libc++_shared.so release-package/
-          fi
           cd release-package
           if [ ${{ matrix.os }} == "windows" ]; then
             7z a -tzip ../${{ env.BIN_NAME }}-${{ matrix.os }}-${{matrix.target_arch}}.zip *
@@ -276,44 +167,120 @@ jobs:
           path: ${{ env.BIN_NAME }}-${{ matrix.os }}-${{matrix.target_arch}}.zip
           retention-days: 1
 
-  # Stands in for the matrix on pull requests and master pushes. `check`
-  # already covers all four feature combinations, but only through clippy on
-  # the dev profile; this covers the one thing it cannot, that the release
-  # profile and the embed-resource feature actually build and link.
+  # The four linux targets plus android, cross-built by nix on one ubuntu
+  # runner. This replaces the linux-gnu (native arm runner), musllinux (cross +
+  # docker) and android (NDK + cargo-ndk) matrix rows, plus the
+  # CXX/RUSTFLAGS/CFLAGS env hacks they carried.
+  build-linux:
+    name: Build linux + android binaries (nix)
+    needs: build-frontend
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: DeterminateSystems/nix-installer-action@v22
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+
+      - name: Build all targets
+        run: |
+          mkdir -p out
+          nix build -L \
+            -o out/gnu-x86_64 .#clewdr-gnu-x86_64 \
+            -o out/musl-x86_64 .#clewdr-musl-x86_64 \
+            -o out/gnu-aarch64 .#clewdr-gnu-aarch64 \
+            -o out/musl-aarch64 .#clewdr-musl-aarch64 \
+            -o out/android-aarch64 .#clewdr-android-aarch64
+          nix build -L -o out/zip .#zip
+
+      # Same artifact names the release job's glob expects. The android output
+      # carries libc++_shared.so beside the binary (rpath is $ORIGIN), so the
+      # whole bin/ directory goes into the zip.
+      - name: Package artifacts
+        run: |
+          cd out
+          for pair in "gnu-x86_64 linux-x86_64" "musl-x86_64 musllinux-x86_64" \
+                      "gnu-aarch64 linux-aarch64" "musl-aarch64 musllinux-aarch64" \
+                      "android-aarch64 android-aarch64"; do
+            set -- $pair
+            mkdir -p "pkg-$2"
+            cp "$1"/bin/* "pkg-$2/"
+            (cd "pkg-$2" && ../zip/bin/zip -r "../${{ env.BIN_NAME }}-$2.zip" .)
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-binaries
+          path: out/clewdr-*.zip
+          retention-days: 1
+
+  # Stands in for the release builds on pull requests and master pushes.
+  # `check` covers the four feature combinations through clippy on the dev
+  # profile; this covers the one thing it cannot: that the release profile
+  # with embed-resource actually builds and links.
   smoke:
     name: Smoke build (release profile)
-    needs: build-frontend
     if: ${{ !(startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: DeterminateSystems/nix-installer-action@v22
 
-      - name: Install system packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ${{ env.APT_PACKAGES }}
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: smoke
-
-      # embed-resource compiles static/ into the binary, so the frontend has to
-      # exist before this builds.
-      - name: Download static files
-        uses: actions/download-artifact@v8
-        with:
-          name: static-files
-          path: static
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
 
       - name: Build
-        run: cargo build --release -p clewdr --no-default-features --features embed-resource,portable
+        run: nix build -L .#checks.x86_64-linux.smoke
+
+  # Builds the two distroless images (pinned by digest in the flake) and, on
+  # pushes, joins them into multi-arch manifests. No docker daemon, no QEMU:
+  # the arm64 image is cross-assembled, and crane talks to the registry
+  # directly. Replaces docker-build.yml and the Dockerfile.
+  docker:
+    name: Build and publish Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: DeterminateSystems/nix-installer-action@v22
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+
+      - name: Build images
+        run: |
+          nix build -L -o image-amd64.tar.gz .#image-amd64
+          nix build -L -o image-arm64.tar.gz .#image-arm64
+
+      - name: Push images and multi-arch manifests
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          IMAGE="${IMAGE,,}" # ghcr.io is case-insensitive
+
+          tags=()
+          case "$GITHUB_REF" in
+            refs/tags/*) tags+=("${GITHUB_REF#refs/tags/}" "latest") ;;
+            refs/heads/*) tags+=("${GITHUB_REF#refs/heads/}") ;;
+          esac
+          tags+=("$GITHUB_SHA")
+
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | nix run .#crane -- auth login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+          for tag in "${tags[@]}"; do
+            nix run .#crane -- push image-amd64.tar.gz "$IMAGE:$tag-amd64"
+            nix run .#crane -- push image-arm64.tar.gz "$IMAGE:$tag-arm64"
+            nix run .#crane -- index append -t "$IMAGE:$tag" \
+              "$IMAGE:$tag-amd64" "$IMAGE:$tag-arm64"
+          done
 
   release:
     name: Create Release
-    needs: build
+    needs: [build, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:

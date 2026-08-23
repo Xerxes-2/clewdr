@@ -51,6 +51,18 @@ open a TUI that hangs a non-interactive session.
 
     cargo xtask ci        # fmt --check, then lint, then test
 
+CI runs exactly that command, inside one cached nix derivation
+(`nix build .#checks.x86_64-linux.ci`). Locally, either:
+
+    cargo xtask ci       # with rustup-managed toolchains, or
+    nix develop -c cargo xtask ci
+
+`nix develop` gives the pinned toolchain set: stable rustc 1.98 with wasm32
+and clippy, nightly rustfmt via `CLEWDR_NIGHTLY_CARGO`, trunk, wasm-bindgen
+0.2.127, libclang and the build tools. xtask discovers the wasm target through
+the toolchain sysroot when rustup is absent, and nightly through the env var;
+both paths behave identically under rustup.
+
 The pieces are available separately as `cargo xtask fmt|lint|test`, and
 `cargo xtask check` reports which of the three optional toolchain pieces
 (nightly, wasm target, trunk) are installed.
@@ -83,25 +95,59 @@ are moved out of the config at startup and only rejoin it when the file is
 written, so `CLEWDR_CONFIG`'s cookie fields are empty at runtime. Anything that
 saves the config has to pass a snapshot from the pool.
 
-## Cross-compiling
+## Cross-compiling and images
 
-The TLS stack is BoringSSL, via `wreq` → `btls-sys`, and it contains C++. That
-single fact drives the whole musl story: Debian's `musl-tools` provides only a
-`musl-gcc` wrapper script with no C++ compiler and no musl `libstdc++.a`, so
-BoringSSL cannot be built with it. The failure surfaces from CMake as
-`Could NOT find Threads`, which points nowhere near the cause.
+All four linux targets (gnu/musl × x86_64/aarch64) plus android cross-build
+from one x86_64-linux machine through nix:
 
-Use an image built with `musl-cross-make`, which ships a real
-`x86_64-unknown-linux-musl-g++`:
+    nix build .#clewdr-musl-x86_64      # and -gnu-x86_64, -musl-aarch64, -gnu-aarch64
+    nix build .#clewdr-android-aarch64  # aarch64-linux-android, NDK r27 from nixpkgs
+    nix build .#image-amd64 .#image-arm64
 
-    ghcr.io/rust-cross/rust-musl-cross:<arch>-musl
+The TLS stack is BoringSSL, via `wreq` → `btls-sys`, and it contains C++ —
+the historical reason the old CI needed `rust-musl-cross` docker images and
+per-architecture runners. nix's cross stdenv supplies the musl g++ and static
+libstdc++ itself, and `rustPlatform.bindgenHook` feeds the cross clang's libc
+cflags into `BINDGEN_EXTRA_CLANG_ARGS`, which is the part the old images got
+wrong (see wiki/nix-convergence.md for the full story). btls-sys also needs
+`git` in the sandbox (it initialises its vendored BoringSSL submodule), so a
+new nativeBuildInput must not drop it.
 
-No `CC`/`CXX`/`RUSTFLAGS` overrides are needed there. In particular the
-`BORING_BSSL_RUST_CPPLIB=static=stdc++` workaround seen in wreq-python is for
-building a shared Python extension; a musl binary links `crt-static` and picks
-up the archive on its own.
+The android target needs six things the other targets do not; all of them are
+in `flake.nix`, and each one fails in a way that points somewhere else:
 
-Build each architecture on a runner of that architecture. Cross-building
-arm64 from an amd64 host fails in bindgen, which reaches for the host's glibc
-headers (`bits/libc-header-start.h`) because the image sets no
-`BINDGEN_EXTRA_CLANG_ARGS`.
+- **`useAndroidPrebuilt = true`** on the crossSystem. Without it nixpkgs tries
+  to build the whole android toolchain from source and dies in compiler-rt on
+  a missing `pthread.h`.
+- **The toolchain comes from the native package set**, not from the cross set:
+  rust-overlay defines nothing for `pkgsTargetTarget` of an android cross (no
+  rustc runs *on* android), and crane's `spliceToolchain` merges that empty
+  set over the real one. The native toolchain with the android std added does
+  the job — rustc runs on x86_64 either way.
+- **`bindgenHook` cannot be used** (it references the cross set's clang, which
+  is the from-source one). The flake reads the same cflags out of the NDK
+  cc-wrapper's `nix-support` files instead.
+- **`SYSROOT` must be unset** before cargo runs. nixpkgs' cross stdenv exports
+  it (the bionic sysroot) and cargo's target-info probe passes it to rustc as
+  `--sysroot`, where `rustlib` does not exist.
+- **The short target name.** rustc 1.98 dropped the
+  `aarch64-unknown-linux-android` alias; only the builtin
+  `aarch64-linux-android` resolves (this is also the name cargo-ndk uses, and
+  the one `.cargo/config.toml` keys its rpath rustflags on). nixpkgs derives
+  the long form, so `CARGO_BUILD_TARGET` is pinned by hand.
+- **cargo-ndk's env contract.** `build.rs` copies `libc++_shared.so` next to
+  the binary using `CARGO_NDK_SYSROOT_LIBS_PATH`, and btls-sys wants
+  `ANDROID_NDK_HOME` pointing at the NDK root
+  (`…/libexec/android-sdk/ndk-bundle` in the nixpkgs layout). The linker must
+  also be pointed at the NDK clang wrapper, since rustc defaults to `cc`.
+
+The images keep `gcr.io/distroless/static-debian13` as their runtime base,
+pinned by digest in the flake (`pullImage` + `buildLayeredImage`); the static
+musl binary is upx'd and layered on top, with the frontend embedded
+(`embed-resource,xdg`). Multi-arch manifests are assembled by
+`crane index append` without a docker daemon; see the `docker` job in
+`.github/workflows/build.yml`.
+
+Windows and macOS stay on their native CI paths — nix does not run on Windows
+runners, this nixpkgs has dropped x86_64-darwin, and linux→darwin cross does
+not exist. Neither is where the failures were.

@@ -527,11 +527,67 @@ one job on one runner ≈ 4–8 min wall (or split x86_64/aarch64 into two jobs
 for ~2–3 min each), with no arm-runner availability lottery. Cross-built
 outputs are machine-independent, so all runners share one cache.
 
+## 7.2 Android cross-build (2026-08-23): works, six non-obvious requirements
+
+`nix build .#clewdr-android-aarch64` produces a real android binary:
+`ELF 64-bit aarch64, interpreter /system/bin/linker64, for Android 35, built
+by NDK r27 (12077973)`, `RUNPATH=$ORIGIN`, `NEEDED libc++_shared.so`, with
+`libc++_shared.so` (1.77 MB) installed beside the 12.6 MB binary — the same
+shape as the cargo-ndk artifact the old CI shipped. NDK r27 (27.0.12077973)
+comes from nixpkgs (`androidndkPkgs_27`), which needs
+`config.allowUnfree = true`.
+
+Each requirement below was found by a failure whose message pointed
+elsewhere:
+
+1. `lib.systems.examples.aarch64-android` ships `useAndroidPrebuilt = false`
+   in this nixpkgs, so nixpkgs builds the android toolchain from source and
+   fails in compiler-rt with `'pthread.h' file not found`. Override the flag
+   on the crossSystem.
+2. rust-overlay defines **nothing** for the android cross's
+   `pkgsTargetTarget` (verified: `attrNames …rust-bin == []`, while musl and
+   aarch64-gnu cross sets have the full set), and crane's `spliceToolchain`
+   calls the toolchain function for every splice, so `minimal` disappears.
+   Pass a toolchain built from the **native** set instead (with
+   `targets = [ "aarch64-linux-android" ]`); crane accepts a plain derivation
+   there and fans it out to cargo/rustc/clippy/rustfmt.
+3. `rustPlatform.bindgenHook` in the android cross set drags in the
+   from-source android clang (→ compiler-rt again). Its whole job is to export
+   `LIBCLANG_PATH` and read three `nix-support` cflags files, so read them
+   from the NDK cc-wrapper instead (`cc-cflags`, `libc-cflags`,
+   `libcxx-cxxflags`).
+4. nixpkgs' cross stdenv exports `SYSROOT` (bionic). Cargo's `TargetInfo`
+   probe (`rustc - --crate-name ___ --print=file-names …`) inherits it as
+   `--sysroot`, where `lib/rustlib` does not exist, and the build dies with
+   `error loading target specification` before compiling anything. `unset
+   SYSROOT` in preBuild.
+5. **rustc 1.98 no longer accepts `aarch64-unknown-linux-android`** — only the
+   builtin `aarch64-linux-android`. nixpkgs' `rust.rustcTargetSpec` produces
+   the long form, so `CARGO_BUILD_TARGET` must be pinned to the short one.
+   (cargo-ndk uses the short name, which is why the old CI never hit this;
+   `.cargo/config.toml` already keys its android rustflags on it.)
+6. Two env contracts have to be honoured by hand, because there is no
+   cargo-ndk in the loop: `ANDROID_NDK_HOME` for btls-sys's
+   `android.toolchain.cmake` (the NDK root is nested at
+   `…/libexec/android-sdk/ndk-bundle` in nixpkgs' layout), and
+   `CARGO_NDK_SYSROOT_LIBS_PATH` for clewdr's own `build.rs`, which copies
+   `libc++_shared.so`. rustc also defaults to `cc` as the android linker, so
+   `CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER` must point at the NDK wrapper.
+
+One nixpkgs oddity worth recording: calling
+`androidenv.composeAndroidPackages { includeNDK = true; … }.ndk-bundle`
+directly from the flake throws `attribute 'ndk-bundle' missing` when the
+derivation is forced, while the *same* derivation
+(`android-sdk-ndk-27.0.12077973`) evaluates fine when reached through
+`androidndkPkgs_27.binaries.propagatedBuildInputs`. The flake uses the latter
+route.
+
 ## Open tests (updated after the spike)
 
 1. ~~`nix build` of a clewdr package under `pkgsCross.musl64` and
    `pkgsCross.aarch64-multiplatform-musl`~~ **done, passes** — settles
-   5a/5b, and libstdc++.a presence (2b) by successful static link.
+   5a/5b, and libstdc++.a presence (2b) by successful static link. Android
+   (§7.2) also builds and links.
 2. ~~`docker load` + run of the cross `buildLayeredImage` tarballs~~
    **done, passes**: both arches loaded (podman) and ran — amd64 natively,
    arm64 under qemu binfmt — on the distroless base (§7.1). Remaining: the

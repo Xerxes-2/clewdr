@@ -76,8 +76,8 @@ tracing-appender = "0.2"
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 # Held at rc.29's predecessor: rc.29 swapped the TLS backend from boring2 to
-# btls, whose vendored BoringSSL cannot be built for musl in the Docker image.
-# See the comment above the backend-builder stage in Dockerfile. Declared as a
+# btls, whose vendored BoringSSL builds C++ that the cross toolchains must
+# supply libstdc++ for (nix handles this; see flake.nix). Declared as a
 # standard table below (see the comment after wreq-util).
 wreq-util = "0.2"
 
