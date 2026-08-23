@@ -94,7 +94,7 @@ uuid = { version = "1", features = ["v4"] }
 # btls, whose vendored BoringSSL cannot be built for musl in the Docker image.
 # See the comment above the backend-builder stage in Dockerfile.
 wreq = {
-  version = "6.0.0-rc.29",
+  version = "0.16",
   features = [
     "cookies",
     "json",
@@ -103,7 +103,7 @@ wreq = {
     "stream",
   ]
 }
-wreq-util = "3.0.0-rc.14"
+wreq-util = "0.2"
 zip = {
   version = "8",
   default-features = false,
