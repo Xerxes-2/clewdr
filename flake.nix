@@ -113,6 +113,20 @@
       # Where the NDK keeps the arm64 bionic libs, incl. libc++_shared.so.
       androidSysrootLibs = "${androidNdk}/libexec/android-sdk/ndk-bundle/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android";
 
+      # nixpkgs' cc-wrapper appends `-frandom-seed=<derivation output hash>` to
+      # its cflags, and the bindgen hook copies those into
+      # BINDGEN_EXTRA_CLANG_ARGS. bindgen's build script declares
+      # rerun-if-env-changed for that variable, so its value differing between
+      # the deps derivation and the one that inherits them made bindgen dirty,
+      # and with it btls-sys (BoringSSL's bindings) and everything above it:
+      # btls, tokio-btls, wreq, wreq-util recompiled in every final build.
+      # bindgen only parses headers, so a codegen seed means nothing to it.
+      stripRandomSeed = ''
+        export BINDGEN_EXTRA_CLANG_ARGS="$(
+          printf '%s' "$BINDGEN_EXTRA_CLANG_ARGS" | sed -E 's/ ?-frandom-seed=[^ ]*//g'
+        )"
+      '';
+
       # Builds the server for one target with one feature set. The C++ deps
       # (btls-sys vendored BoringSSL) need git (submodule init), libclang
       # (bindgen) and cmake/perl/ninja; bindgenHook feeds the cross clang's
@@ -152,13 +166,14 @@
               pkgs.pkgsBuildHost.llvmPackages.libclang.lib
             ]) ++ (if isAndroid then [ ] else [ pkgs.rustPlatform.bindgenHook ]);
             LIBCLANG_PATH = "${pkgs.pkgsBuildHost.llvmPackages.libclang.lib}/lib";
+            preBuild = stripRandomSeed;
           } // pkgs.lib.optionalAttrs isAndroid {
             # nixpkgs' cross stdenv exports SYSROOT (the NDK bionic sysroot),
             # and cargo's target-info probe reads it as the rustc --sysroot,
             # where rustlib does not exist — the probe then fails. Unset it in
             # preBuild; the NDK clang wrapper carries the sysroot in its own
             # cc-cflags, so the C++ builds keep it.
-            preBuild = "unset SYSROOT";
+            preBuild = stripRandomSeed + "\nunset SYSROOT";
             # rustc 1.98 dropped the long-name alias for the android target:
             # `--target aarch64-unknown-linux-android` fails with "could not
             # find specification". The builtin (and cargo-ndk's) name is
@@ -313,7 +328,7 @@
         strictDeps = true;
         # Mirrors xtask's ensure_static_dir: the embed-resource combinations
         # only need the directory to exist.
-        preBuild = ''
+        preBuild = stripRandomSeed + ''
           mkdir -p static
           echo '<!doctype html><title>ClewdR</title>' > static/index.html
         '';
