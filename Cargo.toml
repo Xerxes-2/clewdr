@@ -70,48 +70,55 @@ tiktoken-rs = "0.12"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 toml = "1"
 tower = "0.5"
-tower-http = {
-  version = "0.7",
-  features = [
-    "compression-zstd",
-    "cors",
-    "trace",
-  ]
-}
 tower-serve-static = { version = "0.1", optional = true }
 tracing = "0.1"
 tracing-appender = "0.2"
-tracing-subscriber = {
-  version = "0.3",
-  features = [
-    "chrono",
-    "env-filter",
-  ]
-}
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 # Held at rc.29's predecessor: rc.29 swapped the TLS backend from boring2 to
 # btls, whose vendored BoringSSL cannot be built for musl in the Docker image.
-# See the comment above the backend-builder stage in Dockerfile.
-wreq = {
-  version = "0.16",
-  features = [
-    "cookies",
-    "json",
-    "multipart",
-    "socks",
-    "stream",
-  ]
-}
+# See the comment above the backend-builder stage in Dockerfile. Declared as a
+# standard table below (see the comment after wreq-util).
 wreq-util = "0.2"
-zip = {
-  version = "8",
-  default-features = false,
-  features = [
-    "deflate",
-  ],
-  optional = true
-}
+
+# The following four dependencies use standard-table form instead of inline
+# tables: Nix's `builtins.fromTOML` cannot parse multiline inline tables
+# (upstream issue #15129), and crane reads the workspace manifest with it.
+# They live at the end of [dependencies] because a sub-table closes the
+# parent table in TOML, so inline keys cannot follow them.
+
+[dependencies.tower-http]
+version = "0.7"
+features = [
+  "compression-zstd",
+  "cors",
+  "trace",
+]
+
+[dependencies.tracing-subscriber]
+version = "0.3"
+features = [
+  "chrono",
+  "env-filter",
+]
+
+[dependencies.wreq]
+version = "0.16"
+features = [
+  "cookies",
+  "json",
+  "multipart",
+  "socks",
+  "stream",
+]
+
+[dependencies.zip]
+version = "8"
+default-features = false
+features = [
+  "deflate",
+]
+optional = true
 
 [target."cfg(windows)".dependencies]
 enable-ansi-support = "0.3"
