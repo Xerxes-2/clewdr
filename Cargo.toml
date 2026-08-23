@@ -140,3 +140,9 @@ strip = true
 lto = true
 panic = "abort"
 codegen-units = 1
+
+[profile.dev.package."*"]
+# Dependency debug info is 46% of the checks derivation's cached target dir
+# (616 MB -> 335 MB) and nothing reads it: backtraces from our own crates keep
+# their line info because this only applies to "*" (dependencies).
+debug = false
