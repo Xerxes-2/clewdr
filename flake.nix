@@ -91,6 +91,16 @@
         });
       });
 
+      # The version comes from the manifest so it cannot drift from the crate
+      # (which is also why Cargo.toml has to stay parseable by fromTOML).
+      version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.version;
+
+      # The C toolchain btls-sys' vendored BoringSSL needs, in every place it
+      # is needed: the cross builds, the checks derivation and the dev shell.
+      # git is not optional - btls-sys initialises its BoringSSL submodule.
+      buildToolNames = [ "cmake" "perl" "gnumake" "ninja" "git" ];
+      buildToolsFrom = p: (map (n: p.${n}) buildToolNames) ++ [ p.llvmPackages.libclang.lib ];
+
       # --- cross builds -----------------------------------------------------
       mkPkgs = crossSystem:
         import nixpkgs ({
@@ -140,6 +150,18 @@
         let
           pkgs = mkPkgs crossSystem;
           isAndroid = pkgs.stdenv.hostPlatform.isAndroid;
+          # The gnu targets link dynamically, and nix bakes the *store* loader
+          # path into them, which exists on no machine but a nix one. The
+          # release zips have to run on any distro, so the loader is pointed
+          # back at the standard path after install. Nothing else stands in
+          # the way: RUNPATH comes out empty, and the symbol floors are
+          # glibc 2.38 and GLIBCXX 3.4.20 (measured), i.e. no tighter than the
+          # ubuntu-built binaries these replace.
+          standardInterpreter =
+            if pkgs.stdenv.hostPlatform.isAarch64 then
+              "/lib/ld-linux-aarch64.so.1"
+            else
+              "/lib64/ld-linux-x86-64.so.2";
           # The android cross set needs a different toolchain story: rust-overlay
           # cannot evaluate its toolchains inside it (the target-side splice is
           # empty, and gccForLibs pulls a from-source android gcc that fails on
@@ -152,19 +174,20 @@
                 targets = [ "aarch64-linux-android" ];
               })
           else
+            # A function, so crane splices the toolchain for the cross set.
+            # `or null` because a cross set without rust-overlay's attrs is a
+            # real case (see the android branch above, which sidesteps it).
             (crane.mkLib pkgs).overrideToolchain (p: p.rust-bin.stable."1.98.0".minimal or null);
           buildArgs = {
             pname = "clewdr";
-            version = "0.13.4";
+            inherit version;
             inherit src;
             cargoLock = ./Cargo.lock;
             cargoExtraArgs = "--no-default-features --features ${features} -p clewdr";
             doCheck = false;
             strictDeps = true;
-            nativeBuildInputs = (with pkgs; [
-              cmake perl gnumake ninja git
-              pkgs.pkgsBuildHost.llvmPackages.libclang.lib
-            ]) ++ (if isAndroid then [ ] else [ pkgs.rustPlatform.bindgenHook ]);
+            nativeBuildInputs = buildToolsFrom pkgs.pkgsBuildHost
+              ++ (if isAndroid then [ ] else [ pkgs.rustPlatform.bindgenHook ]);
             LIBCLANG_PATH = "${pkgs.pkgsBuildHost.llvmPackages.libclang.lib}/lib";
             preBuild = stripRandomSeed;
           } // pkgs.lib.optionalAttrs isAndroid {
@@ -237,11 +260,14 @@
           });
           crateExpression = { }: craneLib.buildPackage (buildArgs // {
             cargoArtifacts = pkgs.callPackage depsExpression { };
-            # Not in buildArgs: the deps-only build has no $out/bin to install
-            # into, and must not depend on the frontend output (that would
-            # invalidate the dependency cache on every frontend change).
+            # Not in buildArgs: a deps-only build has no $out/bin to put it
+            # next to.
             postInstall = pkgs.lib.optionalString isAndroid ''
               cp ${androidSysrootLibs}/libc++_shared.so $out/bin/
+            '';
+            # After nix's own fixupPhase, which is what shrinks RUNPATH.
+            postFixup = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isGnu ''
+              patchelf --set-interpreter ${standardInterpreter} $out/bin/clewdr
             '';
             # Not in buildArgs: the deps-only build must not depend on the
             # frontend output, or every frontend change would invalidate the
@@ -259,17 +285,25 @@
       # digest via pullImage; bump the digests + sha256s together to update
       # the base). The nix-built static binary is layered on top, upx'd like
       # the current Dockerfile does.
+      # Digest and its nix hash belong together: both have to be bumped in
+      # the same edit, so they live in the same attrset.
       distroless = {
-        amd64 = "sha256:0985f124d25d79a432b79e806764a9deb759e5c664be7c0633b9f13c3e12cbc0";
-        arm64 = "sha256:15a69c654ed239b3faf5bc3725ff1dd580462eb882c7d5b9c02cdf37756657c2";
+        amd64 = {
+          digest = "sha256:0985f124d25d79a432b79e806764a9deb759e5c664be7c0633b9f13c3e12cbc0";
+          hash = "sha256-VH/TrMOuSPGO/2KYYOXidKw47dfnT1jQrKkBl0zoOLo=";
+        };
+        arm64 = {
+          digest = "sha256:15a69c654ed239b3faf5bc3725ff1dd580462eb882c7d5b9c02cdf37756657c2";
+          hash = "sha256-ER1dxk1umx3Va8plikllvWo/lTlvz5RlOfnB6sSYHso=";
+        };
       };
 
-      imageFor = arch: digest: hash: binary:
+      imageFor = arch: base': binary:
         let
           base = pkgsNative.dockerTools.pullImage {
             imageName = "gcr.io/distroless/static-debian13";
-            imageDigest = digest;
-            sha256 = hash;
+            imageDigest = base'.digest;
+            sha256 = base'.hash;
             arch = arch;
             os = "linux";
             finalImageName = "clewdr";
@@ -315,14 +349,14 @@
           };
         };
 
-      mkImage = arch: digest: hash: mkMusl:
-        imageFor arch digest hash
+      mkImage = arch: mkMusl:
+        imageFor arch distroless.${arch}
           (mkMusl "embed-resource,xdg" static);
 
       # --- checks -----------------------------------------------------------
       # Shared by the check derivation and its dependency build.
       checksArgs = {
-        version = "0.13.4";
+        inherit version;
         inherit src;
         cargoLock = ./Cargo.lock;
         strictDeps = true;
@@ -332,15 +366,7 @@
           mkdir -p static
           echo '<!doctype html><title>ClewdR</title>' > static/index.html
         '';
-        nativeBuildInputs = [
-          pkgsNative.cmake
-          pkgsNative.perl
-          pkgsNative.gnumake
-          pkgsNative.ninja
-          pkgsNative.git
-          pkgsNative.llvmPackages.libclang.lib
-          pkgsNative.rustPlatform.bindgenHook
-        ];
+        nativeBuildInputs = buildToolsFrom pkgsNative ++ [ pkgsNative.rustPlatform.bindgenHook ];
         LIBCLANG_PATH = "${pkgsNative.llvmPackages.libclang.lib}/lib";
       };
 
@@ -383,12 +409,8 @@
         clewdr-android-aarch64 = mk
           (pkgsNative.lib.systems.examples.aarch64-android // { useAndroidPrebuilt = true; })
           "embed-resource,portable" static;
-        image-amd64 = mkImage "amd64" distroless.amd64
-          "sha256-VH/TrMOuSPGO/2KYYOXidKw47dfnT1jQrKkBl0zoOLo="
-          (mk "x86_64-unknown-linux-musl");
-        image-arm64 = mkImage "arm64" distroless.arm64
-          "sha256-ER1dxk1umx3Va8plikllvWo/lTlvz5RlOfnB6sSYHso="
-          (mk "aarch64-unknown-linux-musl");
+        image-amd64 = mkImage "amd64" (mk "x86_64-unknown-linux-musl");
+        image-arm64 = mkImage "arm64" (mk "aarch64-unknown-linux-musl");
         # CI helper: go-containerregistry crane (image push), pinned to the
         # flake's nixpkgs.
         crane = pkgsNative.crane;
@@ -420,13 +442,7 @@
           pkgsNative.binaryen
           pkgsNative.dart-sass
           wasmBindgenCli
-          pkgsNative.cmake
-          pkgsNative.perl
-          pkgsNative.gnumake
-          pkgsNative.ninja
-          pkgsNative.git
-          pkgsNative.llvmPackages.libclang.lib
-        ];
+        ] ++ buildToolsFrom pkgsNative;
         env = {
           LIBCLANG_PATH = "${pkgsNative.llvmPackages.libclang.lib}/lib";
           CLEWDR_NIGHTLY_CARGO = "${nightlyNative}/bin/cargo";
