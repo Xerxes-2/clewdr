@@ -199,7 +199,17 @@
                 (builtins.readFile "${pkgs.stdenv.cc}/nix-support/libcxx-cxxflags")
             );
           };
-          depsExpression = { }: craneLib.buildDepsOnly buildArgs;
+          depsExpression = { }: craneLib.buildDepsOnly (buildArgs // {
+            # Deliberately the *union* of the feature sets we ship, so that all
+            # variants of a target share one dependency build (the release
+            # artifact is portable, the image is xdg). This is sound because a
+            # deps-only build compiles a dummy crate: clewdr's own code — the
+            # only place portable and xdg are mutually exclusive — is never
+            # compiled here. The cache is just a superset (etcetera *and*
+            # self-replace/tempfile/zip).
+            cargoExtraArgs =
+              "--no-default-features --features embed-resource,portable,xdg -p clewdr";
+          });
           crateExpression = { }: craneLib.buildPackage (buildArgs // {
             cargoArtifacts = pkgs.callPackage depsExpression { };
             # Not in buildArgs: the deps-only build has no $out/bin to install
