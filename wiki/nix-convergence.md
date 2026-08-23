@@ -9,17 +9,18 @@ attributes by evaluation, that was done with `nix eval --impure` against the
 nixpkgs snapshot installed on this machine (Determinate Systems'
 `nixpkgs-weekly`); the file paths cited are nixpkgs `master` on GitHub.
 
-**Verdict up front: yes — settled empirically on 2026-08-01 by a working spike
-flake (`flake.nix` in the repo root, `SPIKE`-marked).** All four linux
-combinations (glibc/musl × x86_64/aarch64) build hermetically from one
-x86_64 machine in the nix sandbox, including btls-sys's vendored BoringSSL;
-the musl outputs are fully static (no PT_INTERP). Remaining open items: (a)
-the frontend wasm build (crane has a trunk example; the wasm-bindgen-cli in
-nixpkgs is a version behind the lockfile, so it must be built from the
-lockfile), (b) replacing the `rustup run nightly` seam in `xtask`, (c)
-assembling/pushing multi-arch OCI output without a docker daemon, and (d) a
-`builtins.fromTOML` limitation (TOML 1.0) that currently forces
-`cargoArtifacts = null` in the spike (§7). Details and tests below.
+**Verdict: yes, and it shipped.** Settled empirically on 2026-08-01 by a spike
+flake, then carried to production on 2026-08-23: `build.yml`'s linux rows,
+`docker-build.yml` and the `Dockerfile` are gone, replaced by `flake.nix`. Five
+targets (glibc/musl × x86_64/aarch64, plus aarch64-linux-android) cross-build
+hermetically from one x86_64 runner, including btls-sys's vendored BoringSSL;
+the musl outputs are fully static (no PT_INTERP), and the two distroless images
+are assembled and pushed without a docker daemon. Every item that was open in
+the original spike is now closed: the frontend wasm build (§7.5), the
+`rustup run nightly` seam in `xtask` (§7.3), multi-arch OCI push (§7.3), and the
+`builtins.fromTOML` TOML-1.0 limitation that forced `cargoArtifacts = null`
+(fixed by converting four inline tables in `Cargo.toml`). What is *not*
+migrated, deliberately: windows and macOS (§8).
 
 ## 1. Crane (ipetkov/crane)
 
@@ -670,9 +671,9 @@ should be handed over as an exported store path, not left to substitution.
    (§7.2) also builds and links.
 2. ~~`docker load` + run of the cross `buildLayeredImage` tarballs~~
    **done, passes**: both arches loaded (podman) and ran — amd64 natively,
-   arm64 under qemu binfmt — on the distroless base (§7.1). Remaining: the
-   `crane index append` push to ghcr.io (4c) and a run on real arm64
-   hardware — untested.
+   arm64 under qemu binfmt — on the distroless base (§7.1). The
+   `crane index append` push to ghcr.io (4c) is also done, in the first real
+   CI runs (§7.3); only a run on real arm64 hardware is still untested.
 3. ~~A `nix develop` shell running `cargo xtask ci` unmodified (3b/6)~~
    **done**: xtask now discovers nightly through `CLEWDR_NIGHTLY_CARGO` and
    the wasm target through the toolchain sysroot, so the rustup path is
@@ -688,10 +689,46 @@ should be handed over as an exported store path, not left to substitution.
    0.2.126), and `embed-resource` builds inject `static/` at build time via
    `preBuild` — wrapping the source in a derivation instead would force it to
    be realised at evaluation time, because crane's vendoring reads the source.
-6. **Untested: the `release` job.** Tag-triggered artifact collection
-   (`softprops/action-gh-release` with `fail_on_unmatched_files: true`) has
-   never run against the nine nix + native artifacts. Dry-run with a
-   throwaway tag before trusting a real release.
+6. ~~The `release` job.~~ **done, passes**: dry-run on 2026-08-23 with a
+   throwaway `v0.0.0` tag (scratch commit made the release a draft and
+   suppressed the image push, so `:latest` was never moved). All nine zips
+   were collected — five from the nix jobs, four from the native matrix —
+   and `fail_on_unmatched_files: true` did not trip. Tag and draft deleted
+   afterwards.
+
+7. ~~Do the nix-built glibc binaries run off nix?~~ **They do not, until the
+   loader is repointed.** nix bakes its own store loader path into dynamic
+   binaries, so a release zip built this way dies with "No such file or
+   directory" anywhere else. `mk` now patchelfs the interpreter to
+   `/lib64/ld-linux-x86-64.so.2` (`/lib/ld-linux-aarch64.so.1` on arm64) in
+   `postFixup`; nothing else was in the way, since RUNPATH comes out empty and
+   the symbol floors are glibc 2.38 and GLIBCXX 3.4.20. Verified by running
+   the patched binary in containers: ubuntu 24.04 (glibc 2.39), debian 13
+   (2.41), fedora 43 (2.42) and archlinux (2.44) all print the version;
+   ubuntu 22.04 (2.35) fails on `GLIBC_2.38`, as the old ubuntu-24.04-built
+   artifacts also would.
+
+## 8. Windows and macOS: not migrated, on purpose
+
+Windows runners cannot run nix at all, so those two matrix rows stay native.
+
+macOS was investigated and dropped for three compounding reasons:
+
+1. **linux→darwin cross does not exist in nixpkgs.** `lib/systems/examples.nix`
+   offers no darwin cross target reachable from a linux builder, so a macOS
+   artifact needs a macOS runner either way — nix removes no runner from the
+   matrix here, unlike the linux rows it collapsed into one.
+2. **This nixpkgs has dropped x86_64-darwin.** `pkgs/top-level/impure.nix`
+   carries the removal notice for 26.11; pinning the intel artifact would mean
+   a second, older nixpkgs input just for that row.
+3. **It is not where the failures are** — the user's own read, and the CI
+   history agrees: the macOS rows were green while musl/arm64 and the QEMU
+   docker build were not.
+
+So the payoff would have been narrow (one pinned rustc shared with the linux
+side, replacing `dtolnay/rust-toolchain@stable`) for two extra nix
+installations per run and a second nixpkgs pin. Revisit if macOS starts
+breaking, or if nixpkgs regains a linux→darwin cross path.
 
 ## 7.4 Binary caching in CI: measured, then declined
 
