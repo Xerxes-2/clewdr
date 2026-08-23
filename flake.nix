@@ -209,6 +209,16 @@
             # self-replace/tempfile/zip).
             cargoExtraArgs =
               "--no-default-features --features embed-resource,portable,xdg -p clewdr";
+            # buildDepsOnly runs `cargo check` *and* `cargo build` in its build
+            # phase, so one dependency build can serve both check-style
+            # consumers (clippy) and build-style ones (buildPackage). Note
+            # `doCheck = false` does not turn the check off: it only drops the
+            # `cargo test --no-run` pass and `--all-targets`.
+            #
+            # These cross artifacts have exactly one consumer, buildPackage
+            # below, so the metadata-only pass is dead weight. checks.ci is a
+            # separate native derivation and never inherits these.
+            cargoCheckCommand = ":";
           });
           crateExpression = { }: craneLib.buildPackage (buildArgs // {
             cargoArtifacts = pkgs.callPackage depsExpression { };
@@ -293,6 +303,55 @@
       mkImage = arch: digest: hash: mkMusl:
         imageFor arch digest hash
           (mkMusl "embed-resource,xdg" static);
+
+      # --- checks -----------------------------------------------------------
+      # Shared by the check derivation and its dependency build.
+      checksArgs = {
+        version = "0.13.4";
+        inherit src;
+        cargoLock = ./Cargo.lock;
+        strictDeps = true;
+        # Mirrors xtask's ensure_static_dir: the embed-resource combinations
+        # only need the directory to exist.
+        preBuild = ''
+          mkdir -p static
+          echo '<!doctype html><title>ClewdR</title>' > static/index.html
+        '';
+        nativeBuildInputs = [
+          pkgsNative.cmake
+          pkgsNative.perl
+          pkgsNative.gnumake
+          pkgsNative.ninja
+          pkgsNative.git
+          pkgsNative.llvmPackages.libclang.lib
+          pkgsNative.rustPlatform.bindgenHook
+        ];
+        LIBCLANG_PATH = "${pkgsNative.llvmPackages.libclang.lib}/lib";
+      };
+
+      # The dependency build the checks inherit. This is the consumer crane's
+      # default check+build+test passes exist for: xtask runs clippy (wants
+      # metadata) and `cargo test` (wants linkable artifacts) over the same
+      # dependency graph.
+      #
+      # Two things have to match xtask exactly or nothing is reused:
+      #   - the dev profile, because xtask's clippy and test runs pass no
+      #     --release (crane would otherwise cache release artifacts);
+      #   - the feature set. This is the union of xtask's four combinations
+      #     (FEATURE_COMBINATIONS in xtask/src/main.rs), which the two
+      #     external-resource passes reuse as-is; the two embed-resource
+      #     passes still recompile tower-http, which loses its fs feature
+      #     there, and whatever depends on it.
+      checksDeps = nativeCrane.buildDepsOnly (checksArgs // {
+        pname = "clewdr-checks-deps";
+        CARGO_PROFILE = "dev";
+        cargoExtraArgs =
+          "--locked --workspace --no-default-features"
+          + " --features external-resource,embed-resource,portable,xdg";
+        # clippy --all-targets and `cargo test` both need the dev-dependencies
+        # built, which is what --all-targets pulls in here.
+        cargoCheckExtraArgs = "--all-targets";
+      });
     in
     {
       packages.${localSystem} = {
@@ -323,36 +382,18 @@
       checks.${localSystem} = {
         # The single gate, `cargo xtask ci` (fmt --check, lint, test), run as
         # one cached derivation. Same entry point as developers and CI.
-        ci = nativeCrane.buildPackage {
+        ci = nativeCrane.buildPackage (checksArgs // {
           pname = "clewdr-checks";
-          version = "0.13.4";
-          inherit src;
-          cargoLock = ./Cargo.lock;
-          cargoArtifacts = null;
+          cargoArtifacts = checksDeps;
           buildPhaseCargoCommand = "cargo xtask ci";
           doCheck = false;
           doInstallCargoArtifacts = false;
           doNotPostBuildInstallCargoBinaries = true;
           installPhaseCommand = "touch $out";
-          strictDeps = true;
-          preBuild = ''
-            mkdir -p static
-            echo '<!doctype html><title>ClewdR</title>' > static/index.html
-          '';
-          nativeBuildInputs = [
-            pkgsNative.cmake
-            pkgsNative.perl
-            pkgsNative.gnumake
-            pkgsNative.ninja
-            pkgsNative.git
-            pkgsNative.llvmPackages.libclang.lib
-            pkgsNative.rustPlatform.bindgenHook
-          ];
-          LIBCLANG_PATH = "${pkgsNative.llvmPackages.libclang.lib}/lib";
           CLEWDR_NIGHTLY_CARGO = "${nightlyNative}/bin/cargo";
           # Runs fully sandboxed: the workspace test suite is hermetic (unit
           # tests only, no network).
-        };
+        });
         # Stands in for the release build on PRs: embed-resource,portable,
         # release profile, links and runs.
         smoke = self.packages.${localSystem}.clewdr-gnu-x86_64;
