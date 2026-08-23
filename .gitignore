@@ -13,3 +13,9 @@ static/
 .codex
 test
 scripts
+# nix build out-links and exported store paths
+/result
+/result-*
+/static-out
+/out
+*.nar

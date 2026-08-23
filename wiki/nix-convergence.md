@@ -582,6 +582,86 @@ derivation is forced, while the *same* derivation
 `androidndkPkgs_27.binaries.propagatedBuildInputs`. The flake uses the latter
 route.
 
+## 7.3 CI cutover (2026-08-23): what the first real runs measured
+
+The migration landed on branch `nix-migration`, replacing the linux/musllinux
+matrix rows, `docker-build.yml` and the `Dockerfile`. Three GitHub Actions
+runs produced numbers that changed the design twice.
+
+### Dependency artifacts: check who consumes them
+
+`lib/buildDepsOnly.nix:77-85` (crane `692f7e9`) runs **both** commands in the
+build phase:
+
+```nix
+buildPhaseCargoCommand = args.buildPhaseCargoCommand or ''
+  ${cargoCheckCommand} ${cargoExtraArgs} ${cargoCheckExtraArgs}
+  ${cargoBuildCommand} ${cargoExtraArgs} ${cargoBuildExtraArgs}
+'';
+```
+
+`doCheck = false` does **not** remove the check pass — it only drops the
+`cargo test --no-run` phase and the `--all-targets` default. Upstream's intent
+is documented in [artifact reuse](https://crane.dev/introduction/artifact-reuse.html):
+one deps derivation is meant to serve `cargoClippy` (wants metadata),
+`buildPackage` (wants linkable artifacts) and `cargoTest` at once. The API doc
+states "all artifacts from running `cargo {check,build,test}` will be cached".
+No community idiom exists for turning the extra passes off; the threads about
+deps build time are about sharing one deps derivation (crane #201/#213 asked
+for per-crate splitting and were declined), or about the feature-set mismatch
+trap in the FAQ — which is what the union-features comment in `mk` avoids.
+
+Our topology was upside down in both directions, and both were measured:
+
+| derivation | consumers | measured |
+|---|---|---|
+| 5 cross deps builds | `buildPackage` only | check pass = **159 s** of the musl deps derivation on a 4-core runner, per target |
+| `checks.ci` | itself (clippy ×4, wasm clippy, test) | `cargoArtifacts = null`, so every source change recompiled the whole graph |
+
+Fixes: `cargoCheckCommand = ":"` on the cross deps (the resulting binary is
+byte-identical, sha256 `783300694b7ee5d1` before and after), and a
+dev-profile deps derivation for `checks.ci`. Two things have to match xtask
+or nothing is reused: the **dev profile** (xtask passes no `--release`) and
+the feature set (union of `FEATURE_COMBINATIONS`). After wiring it, crates
+compiled per xtask phase: 13 / 4 / 10 / 4 for the four clippy passes and 13
+for the tests, against 675 in the deps derivation. A source-only change then
+rebuilds `checks.ci` in 60 s locally.
+
+### Passing the frontend between jobs: a store path, not a directory
+
+Run 32622131714 rebuilt the frontend in **every** nix job — 4.0 min of the
+musl job's 8.3 — even though `build-frontend` had fetched that exact output
+from the binary cache 2 minutes earlier in 42 s. In-run substitution missed
+it (732 derivations built while 312 paths were fetched), so `needs:` plus a
+shared binary cache does not reliably carry a path across jobs.
+
+`build-frontend` now also uploads `nix-store --export` of the output (773 KB)
+and the nix jobs `nix-store --import` it. This is not impure: the imported
+path is exactly the derivation's output, so nix treats the build as done. The
+directory artifact stays for windows/macOS, which build with cargo. Result:
+nix jobs 8.3 → 6.8 min, docker 12.4 → 9.9 min, frontend rebuild lines 522 → 0.
+
+### Cross-job cache reliability
+
+Cross-*run* substitution works (an unchanged frontend output was fetched in
+42 s). Cross-*job within a run* is unreliable: in run 32623187130 the
+`checks.ci` derivation was unchanged from the previous run yet the job took
+16.7 min instead of 6m44s, while five matrix jobs were each pulling ~1 GiB
+through the same GHA cache. Anything expensive that more than one job needs
+should be handed over as an exported store path, not left to substitution.
+
+### Other cutover findings
+
+- `nix build -o` is single-valued: repeating it in one invocation silently
+  renames the other outputs (`<name>-1-bin`). One `-o` per invocation.
+- `crane index append` takes children via `-m/--manifest`, not positionally.
+- `crane push` cannot read a gzipped docker tarball (`invalid tar header`);
+  the image derivations set `compressor = "none"`.
+- One job per target beats one job for five: `lto = true` with
+  `codegen-units = 1` makes the final link effectively single-threaded (4-core
+  57 s vs 32-core 55 s), so parallel jobs, not bigger runners, are the lever.
+- `nix build --rebuild` reports no differences: the builds are bit-reproducible.
+
 ## Open tests (updated after the spike)
 
 1. ~~`nix build` of a clewdr package under `pkgsCross.musl64` and
@@ -593,14 +673,22 @@ route.
    arm64 under qemu binfmt — on the distroless base (§7.1). Remaining: the
    `crane index append` push to ghcr.io (4c) and a run on real arm64
    hardware — untested.
-3. A `nix develop` shell running `cargo xtask ci` unmodified (3b/6) — if
-   rustup+RUSTUP_HOME fails, switch xtask to an env-var-discovered nightly
-   rustfmt. Untested; the xtask probe (`rustup target list` /
-   `rustup run nightly`) is the one code change this migration likely needs.
-4. Restore `buildDepsOnly` by converting the four multiline inline tables
+3. ~~A `nix develop` shell running `cargo xtask ci` unmodified (3b/6)~~
+   **done**: xtask now discovers nightly through `CLEWDR_NIGHTLY_CARGO` and
+   the wasm target through the toolchain sysroot, so the rustup path is
+   unchanged and the nix path needs no rustup. CI runs the same command
+   inside `checks.ci`.
+4. ~~Restore `buildDepsOnly` by converting the four multiline inline tables
    in `Cargo.toml` to standard table form (§7 item 5), and re-measure CI
-   build time with dep caching.
-5. Frontend wasm build under the sandbox: `buildTrunkPackage` +
-   lockfile-pinned wasm-bindgen-cli (§7 item 6); then `embed-resource`
-   builds of the server can include `static/` from the wasm output instead
-   of the gitignored dir.
+   build time with dep caching.~~ **done**, and the topology re-measured in
+   §7.3.
+5. ~~Frontend wasm build under the sandbox: `buildTrunkPackage` +
+   lockfile-pinned wasm-bindgen-cli (§7 item 6)~~ **done**: the official
+   prebuilt musl wasm-bindgen 0.2.127 is pinned by hash (nixpkgs tops out at
+   0.2.126), and `embed-resource` builds inject `static/` at build time via
+   `preBuild` — wrapping the source in a derivation instead would force it to
+   be realised at evaluation time, because crane's vendoring reads the source.
+6. **Untested: the `release` job.** Tag-triggered artifact collection
+   (`softprops/action-gh-release` with `fail_on_unmatched_files: true`) has
+   never run against the nine nix + native artifacts. Dry-run with a
+   throwaway tag before trusting a real release.
