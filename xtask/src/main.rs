@@ -195,7 +195,7 @@ fn fmt(check_only: bool) -> Result<(), String> {
     if check_only {
         args.push("--check");
     }
-    if let Ok(nightly_cargo) = env::var("CLEWDR_NIGHTLY_CARGO") {
+    if let Some(nightly_cargo) = nightly_cargo() {
         // A nightly cargo binary; no rustup shim in between.
         run(&nightly_cargo, &args, &workspace_root()).map_err(|_| fmt_failed(check_only))?;
     } else {
@@ -247,7 +247,7 @@ impl Toolchain {
             trunk: probe("trunk", &["--version"]).is_some(),
             nightly: probe("rustup", &["toolchain", "list"])
                 .is_some_and(|out| out.contains("nightly"))
-                || env::var("CLEWDR_NIGHTLY_CARGO").is_ok_and(|v| !v.is_empty()),
+                || nightly_cargo().is_some(),
         }
     }
 
@@ -306,16 +306,24 @@ fn probe(program: &str, args: &[&str]) -> Option<String> {
         .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// The nightly cargo binary named by `CLEWDR_NIGHTLY_CARGO`, if any.
+///
+/// Set by the nix devShell and the checks derivation, where rustup does not
+/// exist. An empty value counts as unset, so that exporting it empty falls
+/// back to rustup instead of trying to run "".
+fn nightly_cargo() -> Option<String> {
+    env::var("CLEWDR_NIGHTLY_CARGO")
+        .ok()
+        .filter(|v| !v.is_empty())
+}
+
 /// Whether the wasm std is present in the toolchain's sysroot.
 ///
 /// The rustup-less equivalent of `rustup target list --installed`: rust
 /// toolchains install target stds under `<sysroot>/lib/rustlib`, which covers
 /// nix toolchains (rust-overlay/fenix) where `rustup` does not exist.
 fn wasm_target_in_sysroot() -> bool {
-    let Some(sysroot) = probe(
-        &env::var("CARGO").unwrap_or_else(|_| "cargo".to_string()),
-        &["rustc", "--", "--print", "sysroot"],
-    ) else {
+    let Some(sysroot) = probe(&cargo_bin(), &["rustc", "--", "--print", "sysroot"]) else {
         return false;
     };
     Path::new(sysroot.trim())
