@@ -38,17 +38,31 @@ concurrency:
 jobs:
   # `cargo xtask ci` (fmt --check, lint, test) inside one cached nix
   # derivation — same entry point developers run locally via `nix develop`.
-  # The nix store is the cache (magic-nix-cache), so there is no rust-cache
-  # step: a flake input change is the only thing that invalidates it.
+  # No rust-cache step, and no nix binary cache either: see the comment above
+  # the installer below.
   check:
     name: Format, lint and test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
+      # `determinate: false` installs upstream Nix. Determinate Nix logs in to
+      # FlakeHub on startup, which fails here, and manages its own nix.conf.
+      #
+      # There is deliberately no binary cache. Measured footprint: 1.4 GB per
+      # commit-state (5x188 MB of cross dependency artifacts, 335 MB for the
+      # checks ones, plus binaries and images) on top of 3.5 GB that changes
+      # only with the pins (3.07 GB of rust-overlay toolchains, 0.41 GB of
+      # vendored crates). The GitHub Actions cache holds 10 GB and was already
+      # at 10.65 GB, which is how writes started failing silently; Cachix's
+      # free tier is 5 GB, which fits exactly one commit-state; FlakeHub Cache
+      # has no free tier. A 10 GB Cloudflare R2 bucket as a native nix S3
+      # store is the option to reach for if these jobs ever get too slow to
+      # live with - see wiki/nix-convergence.md.
       - uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          determinate: false
 
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
 
       - name: Run checks
         run: nix build -L .#checks.x86_64-linux.ci
@@ -60,8 +74,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          determinate: false
 
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
 
       - name: Build frontend (trunk, sandboxed, tools pinned by the flake)
         run: nix build -L -o static-out .#static
@@ -216,8 +231,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          determinate: false
 
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
 
       - name: Download frontend store path
         uses: actions/download-artifact@v8
@@ -261,8 +277,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          determinate: false
 
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
 
       - name: Download frontend store path
         uses: actions/download-artifact@v8
@@ -287,8 +304,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          determinate: false
 
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
 
       - name: Download frontend store path
         uses: actions/download-artifact@v8
