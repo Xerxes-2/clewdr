@@ -470,8 +470,22 @@ rustfmt, 3a).
    version must match Cargo.lock).
 
 Cold build wall-clock: ~25 min for all four (2 in parallel, 16 cores each,
-LTO on). With `buildDepsOnly` restored (item 5) plus a nix binary cache, CI
-rebuilds recompile only clewdr itself.
+LTO on) — most of it is the nix store's one-time cost (musl cross gcc,
+clang/LLVM/libclang toolchains), not the crate build itself.
+
+Warm rebuild (deps in store, new src hash): both musl targets in **59.5 s**
+wall (cargo "Finished" 56.55 s x86_64 vs 58.91 s aarch64 — cross-aarch64
+costs ~4% extra). Cross-compilation runs rustc/LLVM/gcc at native x86 speed;
+only codegen differs, so there is no case for a native arm runner on
+build-speed grounds.
+
+Reference, current CI at v0.13.4 (warm caches, 4-core runners):
+linux-aarch64 on `ubuntu-24.04-arm` 3.1 min; musllinux-aarch64 cross on
+`ubuntu-latest` 4.5 min; musllinux-x86_64 4.3 min; linux-x86_64 3.6 min.
+On GHA's 4 cores a warm nix target should land in ~2 min; four targets in
+one job on one runner ≈ 4–8 min wall (or split x86_64/aarch64 into two jobs
+for ~2–3 min each), with no arm-runner availability lottery. Cross-built
+outputs are machine-independent, so all runners share one cache.
 
 ## Open tests (updated after the spike)
 
