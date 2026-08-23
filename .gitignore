@@ -1,18 +1,23 @@
 target/
 .vscode/
-/config.toml
-log/
-*.log
-cookie.txt
-.DS_Store
-/*.txt
-static/
-/clewdr*.toml
-/cline_docs
 .idea
 .codex
-test
-scripts
+.DS_Store
+*.log
+
+# Runtime and build output, all of it at the repo root. Anchored with a leading
+# slash on purpose: an unanchored pattern matches at every level, which is how
+# a bare `scripts` entry silently swallowed a committed publish-images.sh -
+# the file was on disk locally and absent from CI's checkout. Keep new entries
+# anchored unless they really are meant to match anywhere, and put personal
+# scratch paths in .git/info/exclude instead of here.
+/config.toml
+/clewdr*.toml
+/*.txt
+/cline_docs
+/log/
+/static/
+
 # nix build out-links and exported store paths
 /result
 /result-*
