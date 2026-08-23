@@ -708,6 +708,24 @@ should be handed over as an exported store path, not left to substitution.
    ubuntu 22.04 (2.35) fails on `GLIBC_2.38`, as the old ubuntu-24.04-built
    artifacts also would.
 
+   One failure mode survives, and it is the thing to check first when
+   triaging a report about the `clewdr-linux-*` zips. On a machine whose
+   `ldconfig` cache resolves `libc.so.6` into `/nix/store` (a nix install can
+   leave that behind; it happened on the CachyOS host used for this work),
+   the *system* loader pairs with *nix's* libc - and the two have to come
+   from the same glibc build, because the loader sets up the stack guard that
+   libc's fortify checks read. The binary then dies at startup with
+   `*** stack smashing detected ***`, before printing anything. Diagnosis is
+   one command:
+
+       ldd ./clewdr | grep libc.so
+
+   If that points into `/nix/store` it is this, not a clewdr bug;
+   `LD_LIBRARY_PATH=/usr/lib ./clewdr` confirms it by working. The musl zip
+   sidesteps the entire class by having no loader at all, which is also why
+   the glibc targets are the ones that need the patchelf step: static musl is
+   immune, dynamic glibc is not.
+
 ## 8. Windows and macOS: not migrated, on purpose
 
 Windows runners cannot run nix at all, so those two matrix rows stay native.
