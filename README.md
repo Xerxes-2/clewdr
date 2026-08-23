@@ -110,6 +110,12 @@ cargo xtask ci        # everything CI runs
 
 Building the frontend needs `rustup target add wasm32-unknown-unknown` and `cargo binstall trunk`. Running `cargo xtask` itself needs nothing.
 
+Or skip the toolchain setup entirely: `nix develop` provides the pinned stable
+toolchain with wasm32, nightly rustfmt, trunk and the matching wasm-bindgen, so
+`nix develop -c cargo xtask ci` works on a bare checkout. The same flake builds
+the release binaries and the container images (`nix build .#clewdr-musl-x86_64`,
+`nix build .#image-amd64`); see AGENTS.md for the target list.
+
 Two gotchas if you bypass xtask. Formatting must go through **nightly**, because `.rustfmt.toml` uses nightly-only options that stable silently ignores.
 
 `--all-features` also fails: `embed-resource`/`external-resource` and `portable`/`xdg` are mutually exclusive pairs enforced in `build.rs`.
