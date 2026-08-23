@@ -183,22 +183,31 @@ jobs:
 
       - uses: DeterminateSystems/magic-nix-cache-action@v14
 
+      # One nix build for all targets (maximum parallelism), then per-target
+      # out-links. `-o` is a single-value option: repeating it in one
+      # invocation silently keeps only the last one and suffixes the rest.
       - name: Build all targets
         run: |
+          set -euo pipefail
+          nix build -L --no-link \
+            .#clewdr-gnu-x86_64 .#clewdr-musl-x86_64 \
+            .#clewdr-gnu-aarch64 .#clewdr-musl-aarch64 \
+            .#clewdr-android-aarch64
           mkdir -p out
-          nix build -L \
-            -o out/gnu-x86_64 .#clewdr-gnu-x86_64 \
-            -o out/musl-x86_64 .#clewdr-musl-x86_64 \
-            -o out/gnu-aarch64 .#clewdr-gnu-aarch64 \
-            -o out/musl-aarch64 .#clewdr-musl-aarch64 \
-            -o out/android-aarch64 .#clewdr-android-aarch64
-          nix build -L -o out/zip .#zip
+          for pair in "gnu-x86_64 clewdr-gnu-x86_64" "musl-x86_64 clewdr-musl-x86_64" \
+                      "gnu-aarch64 clewdr-gnu-aarch64" "musl-aarch64 clewdr-musl-aarch64" \
+                      "android-aarch64 clewdr-android-aarch64"; do
+            set -- $pair
+            nix build --no-warn-dirty -o "out/$1" ".#$2"
+          done
 
       # Same artifact names the release job's glob expects. The android output
       # carries libc++_shared.so beside the binary (rpath is $ORIGIN), so the
-      # whole bin/ directory goes into the zip.
+      # whole bin/ directory goes into the zip. zip comes from the runner
+      # image, as it did for the old linux matrix rows.
       - name: Package artifacts
         run: |
+          set -euo pipefail
           cd out
           for pair in "gnu-x86_64 linux-x86_64" "musl-x86_64 musllinux-x86_64" \
                       "gnu-aarch64 linux-aarch64" "musl-aarch64 musllinux-aarch64" \
@@ -206,7 +215,7 @@ jobs:
             set -- $pair
             mkdir -p "pkg-$2"
             cp "$1"/bin/* "pkg-$2/"
-            (cd "pkg-$2" && ../zip/bin/zip -r "../${{ env.BIN_NAME }}-$2.zip" .)
+            (cd "pkg-$2" && zip -r "../${{ env.BIN_NAME }}-$2.zip" .)
           done
 
       - name: Upload artifacts
@@ -275,7 +284,7 @@ jobs:
             nix run .#crane -- push image-amd64.tar.gz "$IMAGE:$tag-amd64"
             nix run .#crane -- push image-arm64.tar.gz "$IMAGE:$tag-arm64"
             nix run .#crane -- index append -t "$IMAGE:$tag" \
-              "$IMAGE:$tag-amd64" "$IMAGE:$tag-arm64"
+              -m "$IMAGE:$tag-amd64" -m "$IMAGE:$tag-arm64"
           done
 
   release:

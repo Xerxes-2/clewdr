@@ -252,6 +252,10 @@
         pkgsNative.dockerTools.buildLayeredImage {
           name = "clewdr";
           tag = "nix-${arch}";
+          # Uncompressed: go-containerregistry's `crane push` reads docker
+          # tarballs only, and fails on a gzipped one with "invalid tar
+          # header". The registry compresses layers on the wire anyway.
+          compressor = "none";
           # streamLayeredImage defaults to the host platform; the base's
           # architecture is not inherited from fromImage.
           architecture = arch;
@@ -301,10 +305,9 @@
         image-arm64 = mkImage "arm64" distroless.arm64
           "sha256-ER1dxk1umx3Va8plikllvWo/lTlvz5RlOfnB6sSYHso="
           (mk "aarch64-unknown-linux-musl");
-        # CI helpers: go-containerregistry crane (image push) and zip
-        # (artifact packaging), pinned to the flake's nixpkgs.
+        # CI helper: go-containerregistry crane (image push), pinned to the
+        # flake's nixpkgs.
         crane = pkgsNative.crane;
-        zip = pkgsNative.zip;
       };
 
       checks.${localSystem} = {
