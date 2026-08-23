@@ -487,13 +487,56 @@ one job on one runner ≈ 4–8 min wall (or split x86_64/aarch64 into two jobs
 for ~2–3 min each), with no arm-runner availability lottery. Cross-built
 outputs are machine-independent, so all runners share one cache.
 
+## 7.1 Distroless image spike (decision: distroless stays as the runtime base)
+
+Per maintainer decision, the runtime image keeps
+`gcr.io/distroless/static-debian13` as its base. In nix this is
+`dockerTools.pullImage` (base pinned by manifest digest — stricter than the
+current Dockerfile's floating `latest` tag) + `buildLayeredImage
+{ fromImage = ...; }` layering the upx'd static binary and `/etc/clewdr` on
+top; distroless's own Env (PATH, SSL_CERT_FILE) and CA-cert layers are
+preserved. Images: `.#image-amd64` (7.45 MB) / `.#image-arm64` (7.05 MB),
+both docker-archive tarballs. Two gotchas found:
+
+1. `pullImage` needs a precomputed output sha256 — the standard workflow is
+   build once with the wrong hash and copy the real one from the error
+   (`got: sha256-...`). Base updates = bump imageDigest + sha256 together.
+2. `streamLayeredImage` (what `buildLayeredImage` wraps) defaults
+   `architecture` to the **host** platform and does **not** inherit it from
+   `fromImage` — the arm64 image came out labelled amd64 until
+   `architecture = "arm64"` was passed explicitly. Settles 2c's
+   cross-image question: dockerTools assembles cross images on one machine;
+   the manifest arch is a caller-supplied parameter.
+
+Both images verified end-to-end: `podman load` + run, amd64 natively and
+arm64 under qemu binfmt, with clewdr's startup logs observed in both.
+(Distroless has no shell, so image debugging needs `crane`/`skopeo`
+inspection rather than `docker run sh`.)
+
+Warm rebuild (deps in store, new src hash): both musl targets in **59.5 s**
+wall (cargo "Finished" 56.55 s x86_64 vs 58.91 s aarch64 — cross-aarch64
+costs ~4% extra). Cross-compilation runs rustc/LLVM/gcc at native x86 speed;
+only codegen differs, so there is no case for a native arm runner on
+build-speed grounds.
+
+Reference, current CI at v0.13.4 (warm caches, 4-core runners):
+linux-aarch64 on `ubuntu-24.04-arm` 3.1 min; musllinux-aarch64 cross on
+`ubuntu-latest` 4.5 min; musllinux-x86_64 4.3 min; linux-x86_64 3.6 min.
+On GHA's 4 cores a warm nix target should land in ~2 min; four targets in
+one job on one runner ≈ 4–8 min wall (or split x86_64/aarch64 into two jobs
+for ~2–3 min each), with no arm-runner availability lottery. Cross-built
+outputs are machine-independent, so all runners share one cache.
+
 ## Open tests (updated after the spike)
 
 1. ~~`nix build` of a clewdr package under `pkgsCross.musl64` and
    `pkgsCross.aarch64-multiplatform-musl`~~ **done, passes** — settles
    5a/5b, and libstdc++.a presence (2b) by successful static link.
-2. `docker load` + run of the cross `buildLayeredImage` tarballs on arm64
-   (2c) and a `crane index append` push to ghcr.io (4c) — untested.
+2. ~~`docker load` + run of the cross `buildLayeredImage` tarballs~~
+   **done, passes**: both arches loaded (podman) and ran — amd64 natively,
+   arm64 under qemu binfmt — on the distroless base (§7.1). Remaining: the
+   `crane index append` push to ghcr.io (4c) and a run on real arm64
+   hardware — untested.
 3. A `nix develop` shell running `cargo xtask ci` unmodified (3b/6) — if
    rustup+RUSTUP_HOME fails, switch xtask to an env-var-discovered nightly
    rustfmt. Untested; the xtask probe (`rustup target list` /
