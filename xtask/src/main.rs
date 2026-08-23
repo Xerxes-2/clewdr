@@ -169,12 +169,18 @@ fn lint() -> Result<(), String> {
 /// Always routed through nightly: `.rustfmt.toml` sets `imports_granularity`
 /// and `group_imports`, which stable rustfmt ignores *silently*. Formatting
 /// with stable therefore looks like it worked while leaving imports untouched.
+///
+/// The nightly toolchain is found in one of two ways: normally through
+/// `rustup run nightly`, and, when rustup is absent (e.g. inside a nix
+/// devShell or sandbox), through `CLEWDR_NIGHTLY_CARGO`, which must point at
+/// a nightly `cargo` binary.
 fn fmt(check_only: bool) -> Result<(), String> {
     let toolchain = Toolchain::detect();
     if !toolchain.nightly {
         return Err(format!(
             "nightly rustfmt is required, because .rustfmt.toml uses nightly-only options\n\
-             ({}).\n    rustup toolchain install nightly",
+             ({}).\n    rustup toolchain install nightly\n\
+             or set CLEWDR_NIGHTLY_CARGO to a nightly cargo binary",
             nightly_only_options().join(", ")
         ));
     }
@@ -185,20 +191,30 @@ fn fmt(check_only: bool) -> Result<(), String> {
         "Formatting (nightly)"
     });
 
-    // Invoked through `rustup run` rather than `cargo +nightly`: CARGO points
-    // at a concrete toolchain binary, and `+toolchain` is a rustup shim
-    // feature that such a binary rejects outright.
-    let mut args = vec!["run", "nightly", "cargo", "fmt", "--all"];
+    let mut args = vec!["fmt", "--all"];
     if check_only {
         args.push("--check");
     }
-    run("rustup", &args, &workspace_root()).map_err(|_| {
-        if check_only {
-            "formatting check failed; run `cargo xtask fmt`".to_string()
-        } else {
-            "formatting failed".to_string()
-        }
-    })
+    if let Ok(nightly_cargo) = env::var("CLEWDR_NIGHTLY_CARGO") {
+        // A nightly cargo binary; no rustup shim in between.
+        run(&nightly_cargo, &args, &workspace_root()).map_err(|_| fmt_failed(check_only))?;
+    } else {
+        // Invoked through `rustup run` rather than `cargo +nightly`: CARGO points
+        // at a concrete toolchain binary, and `+toolchain` is a rustup shim
+        // feature that such a binary rejects outright.
+        let mut rustup_args = vec!["run", "nightly", "cargo"];
+        rustup_args.extend_from_slice(&args);
+        run("rustup", &rustup_args, &workspace_root()).map_err(|_| fmt_failed(check_only))?;
+    }
+    Ok(())
+}
+
+fn fmt_failed(check_only: bool) -> String {
+    if check_only {
+        "formatting check failed; run `cargo xtask fmt`".to_string()
+    } else {
+        "formatting failed".to_string()
+    }
 }
 
 /// Run the workspace tests.
@@ -226,10 +242,12 @@ impl Toolchain {
     fn detect() -> Self {
         Self {
             wasm_target: probe("rustup", &["target", "list", "--installed"])
-                .is_some_and(|out| out.lines().any(|line| line.trim() == WASM_TARGET)),
+                .is_some_and(|out| out.lines().any(|line| line.trim() == WASM_TARGET))
+                || wasm_target_in_sysroot(),
             trunk: probe("trunk", &["--version"]).is_some(),
             nightly: probe("rustup", &["toolchain", "list"])
-                .is_some_and(|out| out.contains("nightly")),
+                .is_some_and(|out| out.contains("nightly"))
+                || env::var("CLEWDR_NIGHTLY_CARGO").is_ok_and(|v| !v.is_empty()),
         }
     }
 
@@ -286,6 +304,24 @@ fn probe(program: &str, args: &[&str]) -> Option<String> {
         .status
         .success()
         .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Whether the wasm std is present in the toolchain's sysroot.
+///
+/// The rustup-less equivalent of `rustup target list --installed`: rust
+/// toolchains install target stds under `<sysroot>/lib/rustlib`, which covers
+/// nix toolchains (rust-overlay/fenix) where `rustup` does not exist.
+fn wasm_target_in_sysroot() -> bool {
+    let Some(sysroot) = probe(
+        &env::var("CARGO").unwrap_or_else(|_| "cargo".to_string()),
+        &["rustc", "--", "--print", "sysroot"],
+    ) else {
+        return false;
+    };
+    Path::new(sysroot.trim())
+        .join("lib/rustlib")
+        .join(WASM_TARGET)
+        .is_dir()
 }
 
 /// The nightly-only keys in `.rustfmt.toml`, for the error message.
