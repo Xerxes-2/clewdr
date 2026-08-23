@@ -66,11 +66,28 @@ jobs:
       - name: Build frontend (trunk, sandboxed, tools pinned by the flake)
         run: nix build -L -o static-out .#static
 
+      # Two artifacts from one build. The directory is for the windows/macos
+      # jobs, which build with cargo and need the files on disk. The NAR is
+      # the same output as a store path, so the nix jobs can import it and
+      # skip the 4-minute wasm build instead of hoping the binary cache
+      # substitutes it (measured: it did not, in every one of the five jobs).
+      # Importing is not impure: the path is exactly this derivation's output,
+      # so nix treats the build as already done.
+      - name: Export frontend as a store path
+        run: nix-store --export "$(readlink -f static-out)" > static.nar
+
       - name: Upload static directory
         uses: actions/upload-artifact@v7
         with:
           name: static-files
           path: static-out/
+          retention-days: 1
+
+      - name: Upload frontend store path
+        uses: actions/upload-artifact@v7
+        with:
+          name: static-nar
+          path: static.nar
           retention-days: 1
 
   # The non-linux rows of the old matrix: windows and macos. Linux and android
@@ -174,8 +191,8 @@ jobs:
   # musllinux (cross + docker) and android (NDK + cargo-ndk) matrix rows,
   # plus the CXX/RUSTFLAGS/CFLAGS env hacks they carried.
   #
-  # `needs: build-frontend` is for the nix cache, not for artifacts: it lets
-  # these jobs fetch the frontend derivation instead of each rebuilding it.
+  # `needs: build-frontend` is for the frontend store path, which these jobs
+  # import instead of rebuilding.
   build-linux:
     name: Build ${{ matrix.name }} (nix)
     needs: build-frontend
@@ -201,6 +218,14 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v22
 
       - uses: DeterminateSystems/magic-nix-cache-action@v14
+
+      - name: Download frontend store path
+        uses: actions/download-artifact@v8
+        with:
+          name: static-nar
+
+      - name: Import frontend store path
+        run: nix-store --import < static.nar
 
       - name: Build ${{ matrix.attr }}
         run: nix build -L -o out .#${{ matrix.attr }}
@@ -229,6 +254,7 @@ jobs:
   # with embed-resource actually builds and links.
   smoke:
     name: Smoke build (release profile)
+    needs: build-frontend
     if: ${{ !(startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     steps:
@@ -237,6 +263,14 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v22
 
       - uses: DeterminateSystems/magic-nix-cache-action@v14
+
+      - name: Download frontend store path
+        uses: actions/download-artifact@v8
+        with:
+          name: static-nar
+
+      - name: Import frontend store path
+        run: nix-store --import < static.nar
 
       - name: Build
         run: nix build -L .#checks.x86_64-linux.smoke
@@ -247,6 +281,7 @@ jobs:
   # directly. Replaces docker-build.yml and the Dockerfile.
   docker:
     name: Build and publish Docker image
+    needs: build-frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -254,6 +289,14 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v22
 
       - uses: DeterminateSystems/magic-nix-cache-action@v14
+
+      - name: Download frontend store path
+        uses: actions/download-artifact@v8
+        with:
+          name: static-nar
+
+      - name: Import frontend store path
+        run: nix-store --import < static.nar
 
       - name: Build images
         run: |
