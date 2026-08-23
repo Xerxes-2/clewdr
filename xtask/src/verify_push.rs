@@ -61,7 +61,7 @@ fn publish_and_check(root: &std::path::Path, amd64: &str, arm64: &str) -> Result
 
     step("Publishing (the same script the docker job runs)");
     run(
-        "./scripts/publish-images.sh",
+        "./publish-images.sh",
         &[&image, REF, SHA, amd64, arm64],
         root,
     )

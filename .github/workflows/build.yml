@@ -333,7 +333,7 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" \
             | nix shell .#crane -c crane auth login ghcr.io \
                 -u "${{ github.actor }}" --password-stdin
-          nix shell .#crane -c ./scripts/publish-images.sh \
+          nix shell .#crane -c ./publish-images.sh \
             "$IMAGE" "$GITHUB_REF" "$GITHUB_SHA" \
             image-amd64.tar.gz image-arm64.tar.gz
 

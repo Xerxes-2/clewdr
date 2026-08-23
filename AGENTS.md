@@ -103,7 +103,7 @@ The docker job's publish step is not a nix build, so it has its own harness:
 
     nix develop -c cargo xtask verify-push
 
-That runs `scripts/publish-images.sh` — the same script the job runs — against
+That runs `publish-images.sh` — the same script the job runs — against
 a registry in a throwaway container, then checks the tag scheme and that each
 tag resolves to an index of linux/amd64 + linux/arm64. Needs podman or docker.
 
