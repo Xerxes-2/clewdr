@@ -23,6 +23,7 @@ use std::{
 
 mod ci;
 mod dev;
+mod verify_push;
 
 /// Feature combinations that actually compile.
 ///
@@ -65,6 +66,7 @@ fn main() -> ExitCode {
         "test" => test(),
         "check" => Toolchain::detect().report(),
         "ci" => ci::run(),
+        "verify-push" => verify_push::run_verification(),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -92,6 +94,7 @@ Commands:
   test              Run the workspace test suite
   check             Report on the required toolchain pieces
   ci                fmt --check, lint and test, as CI runs them
+  verify-push       Publish the images to a local registry and check them
 ";
 
 fn print_help() {

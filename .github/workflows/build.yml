@@ -325,28 +325,17 @@ jobs:
         if: github.event_name == 'push'
         env:
           IMAGE: ghcr.io/${{ github.repository }}
+        # The same script `cargo xtask verify-push` runs against a local
+        # registry, so the tag scheme and the crane calls are checkable without
+        # pushing a commit.
         run: |
           set -euo pipefail
-          IMAGE="${IMAGE,,}" # ghcr.io is case-insensitive
-
-          tags=()
-          case "$GITHUB_REF" in
-            refs/tags/*) tags+=("${GITHUB_REF#refs/tags/}" "latest") ;;
-            refs/heads/*) tags+=("${GITHUB_REF#refs/heads/}") ;;
-          esac
-          # sha-<7> is the scheme docker/metadata-action's type=sha produced,
-          # kept so anything pinning an old sha tag still resolves.
-          tags+=("sha-${GITHUB_SHA:0:7}")
-
           echo "${{ secrets.GITHUB_TOKEN }}" \
-            | nix run .#crane -- auth login ghcr.io -u "${{ github.actor }}" --password-stdin
-
-          for tag in "${tags[@]}"; do
-            nix run .#crane -- push image-amd64.tar.gz "$IMAGE:$tag-amd64"
-            nix run .#crane -- push image-arm64.tar.gz "$IMAGE:$tag-arm64"
-            nix run .#crane -- index append -t "$IMAGE:$tag" \
-              -m "$IMAGE:$tag-amd64" -m "$IMAGE:$tag-arm64"
-          done
+            | nix shell .#crane -c crane auth login ghcr.io \
+                -u "${{ github.actor }}" --password-stdin
+          nix shell .#crane -c ./scripts/publish-images.sh \
+            "$IMAGE" "$GITHUB_REF" "$GITHUB_SHA" \
+            image-amd64.tar.gz image-arm64.tar.gz
 
   release:
     name: Create Release

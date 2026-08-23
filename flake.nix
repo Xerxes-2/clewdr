@@ -461,6 +461,9 @@
           pkgsNative.dart-sass
           wasmBindgenCli
           pkgsNative.actionlint
+          # For `cargo xtask verify-push`, which runs the docker job's publish
+          # script against a local registry.
+          pkgsNative.crane
         ] ++ buildToolsFrom pkgsNative;
         env = {
           LIBCLANG_PATH = "${pkgsNative.llvmPackages.libclang.lib}/lib";

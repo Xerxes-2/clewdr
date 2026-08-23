@@ -99,10 +99,17 @@ build that already ran. `nix flake check --no-build` catches evaluation
 mistakes in seconds without building anything, and `nix build --rebuild`
 answers whether an output is reproducible.
 
-What this does *not* cover, i.e. what still needs a push to test: anything
-that is GitHub Actions itself (action versions, artifact upload/download,
-ghcr auth, tag computation) and the windows/macOS matrix rows, which do not
-go through nix.
+The docker job's publish step is not a nix build, so it has its own harness:
+
+    nix develop -c cargo xtask verify-push
+
+That runs `scripts/publish-images.sh` — the same script the job runs — against
+a registry in a throwaway container, then checks the tag scheme and that each
+tag resolves to an index of linux/amd64 + linux/arm64. Needs podman or docker.
+
+What none of this covers, i.e. what still needs a push to test: GitHub Actions
+itself (action versions, artifact upload/download, ghcr auth) and the
+windows/macOS matrix rows, which do not go through nix.
 
 ## Layout
 
