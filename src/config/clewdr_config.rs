@@ -691,9 +691,10 @@ mod tests {
         assert_eq!(config.password(), "12345");
     }
 
-    /// `CLEWDR_CHECK_UPDATE=FALSE` is set by the repo's own Dockerfile.
+    /// `CLEWDR_CHECK_UPDATE=FALSE` is set by the published container images
+    /// (the image `config.Env` in flake.nix).
     #[test]
-    fn the_dockerfile_environment_is_honoured() {
+    fn the_container_image_environment_is_honoured() {
         let config = load(
             "",
             &[

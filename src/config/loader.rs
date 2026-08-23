@@ -176,8 +176,9 @@ fn coerce(raw: &str, target: &Value) -> Option<Value> {
 
 /// The spellings accepted for a boolean.
 ///
-/// Wider than TOML's own `true`/`false` because the shipped Dockerfiles say
-/// `CLEWDR_CHECK_UPDATE=FALSE`, and because `yes`/`no` and `on`/`off` were
+/// Wider than TOML's own `true`/`false` because the published container
+/// images say `CLEWDR_CHECK_UPDATE=FALSE` and Dockerfile.huggingface says
+/// `CLEWDR_NO_FS=TRUE`, and because `yes`/`no` and `on`/`off` were
 /// accepted before and are the obvious things to reach for.
 fn parse_bool(raw: &str) -> Option<bool> {
     match raw.trim().to_ascii_lowercase().as_str() {
@@ -340,8 +341,9 @@ mod tests {
         }
     }
 
-    /// `CLEWDR_CHECK_UPDATE=FALSE` ships in the repo's own Dockerfile, so the
-    /// uppercase spelling has to keep working.
+    /// `CLEWDR_CHECK_UPDATE=FALSE` ships in the container images (see the
+    /// image `config.Env` in flake.nix), so the uppercase spelling has to
+    /// keep working.
     #[test]
     fn booleans_accept_the_spellings_that_were_accepted_before() {
         for raw in ["false", "FALSE", "False", "no", "NO", "off", "OFF", "0"] {
