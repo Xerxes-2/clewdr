@@ -83,6 +83,27 @@ Clippy runs at `pedantic`. The workspace lint table has no `allow` entries by
 design: exceptions go at the site as `#[expect(..., reason = "...")]`, so each
 one carries its justification.
 
+## Reproducing a CI failure
+
+Every linux job is a nix derivation, so reproduce it locally instead of
+pushing a commit to watch what happens:
+
+    nix build -L .#checks.x86_64-linux.ci      # the check job
+    nix build -L .#clewdr-musl-aarch64         # any build job's artifact
+    nix build -L .#image-arm64                 # either image
+
+When a build fails inside a derivation, `--keep-failed` leaves the build
+directory in `/tmp/nix-build-*`, where the failing `cargo` invocation can be
+re-run by hand with the same environment; `nix log <store-path>` replays a
+build that already ran. `nix flake check --no-build` catches evaluation
+mistakes in seconds without building anything, and `nix build --rebuild`
+answers whether an output is reproducible.
+
+What this does *not* cover, i.e. what still needs a push to test: anything
+that is GitHub Actions itself (action versions, artifact upload/download,
+ghcr auth, tag computation) and the windows/macOS matrix rows, which do not
+go through nix.
+
 ## Layout
 
     src/                 the server
