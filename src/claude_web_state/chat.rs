@@ -171,7 +171,7 @@ impl ClaudeWebState {
         })?;
 
         // check images
-        let images = body.images.drain(..).collect::<Vec<_>>();
+        let images = std::mem::take(&mut body.images);
 
         // upload images
         let files = self.upload_images(images).await;

@@ -12,7 +12,7 @@ use tracing::warn;
 use super::{ClaudeApiFormat, transform_stream};
 use crate::middleware::claude::{ClaudeContext, transforms_json};
 
-async fn parse_response<T>(resp: Response) -> Result<T, Response>
+async fn parse_response<T>(resp: Response) -> Result<T, Box<Response>>
 where
     T: serde::de::DeserializeOwned,
 {
@@ -26,7 +26,8 @@ where
         return Err(Response::builder()
             .header(CONTENT_TYPE, "application/json")
             .body(Body::from(body))
-            .unwrap());
+            .unwrap()
+            .into());
     };
     Ok(parsed)
 }
@@ -59,7 +60,7 @@ pub async fn to_oai(resp: Response) -> impl IntoResponse {
     if !cx.is_stream() {
         match parse_response::<CreateMessageResponse>(resp).await {
             Ok(response) => return Json(transforms_json(&response)).into_response(),
-            Err(resp) => return resp,
+            Err(resp) => return *resp,
         }
     }
     let stream = resp.into_body().into_data_stream().eventsource();
@@ -85,7 +86,7 @@ pub async fn add_usage_info(resp: Response) -> impl IntoResponse {
     if !stream {
         let mut response = match parse_response::<CreateMessageResponse>(resp).await {
             Ok(response) => response,
-            Err(resp) => return resp,
+            Err(resp) => return *resp,
         };
         let output_tokens = response.count_tokens();
         usage.output_tokens = output_tokens;
