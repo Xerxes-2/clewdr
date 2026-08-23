@@ -322,7 +322,10 @@ jobs:
           nix build -L -o image-arm64.tar.gz .#image-arm64
 
       - name: Push images and multi-arch manifests
-        if: github.event_name != 'pull_request'
+        # Only for real pushes: a manual dispatch is for getting artifacts, and
+        # the workflow it replaced (docker-build.yml) had no dispatch trigger,
+        # so dispatching must not publish anything.
+        if: github.event_name == 'push'
         env:
           IMAGE: ghcr.io/${{ github.repository }}
         run: |
@@ -334,7 +337,9 @@ jobs:
             refs/tags/*) tags+=("${GITHUB_REF#refs/tags/}" "latest") ;;
             refs/heads/*) tags+=("${GITHUB_REF#refs/heads/}") ;;
           esac
-          tags+=("$GITHUB_SHA")
+          # sha-<7> is the scheme docker/metadata-action's type=sha produced,
+          # kept so anything pinning an old sha tag still resolves.
+          tags+=("sha-${GITHUB_SHA:0:7}")
 
           echo "${{ secrets.GITHUB_TOKEN }}" \
             | nix run .#crane -- auth login ghcr.io -u "${{ github.actor }}" --password-stdin
