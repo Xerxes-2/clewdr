@@ -98,9 +98,12 @@
         installPhaseCommand = "cp -r ./static $out";
         # Built explicitly: buildTrunkPackage's auto-generated deps build
         # would inherit this installPhaseCommand and fail (a deps-only build
-        # has no static/ to install).
+        # has no static/ to install). cargoCheckCommand for the same reason as
+        # the cross targets: trunk runs `cargo build`, so the metadata-only
+        # pass over ~350 wasm dependencies has no consumer.
         cargoArtifacts = nativeCrane.buildDepsOnly (wasmArgs // {
           installPhaseCommand = "mkdir -p $out";
+          cargoCheckCommand = ":";
         });
       });
 
@@ -251,15 +254,17 @@
             );
           };
           depsExpression = { }: craneLib.buildDepsOnly (buildArgs // {
-            # Deliberately the *union* of the feature sets we ship, so that all
-            # variants of a target share one dependency build (the release
-            # artifact is portable, the image is xdg). This is sound because a
-            # deps-only build compiles a dummy crate: clewdr's own code — the
-            # only place portable and xdg are mutually exclusive — is never
-            # compiled here. The cache is just a superset (etcetera *and*
-            # self-replace/tempfile/zip).
-            cargoExtraArgs =
-              "--no-default-features --features embed-resource,portable,xdg -p clewdr";
+            # The same features as the final build, deliberately. A feature
+            # *union* was tried first, so one dependency build could serve
+            # both the portable release artifact and the xdg image; measured on
+            # a real CI run, it made every final build recompile nine crates
+            # (wreq, btls, tokio-btls, tower-http, flate2, miniz_oxide,
+            # simd-adler32, bitflags, wreq-util), because cargo fingerprints
+            # features and the union resolves them differently. The sharing it
+            # bought was worth nothing: no single job builds both feature sets
+            # - the release zips and the images are built in different jobs,
+            # which do not share a store.
+            #
             # buildDepsOnly runs `cargo check` *and* `cargo build` in its build
             # phase, so one dependency build can serve both check-style
             # consumers (clippy) and build-style ones (buildPackage). Note
