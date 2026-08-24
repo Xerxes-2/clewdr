@@ -29,8 +29,7 @@ pub fn run_verification() -> Result<(), String> {
 
     let root = workspace_root();
     step("Building both images");
-    let amd64 = image_path("image-amd64")?;
-    let arm64 = image_path("image-arm64")?;
+    let (amd64, arm64) = image_paths()?;
 
     step(&format!("Starting a registry ({runtime})"));
     stop_registry(runtime); // A previous interrupted run may have left one.
@@ -137,23 +136,40 @@ fn json_string_after(haystack: &str, key: &str) -> Option<String> {
 }
 
 /// `nix build` the image and return the tarball path.
-fn image_path(attr: &str) -> Result<String, String> {
-    let output = Command::new("nix")
+/// Build both images in one `nix build`, so the two architectures overlap
+/// rather than queueing behind each other, and return their tarball paths.
+fn image_paths() -> Result<(String, String), String> {
+    let built = Command::new("nix")
         .args([
             "build",
+            "-j",
+            "2",
             "--no-link",
-            "--print-out-paths",
-            &format!(".#{attr}"),
+            ".#image-amd64",
+            ".#image-arm64",
         ])
+        .current_dir(workspace_root())
+        .status()
+        .map_err(|_| "nix is not on PATH".to_string())?;
+    if !built.success() {
+        return Err("building the images failed".to_string());
+    }
+    Ok((image_path("image-amd64")?, image_path("image-arm64")?))
+}
+
+/// The tarball path of an already-built image.
+fn image_path(attr: &str) -> Result<String, String> {
+    let output = Command::new("nix")
+        .args(["eval", "--raw", &format!(".#{attr}")])
         .current_dir(workspace_root())
         .output()
         .map_err(|_| "nix is not on PATH".to_string())?;
     if !output.status.success() {
-        return Err(format!("`nix build .#{attr}` failed"));
+        return Err(format!("`nix eval .#{attr}` failed"));
     }
     let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if path.is_empty() {
-        return Err(format!("`nix build .#{attr}` produced no path"));
+        return Err(format!("`nix eval .#{attr}` produced no path"));
     }
     Ok(path)
 }

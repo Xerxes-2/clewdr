@@ -314,9 +314,18 @@ jobs:
         run: nix-store --import < static.nar
 
       - name: Build images
+        # One invocation, so nix can overlap the two architectures. As two
+        # commands they were strictly sequential: measured 7 minutes, in which
+        # aarch64's dependency build did not start until x86_64's LTO-bound
+        # final build had finished. -o takes a single value, hence nix eval to
+        # read the paths back instead of out-links.
         run: |
-          nix build -L -o image-amd64.tar.gz .#image-amd64
-          nix build -L -o image-arm64.tar.gz .#image-arm64
+          set -euo pipefail
+          nix build -L -j 2 --no-link .#image-amd64 .#image-arm64
+          {
+            echo "IMAGE_AMD64=$(nix eval --raw .#image-amd64)"
+            echo "IMAGE_ARM64=$(nix eval --raw .#image-arm64)"
+          } >> "$GITHUB_ENV"
 
       - name: Push images and multi-arch manifests
         # Only for real pushes: a manual dispatch is for getting artifacts, and
@@ -335,7 +344,7 @@ jobs:
                 -u "${{ github.actor }}" --password-stdin
           nix shell .#crane -c ./publish-images.sh \
             "$IMAGE" "$GITHUB_REF" "$GITHUB_SHA" \
-            image-amd64.tar.gz image-arm64.tar.gz
+            "$IMAGE_AMD64" "$IMAGE_ARM64"
 
   release:
     name: Create Release
