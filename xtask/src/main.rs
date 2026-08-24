@@ -242,7 +242,20 @@ fn fmt(check_only: bool) -> Result<(), String> {
     }
     if let Some(nightly_cargo) = nightly_cargo() {
         // A nightly cargo binary; no rustup shim in between.
-        run(&nightly_cargo, &args, &workspace_root()).map_err(|_| fmt_failed(check_only))?;
+        //
+        // Its directory has to lead PATH, because cargo resolves the `fmt`
+        // subcommand through PATH rather than next to its own binary. Without
+        // this, a stable `cargo-fmt` and `rustfmt` found earlier on PATH
+        // formatted the workspace with stable rustfmt, which ignores every
+        // nightly-only option in .rustfmt.toml and says so only in a warning:
+        // the CI check job was doing exactly that, 18 warnings per run, from
+        // the day the nix checks derivation was introduced.
+        let bin_dir = Path::new(&nightly_cargo)
+            .parent()
+            .ok_or_else(|| format!("CLEWDR_NIGHTLY_CARGO has no directory: {nightly_cargo}"))?
+            .to_path_buf();
+        run_with_path_prefix(&nightly_cargo, &args, &workspace_root(), &bin_dir)
+            .map_err(|_| fmt_failed(check_only))?;
     } else {
         // Invoked through `rustup run` rather than `cargo +nightly`: CARGO points
         // at a concrete toolchain binary, and `+toolchain` is a rustup shim
@@ -448,6 +461,42 @@ fn spawn(program: &str, args: &[impl AsRef<OsStr>], dir: &Path) -> Result<Child,
         .stdin(Stdio::inherit())
         .spawn()
         .map_err(|e| format!("failed to start `{program}`: {e}"))
+}
+
+/// Run a command with one directory prepended to `PATH`.
+///
+/// For toolchains that are a directory of binaries rather than a rustup shim:
+/// cargo finds its subcommands (`cargo-fmt`, `cargo-clippy`) on `PATH`, so a
+/// toolchain that is not on `PATH` gets its subcommands served by whichever
+/// other toolchain is.
+fn run_with_path_prefix(
+    program: &str,
+    args: &[impl AsRef<OsStr>],
+    dir: &Path,
+    path_prefix: &Path,
+) -> Result<(), String> {
+    let path = match env::var_os("PATH") {
+        Some(existing) => {
+            let mut dirs = vec![path_prefix.to_path_buf()];
+            dirs.extend(env::split_paths(&existing));
+            env::join_paths(dirs).map_err(|e| format!("cannot build PATH: {e}"))?
+        }
+        None => path_prefix.as_os_str().to_os_string(),
+    };
+    let status = Command::new(program)
+        .args(args)
+        .current_dir(dir)
+        .env("PATH", path)
+        .stdin(Stdio::inherit())
+        .spawn()
+        .map_err(|e| format!("failed to start `{program}`: {e}"))?
+        .wait()
+        .map_err(|e| format!("failed waiting for `{program}`: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("`{program}` failed"))
+    }
 }
 
 /// Kills its child when dropped, so one task dying does not orphan the other.
