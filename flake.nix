@@ -57,13 +57,22 @@
       # --- toolchains ----------------------------------------------------
       # 1.98.0 is the rustc floor: wreq 0.16 needs it. Pinned exactly, with
       # wasm32 (frontend + its lint) and clippy (xtask lint).
+      # `minimal` plus what we actually use, not `default`: the default profile
+      # drags in rust-docs, which is 1.45 GB of nar across the two toolchains
+      # and which every job would download and unpack to never open.
       stableToolchain = p:
-        p.rust-bin.stable."1.98.0".default.override {
+        p.rust-bin.stable."1.98.0".minimal.override {
           targets = [ "wasm32-unknown-unknown" ];
           extensions = [ "clippy" ];
         };
       # Pinned nightly for rustfmt: .rustfmt.toml uses nightly-only options.
-      nightlyNative = pkgsNative.rust-bin.nightly."2026-03-15".default;
+      # Dates are not interchangeable - rustfmt is missing from some nightly
+      # manifests - so check before moving this. 2026-08-21 formats this
+      # workspace identically to the 2026-03-15 it replaced, verified with
+      # `cargo fmt --all --check`.
+      nightlyNative = pkgsNative.rust-bin.nightly."2026-08-21".minimal.override {
+        extensions = [ "rustfmt" ];
+      };
 
       nativeCrane = nativeLib.overrideToolchain stableToolchain;
 
@@ -193,7 +202,17 @@
             # A function, so crane splices the toolchain for the cross set.
             # `or null` because a cross set without rust-overlay's attrs is a
             # real case (see the android branch above, which sidesteps it).
-            (crane.mkLib pkgs).overrideToolchain (p: p.rust-bin.stable."1.98.0".minimal or null);
+            # One toolchain from the *native* package set for every target,
+            # rather than `p: p.rust-bin...` per cross set. rustc runs on the
+            # build platform regardless, and it only needs the target's std,
+            # which `targets` provides. Asking each cross instantiation for its
+            # own toolchain produced five byte-identical copies of
+            # rust-minimal-1.98.0 under five different store paths, 170 MB
+            # each. The android branch above already had to do it this way.
+            (crane.mkLib pkgs).overrideToolchain (
+              pkgsNative.rust-bin.stable."1.98.0".minimal.override {
+                targets = [ pkgs.stdenv.hostPlatform.rust.cargoShortTarget ];
+              });
           buildArgs = {
             pname = "clewdr";
             inherit version;
