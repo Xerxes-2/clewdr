@@ -107,17 +107,17 @@ fn first_user_message_text(messages: &[Message]) -> &str {
         .unwrap_or_default()
 }
 
-fn sample_js_code_unit(text: &str, idx: usize) -> String {
-    text.encode_utf16()
-        .nth(idx)
-        .map_or_else(|| "0".to_string(), |unit| String::from_utf16_lossy(&[unit]))
+fn sample_js_code_unit(text: &str, idx: usize) -> u16 {
+    text.encode_utf16().nth(idx).unwrap_or(u16::from(b'0'))
 }
 
 fn claude_code_billing_header(messages: &[Message]) -> String {
+    let text = first_user_message_text(messages);
     let sampled = [4, 7, 20]
         .into_iter()
-        .map(|idx| sample_js_code_unit(first_user_message_text(messages), idx))
-        .collect::<String>();
+        .map(|idx| sample_js_code_unit(text, idx))
+        .collect::<Vec<_>>();
+    let sampled = String::from_utf16_lossy(&sampled);
     let version_hash = hex::encode(Sha256::digest(format!(
         "{CLAUDE_CODE_BILLING_SALT}{sampled}{CLAUDE_CODE_VERSION}"
     )));
@@ -401,12 +401,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn claude_code_billing_header_matches_2176_rule() {
+    fn claude_code_billing_header_matches_21258_rule() {
         let messages = vec![Message::new_text(Role::User, "hey")];
 
         assert_eq!(
             claude_code_billing_header(&messages),
-            "x-anthropic-billing-header: cc_version=2.1.76.4dc; cc_entrypoint=cli; cch=00000;"
+            "x-anthropic-billing-header: cc_version=2.1.258.1e2; cc_entrypoint=cli; cch=00000;"
+        );
+    }
+
+    #[test]
+    fn claude_code_billing_header_joins_sampled_utf16_units_before_encoding() {
+        let messages = vec![Message::new_text(Role::User, "aaaa😀😀abcdefghijklmnop")];
+
+        assert_eq!(
+            claude_code_billing_header(&messages),
+            "x-anthropic-billing-header: cc_version=2.1.258.fde; cc_entrypoint=cli; cch=00000;"
         );
     }
 
@@ -431,7 +441,7 @@ mod tests {
 
         assert_eq!(
             claude_code_billing_header(&messages),
-            "x-anthropic-billing-header: cc_version=2.1.76.540; cc_entrypoint=cli; cch=00000;"
+            "x-anthropic-billing-header: cc_version=2.1.258.de6; cc_entrypoint=cli; cch=00000;"
         );
     }
 
