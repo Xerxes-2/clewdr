@@ -1,28 +1,27 @@
 # Release Notes
 
-## Fixes
+## Security
 
-- **Claude Code 2.1.258 compatibility.** Requests now identify as the current
-  client instead of the legacy 2.1.76 release. Billing attribution also joins
-  JavaScript UTF-16 code units 4, 7, and 20 before UTF-8 hashing, keeping the
-  `cc_version` suffix correct for emoji and surrogate-pair boundaries.
-- **Portable GNU/Linux archives.** Nix-built GNU binaries have their loader
-  path repaired before packaging, so the release ZIPs run outside the Nix
-  store on supported distributions instead of failing with “No such file or
-  directory”.
-- **Container publication.** Multi-architecture image publishing now preserves
-  the existing `sha-<7>` tags, produces real amd64/arm64 manifest lists, and
-  avoids publishing images from manual workflow dispatches.
+- **Distrust compromised emSign certificate chains.** Update the bundled CA
+  certificates (`webpki-root-certs` 1.0.9 → 1.0.10), removing
+  `emSign ECC Root CA - G3`. This responds to the disclosure of intermediate
+  CA private keys belonging to India's eMudhra/emSign and prevents ClewdR's
+  bundled trust store from accepting chains through those intermediates.
+  The update protects upstream HTTPS connections against public-network
+  man-in-the-middle tools using the disclosed keys to forge certificates.
+- **Upgrade recommended.** Install v0.13.6 and restart ClewdR; container users
+  should pull the updated image and recreate their containers. Updating the
+  operating system's CA bundle alone does not update the roots embedded in
+  existing ClewdR binaries.
 
-## Changes
+References: [RUSTSEC-2026-0383 / CVE-2026-111943](https://rustsec.org/advisories/RUSTSEC-2026-0383.html),
+[upstream root removal](https://github.com/rustls/webpki-roots/pull/133).
 
-- **Reproducible release builds.** Linux GNU, musl, Android, frontend and
-  distroless container outputs now use pinned Nix definitions. `nix develop`
-  provides the matching stable/wasm/nightly/trunk toolchain, while Windows and
-  macOS retain their native build paths. The HTTP stack and other dependencies
-  were refreshed, including the stable wreq 0.16 release.
-- **Faster, verifiable CI.** Linux targets and both container architectures now
-  build in parallel; exact feature sets, shared frontend store paths and
-  minimal per-target toolchains avoid redundant compilation. Workflow YAML and
-  the image-push/tag scheme are also checked locally through xtask before
-  publication.
+## 安全更新
+
+- 因印度 CA 机构 eMudhra/emSign 的中间 CA 私钥泄露，将内置 CA 包
+  `webpki-root-certs` 从 1.0.9 更新至 1.0.10，移除
+  `emSign ECC Root CA - G3` 信任根，防范公网中间人工具利用泄露密钥
+  伪造证书、拦截 ClewdR 的上游 HTTPS 通信。
+- 建议升级到 v0.13.6 并重启；容器用户请拉取新镜像并重建容器。
+  仅更新操作系统 CA 包不会更新已有 ClewdR 二进制内嵌的信任根。
