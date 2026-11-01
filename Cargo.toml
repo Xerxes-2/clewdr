@@ -1,6 +1,6 @@
 [package]
 name = "clewdr"
-version = "0.13.7"
+version = "0.13.8"
 edition = "2024"
 license = "AGPL-3.0"
 # The binary is not a library anyone installs from the registry, and an
