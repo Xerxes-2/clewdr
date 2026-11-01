@@ -470,6 +470,7 @@ mod tests {
                 uuid: "org-uuid".to_string(),
             },
             refresh_token: "sk-ant-ort01-SECRET-REFRESH".to_string(),
+            scopes: Vec::new(),
             expires_at: chrono::Utc::now(),
         });
         cookie

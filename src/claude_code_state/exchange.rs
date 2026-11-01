@@ -8,23 +8,20 @@ use url::Url;
 use super::{
     chat::{CLAUDE_API_VERSION, CLAUDE_BETA_BASE},
     oauth::{
-        Pkce, TokenErrorResponse, TokenResponse, authorization_code_form, authorize_params,
-        random_state, refresh_token_form,
+        Pkce, SCOPES, TokenErrorResponse, TokenResponse, authorization_code_form, authorize_params,
+        random_state, refresh_token_json,
     },
 };
 use crate::{
     claude_code_state::ClaudeCodeState,
     config::{
-        CC_REDIRECT_URI, CC_TOKEN_URL, CLAUDE_CODE_USER_AGENT, CLEWDR_CONFIG, CookieStatus,
-        TokenInfo,
+        CC_REDIRECT_URI, CC_REFRESH_URL, CC_TOKEN_URL, CLAUDE_CODE_API_USER_AGENT, CLEWDR_CONFIG,
+        CookieStatus, TokenInfo,
     },
     error::{
         CheckClaudeErr, ClewdrError, RequestTokenSnafu, UnexpectedNoneSnafu, UrlSnafu, WreqSnafu,
     },
 };
-
-/// The scopes this client asks for.
-const SCOPES: [&str; 2] = ["user:profile", "user:inference"];
 
 pub struct ExchangeResult {
     code: String,
@@ -67,7 +64,7 @@ impl ClaudeCodeState {
         let mut query_params = authorize_params(
             &cc_client_id,
             CC_REDIRECT_URI,
-            &SCOPES,
+            SCOPES,
             &pkce,
             &random_state(),
         );
@@ -76,7 +73,7 @@ impl ClaudeCodeState {
         let wreq_client = self.get_wreq_client();
         let mut authorize_req = wreq_client
             .post(authorize_url.to_string())
-            .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
+            .header(USER_AGENT, CLAUDE_CODE_API_USER_AGENT)
             .json(&query_params);
         if let Some(cookie) = self.cookie.as_ref() {
             authorize_req = authorize_req.header(COOKIE, cookie.cookie.to_string());
@@ -146,12 +143,17 @@ impl ClaudeCodeState {
         };
 
         if let Some(cookie) = self.cookie.as_mut() {
-            cookie.token = Some(TokenInfo::new(&token, code_res.org_uuid.clone()));
+            let mut info = TokenInfo::new(&token, code_res.org_uuid.clone());
+            if token.scope.is_none() {
+                info.scopes = SCOPES.iter().map(|scope| (*scope).to_owned()).collect();
+            }
+            cookie.token = Some(info);
         } else {
             return Err(ClewdrError::UnexpectedNone {
                 msg: "No cookie found to update with token info",
             });
         }
+        self.return_cookie(None);
         Ok(())
     }
 
@@ -173,25 +175,22 @@ impl ClaudeCodeState {
             return Ok(());
         }
 
-        let cc_client_id = CLEWDR_CONFIG.load().cc_client_id();
-
-        // Copied out so the borrow of self.cookie ends before the request;
-        // the reply is written back through a fresh borrow below.
-        let org_uuid = token.organization.uuid.clone();
-        let form = refresh_token_form(&cc_client_id, &token.refresh_token);
-
-        match self.post_token_request(form).await? {
+        if token.refresh_token.is_empty() {
+            return self.reauthorize().await;
+        }
+        let client_id = CLEWDR_CONFIG.load().cc_client_id();
+        let outcome = refresh_grant(&self.client, CC_REFRESH_URL, &client_id, token).await?;
+        match outcome {
             TokenOutcome::Granted(new_token) => {
-                let Some(CookieStatus {
-                    token: Some(ref mut token),
-                    ..
-                }) = self.cookie
-                else {
-                    return Err(ClewdrError::UnexpectedNone {
+                let token = self
+                    .cookie
+                    .as_mut()
+                    .and_then(|cookie| cookie.token.as_mut())
+                    .context(UnexpectedNoneSnafu {
                         msg: "No token found to refresh token",
-                    });
-                };
-                *token = TokenInfo::new(&new_token, org_uuid);
+                    })?;
+                token.update(&new_token);
+                self.return_cookie(None);
                 Ok(())
             }
             TokenOutcome::Rejected(error) => {
@@ -206,38 +205,15 @@ impl ClaudeCodeState {
                 tracing::warn!(
                     "Refresh token invalid (invalid_grant), attempting to re-authorize with new OAuth2 flow"
                 );
-                // Clear the old token to force re-authorization
-                if let Some(cookie) = self.cookie.as_mut() {
-                    cookie.token = None;
-                }
-
-                // First, verify the cookie is still valid and check account type
-                // This will return Reason::Null if cookie is invalid,
-                // or Reason::Free if account was downgraded
-                let org_uuid = self
-                    .get_organization()
-                    .await
-                    .inspect_err(|e| tracing::error!("Cannot re-authorize: {}", e))?;
-
-                // Cookie is valid and account has Pro+ permissions, proceed with re-authorization
-                let code_res = self.exchange_code(&org_uuid).await.inspect_err(|e| {
-                    tracing::error!("Failed to exchange code during re-authorization: {}", e);
-                })?;
-                match self.exchange_token(code_res).await {
-                    Ok(()) => {
-                        tracing::info!("Successfully re-authorized with new OAuth2 flow");
-                        Ok(())
-                    }
-                    Err(token_err) => {
-                        tracing::error!(
-                            "Failed to exchange token during re-authorization: {}",
-                            token_err
-                        );
-                        Err(token_err)
-                    }
-                }
+                self.reauthorize().await
             }
         }
+    }
+
+    async fn reauthorize(&mut self) -> Result<(), ClewdrError> {
+        let org_uuid = self.get_organization().await?;
+        let code = self.exchange_code(&org_uuid).await?;
+        self.exchange_token(code).await
     }
 
     /// Posts a form to the token endpoint and classifies the reply.
@@ -249,31 +225,62 @@ impl ClaudeCodeState {
         &self,
         form: Vec<(String, String)>,
     ) -> Result<TokenOutcome, ClewdrError> {
-        let response = self
+        let request = self
             .get_wreq_client()
             .post(CC_TOKEN_URL)
+            .header(USER_AGENT, CLAUDE_CODE_API_USER_AGENT)
             .header(ACCEPT, "application/json")
             .header("anthropic-version", CLAUDE_API_VERSION)
             .header("anthropic-beta", CLAUDE_BETA_BASE)
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
-            .body(urlencode(&form))
-            .send()
-            .await
-            .context(WreqSnafu {
-                msg: "Failed to send token request",
-            })?;
-
-        let status = response.status();
-        let body = response.bytes().await.context(WreqSnafu {
-            msg: "Failed to read token response",
-        })?;
-
-        classify_token_response(status.as_u16(), &body)
+            .body(urlencode(&form));
+        send_token_request(request).await
     }
 
     fn get_wreq_client(&self) -> wreq::Client {
         self.client.clone()
     }
+}
+
+/// Retry scope expansion with the stored grant, including legacy config files
+/// that have no scope field. Never discard a refresh token for a scope error.
+async fn refresh_grant(
+    client: &wreq::Client,
+    token_url: &str,
+    client_id: &str,
+    token: &TokenInfo,
+) -> Result<TokenOutcome, ClewdrError> {
+    let mut scopes = SCOPES.to_vec();
+    for scope in &token.scopes {
+        if matches!(scope.as_str(), "user:projects:read" | "user:projects:write") {
+            scopes.push(scope);
+        }
+    }
+    let request = |scopes: &[&str]| {
+        client
+            .post(token_url)
+            .header(USER_AGENT, "axios/1.15.2")
+            .header(ACCEPT, "application/json, text/plain, */*")
+            .json(&refresh_token_json(client_id, &token.refresh_token, scopes))
+    };
+    let mut outcome = send_token_request(request(&scopes)).await?;
+    if matches!(&outcome, TokenOutcome::Rejected(error) if error.error.eq_ignore_ascii_case("invalid_scope"))
+    {
+        let granted = token.scopes.iter().map(String::as_str).collect::<Vec<_>>();
+        outcome = send_token_request(request(&granted)).await?;
+    }
+    Ok(outcome)
+}
+
+async fn send_token_request(request: wreq::RequestBuilder) -> Result<TokenOutcome, ClewdrError> {
+    let response = request.send().await.context(WreqSnafu {
+        msg: "Failed to send token request",
+    })?;
+    let status = response.status();
+    let body = response.bytes().await.context(WreqSnafu {
+        msg: "Failed to read token response",
+    })?;
+    classify_token_response(status.as_u16(), &body)
 }
 
 /// Reads a token endpoint reply.
@@ -402,11 +409,6 @@ mod tests {
              &client_id=CLIENT_ID_X\
              &redirect_uri=https%3A%2F%2Fconsole.anthropic.com%2Foauth%2Fcode%2Fcallback\
              &state=THE+STATE"
-        );
-
-        assert_eq!(
-            urlencode(&super::super::oauth::refresh_token_form(ID, "THE REFRESH")),
-            "grant_type=refresh_token&refresh_token=THE+REFRESH&client_id=CLIENT_ID_X"
         );
     }
 

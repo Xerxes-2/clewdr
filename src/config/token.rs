@@ -77,6 +77,8 @@ pub struct TokenInfo {
     pub expires_in: Duration,
     pub organization: Organization,
     pub refresh_token: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scopes: Vec<String>,
     #[serde(with = "timestamp_secs")]
     pub expires_at: DateTime<Utc>,
 }
@@ -92,8 +94,28 @@ impl TokenInfo {
                 uuid: organization_uuid,
             },
             refresh_token: raw.refresh_token.clone().unwrap_or_default(),
+            scopes: raw
+                .scope
+                .as_deref()
+                .unwrap_or_default()
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect(),
             expires_at: Utc::now() + expires_in,
         }
+    }
+
+    /// Keep the last refresh token and scopes when the server does not rotate
+    /// or repeat them; replace both when new values are returned.
+    pub fn update(&mut self, raw: &TokenResponse) {
+        let mut updated = Self::new(raw, self.organization.uuid.clone());
+        if updated.refresh_token.is_empty() {
+            updated.refresh_token.clone_from(&self.refresh_token);
+        }
+        if raw.scope.is_none() {
+            updated.scopes.clone_from(&self.scopes);
+        }
+        *self = updated;
     }
 
     pub fn is_expired(&self) -> bool {
@@ -116,6 +138,7 @@ mod tests {
                 uuid: "org".to_string(),
             },
             refresh_token: "r".to_string(),
+            scopes: Vec::new(),
             expires_at: DateTime::from_timestamp(1_785_087_657, 250_000_000).unwrap(),
         }
     }

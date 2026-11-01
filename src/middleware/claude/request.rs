@@ -100,7 +100,11 @@ fn first_user_message_text(messages: &[Message]) -> &str {
         .and_then(|message| match &message.content {
             MessageContent::Text { content } => Some(content.as_str()),
             MessageContent::Blocks { content } => content.iter().find_map(|block| match block {
-                ContentBlock::Text { text, .. } => Some(text.as_str()),
+                ContentBlock::Text { text, .. }
+                    if !text.trim_start().starts_with("<system-reminder>") =>
+                {
+                    Some(text.as_str())
+                }
                 _ => None,
             }),
         })
@@ -345,14 +349,28 @@ where
         // Determine streaming status and API format
         let stream = body.stream.unwrap_or_default();
 
-        let mut system_prefixes = vec![ContentBlock::text(claude_code_billing_header(
-            &body.messages,
-        ))];
-        if let Some(custom_system) = CLEWDR_CONFIG
-            .load()
-            .custom_system
-            .clone()
-            .filter(|s| !s.trim().is_empty())
+        // Replace the client's billing block rather than accumulating a second
+        // identity. A fallback-credit replay keeps its original billing/CCH.
+        let mut system_prefixes = Vec::new();
+        if body.fallback_credit_token.is_none() {
+            if let Some(Value::Array(system)) = body.system.as_mut() {
+                system.retain(|block| {
+                    !block
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .is_some_and(|text| text.starts_with("x-anthropic-billing-header:"))
+                });
+            }
+            system_prefixes.push(ContentBlock::text(claude_code_billing_header(
+                &body.messages,
+            )));
+        }
+        if body.fallback_credit_token.is_none()
+            && let Some(custom_system) = CLEWDR_CONFIG
+                .load()
+                .custom_system
+                .clone()
+                .filter(|s| !s.trim().is_empty())
         {
             system_prefixes.push(ContentBlock::text(custom_system));
         }

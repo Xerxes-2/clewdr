@@ -1,17 +1,22 @@
-//! The OAuth wire format used against Anthropic's token endpoint.
-//!
-//! Only the authorization-code grant with PKCE and the refresh grant are
-//! implemented, which is all this flow uses. Everything the endpoint sees --
-//! parameter names, encodings, and which status codes count as success -- is
-//! decided here, and was matched against the `oauth2` crate's output before
-//! replacing it. The tests below record that format so a later change to it
-//! has to be deliberate.
+//! Cookie authorization uses the legacy form exchange with PKCE; access
+//! tokens are renewed with the CLI's JSON refresh grant. Neither flow exposes
+//! a separate token-import or interactive OAuth login entry point.
 
 use std::{collections::HashMap, time::Duration};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+
+/// Scopes requested by the CLI, without interactive API-key creation.
+pub(super) const SCOPES: &[&str] = &[
+    "user:profile",
+    "user:inference",
+    "user:sessions:claude_code",
+    "user:mcp_servers",
+    "user:file_upload",
+    "user:plugins",
+];
 
 /// The number of random bytes behind a PKCE verifier and a state parameter.
 ///
@@ -127,14 +132,22 @@ pub fn authorization_code_form(
     form
 }
 
-/// The form body exchanging a refresh token for a new access token.
+/// JSON refresh grant used by the platform.claude.com endpoint.
 #[must_use]
-pub fn refresh_token_form(client_id: &str, refresh_token: &str) -> Vec<(String, String)> {
-    vec![
-        ("grant_type".to_owned(), "refresh_token".to_owned()),
-        ("refresh_token".to_owned(), refresh_token.to_owned()),
-        ("client_id".to_owned(), client_id.to_owned()),
-    ]
+pub fn refresh_token_json(
+    client_id: &str,
+    refresh_token: &str,
+    scopes: &[&str],
+) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": client_id,
+    });
+    if !scopes.is_empty() {
+        body["scope"] = scopes.join(" ").into();
+    }
+    body
 }
 
 /// A successful token response.
@@ -152,6 +165,9 @@ pub struct TokenResponse {
     /// Absent when the server declines to rotate the refresh token.
     #[serde(default)]
     pub refresh_token: Option<String>,
+    /// Space-separated scopes actually granted by the server.
+    #[serde(default)]
+    pub scope: Option<String>,
 }
 
 impl TokenResponse {
@@ -165,10 +181,26 @@ impl TokenResponse {
 /// An error response from the token endpoint, as defined by RFC 6749.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct TokenErrorResponse {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "token_error_code")]
     pub error: String,
     #[serde(default)]
     pub error_description: Option<String>,
+}
+
+// The CLI accepts both OAuth's string code and the platform API's nested
+// error.code/error.type form on token failures.
+fn token_error_code<'de, D: serde::Deserializer<'de>>(de: D) -> Result<String, D::Error> {
+    let value = serde_json::Value::deserialize(de)?;
+    Ok(value
+        .as_str()
+        .or_else(|| {
+            value
+                .get("code")
+                .or_else(|| value.get("type"))
+                .and_then(serde_json::Value::as_str)
+        })
+        .unwrap_or_default()
+        .to_owned())
 }
 
 impl TokenErrorResponse {
@@ -276,26 +308,12 @@ mod tests {
         assert_eq!(form.len(), 6);
     }
 
-    /// The endpoint does not always return a state to echo, and the previous
-    /// implementation omitted the parameter entirely in that case rather than
-    /// sending it empty.
+    /// The endpoint does not always return a state to echo.
     #[test]
     fn the_state_parameter_is_omitted_when_absent() {
         let form = authorization_code_form("C", "R", "THECODE", &Pkce::new_random(), None);
-
-        assert!(!form.iter().any(|(k, _)| k == "state"));
+        assert!(!form.iter().any(|(key, _)| key == "state"));
         assert_eq!(form.len(), 5);
-    }
-
-    #[test]
-    fn the_refresh_form_is_unchanged() {
-        let form = refresh_token_form("CLIENT_ID_X", "THEREFRESH");
-        let got: HashMap<_, _> = form.iter().cloned().collect();
-
-        assert_eq!(got["grant_type"], "refresh_token");
-        assert_eq!(got["refresh_token"], "THEREFRESH");
-        assert_eq!(got["client_id"], "CLIENT_ID_X");
-        assert_eq!(form.len(), 3);
     }
 
     /// RFC 7636 appendix B's worked example, run through this code rather
@@ -386,6 +404,7 @@ mod tests {
             access_token: "AT".into(),
             expires_in: None,
             refresh_token: None,
+            scope: None,
         };
 
         assert_eq!(token.expires_in(), Duration::ZERO);

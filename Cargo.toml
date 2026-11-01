@@ -75,6 +75,7 @@ tracing = "0.1"
 tracing-appender = "0.2"
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
+xxhash-rust = { version = "0.8", features = ["xxh64"] }
 # Held at rc.29's predecessor: rc.29 swapped the TLS backend from boring2 to
 # btls, whose vendored BoringSSL builds C++ that the cross toolchains must
 # supply libstdc++ for (nix handles this; see flake.nix). Declared as a
@@ -105,6 +106,10 @@ features = [
 [dependencies.wreq]
 version = "0.16"
 features = [
+  "brotli",
+  "deflate",
+  "gzip",
+  "zstd",
   "cookies",
   "json",
   "multipart",

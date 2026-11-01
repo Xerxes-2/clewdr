@@ -11,6 +11,7 @@ use snafu::{GenerateImplicitData, ResultExt};
 use tracing::{Instrument, error, info};
 use wreq::Method;
 
+use super::{cch, headers::api_request};
 use crate::{
     claude_code_state::{ClaudeCodeState, TokenStatus},
     config::{CLAUDE_CODE_USER_AGENT, CLEWDR_CONFIG, ModelFamily},
@@ -20,7 +21,7 @@ use crate::{
 
 pub(super) const CLAUDE_BETA_BASE: &str = "oauth-2025-04-20";
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
-pub(super) const CLAUDE_API_VERSION: &str = "2023-06-01";
+pub(super) const CLAUDE_API_VERSION: &str = "2026-10-21";
 
 fn claude_beta_header(client_beta: Option<&str>) -> String {
     let mut betas = vec![CLAUDE_BETA_BASE];
@@ -84,12 +85,10 @@ impl ClaudeCodeState {
                         let org = state.get_organization().await?;
                         let code_res = state.exchange_code(&org).await?;
                         state.exchange_token(code_res).await?;
-                        state.return_cookie(None);
                     }
                     TokenStatus::Expired => {
                         info!("Token expired, refreshing token");
                         state.refresh_token().await?;
-                        state.return_cookie(None);
                     }
                     TokenStatus::Valid => {
                         info!("Token is valid, proceeding with request");
@@ -148,31 +147,27 @@ impl ClaudeCodeState {
         access_token: &str,
         body: &CreateMessageParams,
     ) -> Result<wreq::Response, ClewdrError> {
-        self.client
-            .post(
-                self.endpoint
-                    .join("v1/messages")
-                    .map_err(|e| ClewdrError::Whatever {
-                        message: format!("Parse URL error: {e}"),
-                        source: Some(Box::new(e)),
-                    })?
-                    .to_string(),
-            )
-            .bearer_auth(access_token)
-            .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
-            .header(
-                "anthropic-beta",
-                claude_beta_header(self.anthropic_beta.as_deref()),
-            )
-            .header("anthropic-version", CLAUDE_API_VERSION)
-            .json(body)
-            .send()
-            .await
-            .context(WreqSnafu {
-                msg: "Failed to send chat message",
-            })?
-            .check_claude()
-            .await
+        let url =
+            self.endpoint
+                .join("v1/messages?beta=true")
+                .map_err(|e| ClewdrError::Whatever {
+                    message: format!("Parse URL error: {e}"),
+                    source: Some(Box::new(e)),
+                })?;
+        api_request(
+            &self.client,
+            url.as_str(),
+            access_token,
+            &claude_beta_header(self.anthropic_beta.as_deref()),
+        )
+        .body(cch::serialize(body)?)
+        .send()
+        .await
+        .context(WreqSnafu {
+            msg: "Failed to send chat message",
+        })?
+        .check_claude()
+        .await
     }
 
     fn persist_count_tokens_allowed(&mut self, value: bool) {
@@ -272,12 +267,10 @@ impl ClaudeCodeState {
                         let org = state.get_organization().await?;
                         let code_res = state.exchange_code(&org).await?;
                         state.exchange_token(code_res).await?;
-                        state.return_cookie(None);
                     }
                     TokenStatus::Expired => {
                         info!("Token expired, refreshing token");
                         state.refresh_token().await?;
-                        state.return_cookie(None);
                     }
                     TokenStatus::Valid => {
                         info!("Token is valid, proceeding with count_tokens");
@@ -485,31 +478,27 @@ impl ClaudeCodeState {
         access_token: &str,
         body: &CreateMessageParams,
     ) -> Result<wreq::Response, ClewdrError> {
-        self.client
-            .post(
-                self.endpoint
-                    .join("v1/messages/count_tokens")
-                    .map_err(|e| ClewdrError::Whatever {
-                        message: format!("Parse URL error: {e}"),
-                        source: Some(Box::new(e)),
-                    })?
-                    .to_string(),
-            )
-            .bearer_auth(access_token)
-            .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
-            .header(
-                "anthropic-beta",
-                claude_beta_header(self.anthropic_beta.as_deref()),
-            )
-            .header("anthropic-version", CLAUDE_API_VERSION)
-            .json(body)
-            .send()
-            .await
-            .context(WreqSnafu {
-                msg: "Failed to call Claude count_tokens",
-            })?
-            .check_claude()
-            .await
+        let url = self
+            .endpoint
+            .join("v1/messages/count_tokens?beta=true")
+            .map_err(|e| ClewdrError::Whatever {
+                message: format!("Parse URL error: {e}"),
+                source: Some(Box::new(e)),
+            })?;
+        api_request(
+            &self.client,
+            url.as_str(),
+            access_token,
+            &claude_beta_header(self.anthropic_beta.as_deref()),
+        )
+        .json(body)
+        .send()
+        .await
+        .context(WreqSnafu {
+            msg: "Failed to call Claude count_tokens",
+        })?
+        .check_claude()
+        .await
     }
 
     fn classify_model(model: &str) -> ModelFamily {
